@@ -21,8 +21,10 @@ type compactionErrorMsg struct {
 }
 
 // NewCompactCommand returns a SlashCommand for /compact that triggers
-// conversation compaction via the agent loop.
-func NewCompactCommand(agentLoop *agent.AgentLoop) *SlashCommand {
+// conversation compaction via the agent loop. The provided context should be
+// tied to the application lifecycle so that compaction is cancelled when the
+// user quits.
+func NewCompactCommand(ctx context.Context, agentLoop *agent.AgentLoop) *SlashCommand {
 	return &SlashCommand{
 		Name:        "compact",
 		Description: "Summarize conversation to free context space",
@@ -30,7 +32,7 @@ func NewCompactCommand(agentLoop *agent.AgentLoop) *SlashCommand {
 			return tea.Batch(
 				func() tea.Msg { return compactionStartMsg{} },
 				func() tea.Msg {
-					err := agentLoop.Compact(context.Background(), args)
+					err := agentLoop.Compact(ctx, args)
 					if err != nil {
 						return compactionErrorMsg{err: err}
 					}

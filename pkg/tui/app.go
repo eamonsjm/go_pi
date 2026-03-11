@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/charmbracelet/bubbles/textarea"
@@ -117,8 +118,10 @@ func (a *App) ShowWelcome(text string) {
 
 // RegisterBuiltinCommands registers all built-in slash commands that need
 // access to external dependencies (agent loop, session manager, config).
-func (a *App) RegisterBuiltinCommands(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg *config.Config) {
-	a.RegisterCommand(NewCompactCommand(agentLoop))
+// The ctx should be the application lifecycle context so that long-running
+// commands like /compact are cancelled when the application exits.
+func (a *App) RegisterBuiltinCommands(ctx context.Context, agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg *config.Config) {
+	a.RegisterCommand(NewCompactCommand(ctx, agentLoop))
 	a.RegisterCommand(NewSettingsCommand(cfg, agentLoop, a.header))
 	a.RegisterCommand(NewNewSessionCommand(agentLoop, sessionMgr, a.chat, a.header))
 	a.RegisterCommand(NewResumeCommand(agentLoop, sessionMgr, a.chat, a.header))

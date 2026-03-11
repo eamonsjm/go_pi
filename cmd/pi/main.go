@@ -290,10 +290,16 @@ func makeAgentLoop(provider ai.Provider, registry *tools.Registry, cfg *config.C
 }
 
 func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg *config.Config, providerErr error, pluginMgr *plugin.Manager) {
+	// Create the application lifecycle context. This is cancelled when
+	// runInteractive returns, ensuring all background operations (such as
+	// compaction) are stopped when the user quits.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	app := tui.NewApp()
 	app.SetModel(cfg.DefaultModel)
 	app.SetThinking(cfg.ThinkingLevel)
-	app.RegisterBuiltinCommands(agentLoop, sessionMgr, cfg)
+	app.RegisterBuiltinCommands(ctx, agentLoop, sessionMgr, cfg)
 	app.SetModelChangeCallback(func(provider, model string) {
 		agentLoop.SetModel(model)
 	})
@@ -331,9 +337,6 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 
 	// Create the Bubble Tea program
 	p := tea.NewProgram(app, tea.WithAltScreen(), tea.WithMouseAllMotion())
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	// Wire up callbacks
 	app.SetCallbacks(
