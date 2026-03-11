@@ -11,6 +11,14 @@ import (
 
 const maxGlobResults = 1000
 
+// maxDoublestarSegments limits the number of ** segments allowed in a pattern
+// to prevent pathological recursion in doMatch.
+const maxDoublestarSegments = 10
+
+// maxMatchDepth limits recursion depth in doMatch to prevent stack overflow
+// from crafted patterns.
+const maxMatchDepth = 64
+
 // GlobTool finds files matching a glob pattern.
 type GlobTool struct{}
 
@@ -61,6 +69,11 @@ func (t *GlobTool) Execute(ctx context.Context, params map[string]any) (string, 
 	}
 	if !info.IsDir() {
 		return "", fmt.Errorf("%s is not a directory", absBase)
+	}
+
+	// Validate pattern: reject pathological patterns with too many ** segments.
+	if count := strings.Count(pattern, "**"); count > maxDoublestarSegments {
+		return "", fmt.Errorf("pattern contains %d ** segments (max %d): simplify the glob pattern", count, maxDoublestarSegments)
 	}
 
 	var matches []string
@@ -148,23 +161,26 @@ func matchDoublestar(pattern, name string) bool {
 	// Normalize separators.
 	pattern = filepath.ToSlash(pattern)
 	name = filepath.ToSlash(name)
-	return doMatch(pattern, name)
+	return doMatch(pattern, name, 0)
 }
 
-func doMatch(pattern, name string) bool {
+func doMatch(pattern, name string, depth int) bool {
+	if depth > maxMatchDepth {
+		return false
+	}
 	for len(pattern) > 0 {
 		switch {
 		case strings.HasPrefix(pattern, "**/"): // ** at start or middle
 			pattern = pattern[3:]
 			// ** matches zero or more path segments.
 			// Try matching the rest of the pattern against every suffix of name.
-			if doMatch(pattern, name) {
+			if doMatch(pattern, name, depth+1) {
 				return true
 			}
 			// Consume one path segment from name and retry.
 			for i := 0; i < len(name); i++ {
 				if name[i] == '/' {
-					if doMatch(pattern, name[i+1:]) {
+					if doMatch(pattern, name[i+1:], depth+1) {
 						return true
 					}
 				}
@@ -181,7 +197,7 @@ func doMatch(pattern, name string) bool {
 			pattern = pattern[1:]
 			// * matches everything except /.
 			for i := 0; i <= len(name); i++ {
-				if doMatch(pattern, name[i:]) {
+				if doMatch(pattern, name[i:], depth+1) {
 					return true
 				}
 				if i < len(name) && name[i] == '/' {

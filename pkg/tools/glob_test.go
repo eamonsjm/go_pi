@@ -140,6 +140,52 @@ func TestGlobTool_MissingPattern(t *testing.T) {
 	}
 }
 
+func TestGlobTool_PathologicalPatternRejected(t *testing.T) {
+	dir := setupGlobDir(t)
+
+	// Build a pattern with 11 ** segments (over the limit of 10).
+	pattern := strings.Repeat("**/", 11) + "*.go"
+
+	tool := &GlobTool{}
+	_, err := tool.Execute(context.Background(), map[string]any{
+		"pattern": pattern,
+		"path":    dir,
+	})
+	if err == nil {
+		t.Fatal("expected error for pathological pattern with too many ** segments")
+	}
+	if !strings.Contains(err.Error(), "** segments") {
+		t.Errorf("expected error about ** segments, got: %v", err)
+	}
+}
+
+func TestGlobTool_MaxDoublestarBoundary(t *testing.T) {
+	dir := setupGlobDir(t)
+
+	// Exactly at the limit (10 ** segments) should succeed.
+	pattern := strings.Repeat("**/", 10) + "*.go"
+
+	tool := &GlobTool{}
+	_, err := tool.Execute(context.Background(), map[string]any{
+		"pattern": pattern,
+		"path":    dir,
+	})
+	if err != nil {
+		t.Fatalf("pattern at limit should succeed, got: %v", err)
+	}
+}
+
+func TestDoMatch_DepthLimitPreventsRunaway(t *testing.T) {
+	// A deeply nested pattern that would cause excessive recursion
+	// should safely return false when hitting the depth limit.
+	pattern := strings.Repeat("**/", 10) + "*.go"
+	name := strings.Repeat("a/", 60) + "test.go"
+	result := matchDoublestar(pattern, name)
+	// The result doesn't matter (may match or not depending on depth cutoff),
+	// but it must not hang or stack overflow. Reaching here means it's safe.
+	_ = result
+}
+
 func TestMatchDoublestar(t *testing.T) {
 	tests := []struct {
 		pattern string
