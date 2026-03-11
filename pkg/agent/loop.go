@@ -56,7 +56,11 @@ func NewAgentLoop(provider ai.Provider, toolRegistry *tools.Registry, opts ...Op
 
 // Events returns the channel on which agent events are emitted.
 // The caller should read from this channel to receive real-time updates.
+// The channel is closed when the current Prompt call completes, so
+// a consumer using range will exit automatically.
 func (a *AgentLoop) Events() <-chan AgentEvent {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	return a.events
 }
 
@@ -154,7 +158,17 @@ func (a *AgentLoop) Prompt(ctx context.Context, text string) error {
 	}()
 
 	a.appendMessage(ai.NewTextMessage(ai.RoleUser, text))
-	return a.run(ctx)
+	err := a.run(ctx)
+
+	// Close the events channel so consumer goroutines unblock (range
+	// terminates on a closed channel), then create a fresh channel for
+	// the next Prompt call.
+	a.mu.Lock()
+	close(a.events)
+	a.events = make(chan AgentEvent, eventBufSize)
+	a.mu.Unlock()
+
+	return err
 }
 
 // run is the core loop. It sends messages to the model, processes tool calls,
@@ -389,10 +403,14 @@ func (a *AgentLoop) appendMessage(msg ai.Message) {
 }
 
 // emit sends an event to the events channel. It never blocks — if the channel
-// is full the event is dropped and a warning is logged.
+// is full the event is dropped and a warning is logged. The mutex is held
+// briefly to ensure the channel reference is not replaced concurrently.
 func (a *AgentLoop) emit(event AgentEvent) {
+	a.mu.Lock()
+	ch := a.events
+	a.mu.Unlock()
 	select {
-	case a.events <- event:
+	case ch <- event:
 	default:
 		log.Printf("agent: event dropped (type=%s), events channel buffer full", event.Type)
 	}

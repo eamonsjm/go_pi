@@ -88,14 +88,18 @@ func (t *mockTool) Execute(_ context.Context, _ map[string]any) (string, error) 
 
 // --- helpers ----------------------------------------------------------------
 
-// drainEvents reads all events from the agent until EventAgentEnd or timeout.
-func drainEvents(a *AgentLoop, timeout time.Duration) []AgentEvent {
+// drainEvents reads all events from the given channel until EventAgentEnd,
+// channel close, or timeout.
+func drainEvents(ch <-chan AgentEvent, timeout time.Duration) []AgentEvent {
 	var events []AgentEvent
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 	for {
 		select {
-		case ev := <-a.Events():
+		case ev, ok := <-ch:
+			if !ok {
+				return events
+			}
 			events = append(events, ev)
 			if ev.Type == EventAgentEnd || ev.Type == EventAgentError {
 				return events
@@ -122,13 +126,14 @@ func TestBasicPromptFlow(t *testing.T) {
 	reg := tools.NewRegistry()
 	a := NewAgentLoop(provider, reg)
 
+	ch := a.Events()
 	go func() {
 		if err := a.Prompt(context.Background(), "Hi"); err != nil {
 			t.Errorf("Prompt returned error: %v", err)
 		}
 	}()
 
-	events := drainEvents(a, 2*time.Second)
+	events := drainEvents(ch, 2*time.Second)
 
 	if !hasEventType(events, EventAgentStart) {
 		t.Error("expected EventAgentStart")
@@ -170,13 +175,14 @@ func TestToolCallFlow(t *testing.T) {
 	reg.Register(&mockTool{name: "echo", result: "hello"})
 	a := NewAgentLoop(provider, reg)
 
+	ch := a.Events()
 	go func() {
 		if err := a.Prompt(context.Background(), "use echo"); err != nil {
 			t.Errorf("Prompt returned error: %v", err)
 		}
 	}()
 
-	events := drainEvents(a, 2*time.Second)
+	events := drainEvents(ch, 2*time.Second)
 
 	if !hasEventType(events, EventToolExecStart) {
 		t.Error("expected EventToolExecStart")
@@ -297,12 +303,13 @@ func TestSteerInterruptsToolExecution(t *testing.T) {
 		a.Steer("stop and do this instead")
 	}()
 
+	ch := a.Events()
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- a.Prompt(context.Background(), "do stuff")
 	}()
 
-	events := drainEvents(a, 2*time.Second)
+	events := drainEvents(ch, 2*time.Second)
 
 	select {
 	case err := <-errCh:
@@ -375,12 +382,13 @@ func TestPostExecSteerAddsSkipResults(t *testing.T) {
 
 	agent = NewAgentLoop(provider, reg)
 
+	ch := agent.Events()
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- agent.Prompt(context.Background(), "run tools")
 	}()
 
-	events := drainEvents(agent, 2*time.Second)
+	events := drainEvents(ch, 2*time.Second)
 
 	select {
 	case err := <-errCh:
@@ -472,12 +480,13 @@ func TestFollowUpProcessed(t *testing.T) {
 	// Queue a follow-up before starting.
 	a.FollowUp("follow up question")
 
+	ch := a.Events()
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- a.Prompt(context.Background(), "first question")
 	}()
 
-	events := drainEvents(a, 2*time.Second)
+	events := drainEvents(ch, 2*time.Second)
 
 	select {
 	case err := <-errCh:
@@ -517,13 +526,14 @@ func TestUnknownToolReturnsError(t *testing.T) {
 	// Do NOT register "nonexistent_tool".
 	a := NewAgentLoop(provider, reg)
 
+	ch := a.Events()
 	go func() {
 		if err := a.Prompt(context.Background(), "call unknown tool"); err != nil {
 			t.Errorf("Prompt returned error: %v", err)
 		}
 	}()
 
-	events := drainEvents(a, 2*time.Second)
+	events := drainEvents(ch, 2*time.Second)
 
 	found := false
 	for _, ev := range events {
@@ -665,13 +675,14 @@ func TestToolExecWithError(t *testing.T) {
 	reg.Register(&mockTool{name: "fail_tool", err: fmt.Errorf("something broke")})
 	a := NewAgentLoop(provider, reg)
 
+	ch := a.Events()
 	go func() {
 		if err := a.Prompt(context.Background(), "call failing tool"); err != nil {
 			t.Errorf("Prompt returned error: %v", err)
 		}
 	}()
 
-	events := drainEvents(a, 2*time.Second)
+	events := drainEvents(ch, 2*time.Second)
 
 	for _, ev := range events {
 		if ev.Type == EventToolExecEnd {
@@ -682,6 +693,54 @@ func TestToolExecWithError(t *testing.T) {
 				t.Errorf("expected error message, got %q", ev.ToolResult)
 			}
 		}
+	}
+}
+
+func TestEventsChannelClosedAfterPrompt(t *testing.T) {
+	provider := &mockProvider{streamFn: textResponse("Hello!")}
+	reg := tools.NewRegistry()
+	a := NewAgentLoop(provider, reg)
+
+	ch := a.Events()
+
+	if err := a.Prompt(context.Background(), "Hi"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Drain remaining buffered events; channel must close.
+	timeout := time.After(2 * time.Second)
+	for {
+		select {
+		case _, ok := <-ch:
+			if !ok {
+				return // Channel closed — test passes.
+			}
+		case <-timeout:
+			t.Fatal("events channel not closed after Prompt returned")
+		}
+	}
+}
+
+func TestRepeatedPromptNoGoroutineLeak(t *testing.T) {
+	provider := &mockProvider{streamFn: textResponse("reply")}
+	reg := tools.NewRegistry()
+	a := NewAgentLoop(provider, reg)
+
+	for i := 0; i < 3; i++ {
+		ch := a.Events()
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			if err := a.Prompt(context.Background(), fmt.Sprintf("prompt %d", i)); err != nil {
+				t.Errorf("Prompt %d returned error: %v", i, err)
+			}
+		}()
+
+		events := drainEvents(ch, 2*time.Second)
+		if !hasEventType(events, EventAgentEnd) {
+			t.Errorf("prompt %d: missing EventAgentEnd", i)
+		}
+		<-done // wait for Prompt to finish and close the channel
 	}
 }
 
