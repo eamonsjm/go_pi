@@ -126,7 +126,9 @@ func TestOpenAIBuildRequestBody_DefaultMaxTokens(t *testing.T) {
 	}
 
 	var body map[string]any
-	json.Unmarshal(data, &body)
+	if err := json.Unmarshal(data, &body); err != nil {
+		t.Fatalf("failed to parse JSON: %v", err)
+	}
 
 	if int(body["max_tokens"].(float64)) != openaiDefaultMaxToks {
 		t.Errorf("expected default max_tokens=%d, got %v", openaiDefaultMaxToks, body["max_tokens"])
@@ -156,7 +158,9 @@ func TestOpenAIBuildRequestBody_WithTools(t *testing.T) {
 	}
 
 	var body map[string]any
-	json.Unmarshal(data, &body)
+	if err := json.Unmarshal(data, &body); err != nil {
+		t.Fatalf("failed to parse JSON: %v", err)
+	}
 
 	tools, ok := body["tools"].([]any)
 	if !ok || len(tools) != 1 {
@@ -191,7 +195,9 @@ func TestOpenAIBuildRequestBody_ToolResultMapping(t *testing.T) {
 	}
 
 	var body map[string]any
-	json.Unmarshal(data, &body)
+	if err := json.Unmarshal(data, &body); err != nil {
+		t.Fatalf("failed to parse JSON: %v", err)
+	}
 
 	msgs := body["messages"].([]any)
 	// No system prompt, so just 1 message.
@@ -233,7 +239,9 @@ func TestOpenAIBuildRequestBody_AssistantWithToolCalls(t *testing.T) {
 	}
 
 	var body map[string]any
-	json.Unmarshal(data, &body)
+	if err := json.Unmarshal(data, &body); err != nil {
+		t.Fatalf("failed to parse JSON: %v", err)
+	}
 
 	msgs := body["messages"].([]any)
 	msg := msgs[0].(map[string]any)

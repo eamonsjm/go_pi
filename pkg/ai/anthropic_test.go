@@ -115,7 +115,9 @@ func TestBuildRequestBody_DefaultMaxTokens(t *testing.T) {
 	}
 
 	var body map[string]any
-	json.Unmarshal(data, &body)
+	if err := json.Unmarshal(data, &body); err != nil {
+		t.Fatalf("failed to parse JSON: %v", err)
+	}
 
 	if int(body["max_tokens"].(float64)) != defaultMaxTokens {
 		t.Errorf("expected default max_tokens=%d, got %v", defaultMaxTokens, body["max_tokens"])
@@ -148,7 +150,9 @@ func TestBuildRequestBody_WithTools(t *testing.T) {
 	}
 
 	var body map[string]any
-	json.Unmarshal(data, &body)
+	if err := json.Unmarshal(data, &body); err != nil {
+		t.Fatalf("failed to parse JSON: %v", err)
+	}
 
 	tools, ok := body["tools"].([]any)
 	if !ok || len(tools) != 1 {
@@ -191,7 +195,9 @@ func TestBuildRequestBody_ThinkingBudgets(t *testing.T) {
 			}
 
 			var body map[string]any
-			json.Unmarshal(data, &body)
+			if err := json.Unmarshal(data, &body); err != nil {
+				t.Fatalf("failed to parse JSON: %v", err)
+			}
 
 			thinking, ok := body["thinking"].(map[string]any)
 			if !ok {
@@ -229,7 +235,9 @@ func TestBuildRequestBody_ThinkingBudgetExceedsMaxTokens(t *testing.T) {
 	}
 
 	var body map[string]any
-	json.Unmarshal(data, &body)
+	if err := json.Unmarshal(data, &body); err != nil {
+		t.Fatalf("failed to parse JSON: %v", err)
+	}
 
 	maxTokens := int(body["max_tokens"].(float64))
 	thinking := body["thinking"].(map[string]any)
@@ -256,7 +264,9 @@ func TestBuildRequestBody_ThinkingBudgetExceedsMaxTokens(t *testing.T) {
 	}
 
 	var body2 map[string]any
-	json.Unmarshal(data2, &body2)
+	if err := json.Unmarshal(data2, &body2); err != nil {
+		t.Fatalf("failed to parse JSON: %v", err)
+	}
 
 	if int(body2["max_tokens"].(float64)) != 64000 {
 		t.Errorf("expected max_tokens=64000 (caller-specified), got %v", body2["max_tokens"])
@@ -280,7 +290,9 @@ func TestBuildRequestBody_NoThinking(t *testing.T) {
 	}
 
 	var body map[string]any
-	json.Unmarshal(data, &body)
+	if err := json.Unmarshal(data, &body); err != nil {
+		t.Fatalf("failed to parse JSON: %v", err)
+	}
 
 	if body["thinking"] != nil {
 		t.Error("expected no thinking block when ThinkingOff")
@@ -304,7 +316,9 @@ func TestBuildRequestBody_NoSystemPrompt(t *testing.T) {
 	}
 
 	var body map[string]any
-	json.Unmarshal(data, &body)
+	if err := json.Unmarshal(data, &body); err != nil {
+		t.Fatalf("failed to parse JSON: %v", err)
+	}
 
 	if body["system"] != nil {
 		t.Error("expected no system block when SystemPrompt is empty")
