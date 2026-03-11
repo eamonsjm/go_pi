@@ -13,8 +13,9 @@ import (
 // It reads from and writes to ~/.pi/auth.json with file-level locking
 // to prevent concurrent refresh races.
 type Store struct {
-	path    string                 // path to auth.json
-	entries map[string]*Credential // provider ID → credential
+	path     string                 // path to auth.json
+	entries  map[string]*Credential // provider ID → credential
+	lockFile *os.File               // held while locked; nil when unlocked
 }
 
 // NewStore creates a Store backed by the given file path.
@@ -131,10 +132,10 @@ func (s *Store) Providers() []string {
 	return out
 }
 
-// WithLock executes fn while holding an exclusive file lock on the auth store.
-// This prevents concurrent processes from racing on token refresh.
+// Lock acquires an exclusive file lock on the auth store.
+// Callers must call Unlock when done (typically via defer).
 // The lock file is adjacent to auth.json (auth.json.lock).
-func (s *Store) WithLock(fn func() error) error {
+func (s *Store) Lock() error {
 	lockPath := s.path + ".lock"
 
 	dir := filepath.Dir(lockPath)
@@ -146,12 +147,31 @@ func (s *Store) WithLock(fn func() error) error {
 	if err != nil {
 		return fmt.Errorf("open lock file: %w", err)
 	}
-	defer f.Close()
 
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		f.Close()
 		return fmt.Errorf("acquire lock: %w", err)
 	}
-	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
 
+	s.lockFile = f
+	return nil
+}
+
+// Unlock releases the file lock acquired by Lock. Safe to call if not locked.
+func (s *Store) Unlock() {
+	if s.lockFile != nil {
+		syscall.Flock(int(s.lockFile.Fd()), syscall.LOCK_UN)
+		s.lockFile.Close()
+		s.lockFile = nil
+	}
+}
+
+// WithLock executes fn while holding an exclusive file lock on the auth store.
+// This prevents concurrent processes from racing on token refresh.
+func (s *Store) WithLock(fn func() error) error {
+	if err := s.Lock(); err != nil {
+		return err
+	}
+	defer s.Unlock()
 	return fn()
 }
