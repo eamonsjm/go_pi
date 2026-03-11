@@ -212,6 +212,57 @@ func TestBuildRequestBody_ThinkingBudgets(t *testing.T) {
 	}
 }
 
+func TestBuildRequestBody_ThinkingBudgetExceedsMaxTokens(t *testing.T) {
+	p := &AnthropicProvider{apiKey: "test"}
+
+	// With default max_tokens (8192), ThinkingHigh budget (32000) exceeds it.
+	// The API requires budget_tokens < max_tokens, so max_tokens must be bumped.
+	req := StreamRequest{
+		Model:         "test-model",
+		Messages:      []Message{NewTextMessage(RoleUser, "think hard")},
+		ThinkingLevel: ThinkingHigh,
+	}
+
+	data, err := p.buildRequestBody(req)
+	if err != nil {
+		t.Fatalf("buildRequestBody failed: %v", err)
+	}
+
+	var body map[string]any
+	json.Unmarshal(data, &body)
+
+	maxTokens := int(body["max_tokens"].(float64))
+	thinking := body["thinking"].(map[string]any)
+	budget := int(thinking["budget_tokens"].(float64))
+
+	if budget >= maxTokens {
+		t.Errorf("budget_tokens (%d) must be < max_tokens (%d)", budget, maxTokens)
+	}
+	if maxTokens != budget+1 {
+		t.Errorf("expected max_tokens=%d, got %d", budget+1, maxTokens)
+	}
+
+	// When caller provides sufficient max_tokens, it should not be changed.
+	req2 := StreamRequest{
+		Model:         "test-model",
+		Messages:      []Message{NewTextMessage(RoleUser, "think hard")},
+		ThinkingLevel: ThinkingHigh,
+		MaxTokens:     64000,
+	}
+
+	data2, err := p.buildRequestBody(req2)
+	if err != nil {
+		t.Fatalf("buildRequestBody failed: %v", err)
+	}
+
+	var body2 map[string]any
+	json.Unmarshal(data2, &body2)
+
+	if int(body2["max_tokens"].(float64)) != 64000 {
+		t.Errorf("expected max_tokens=64000 (caller-specified), got %v", body2["max_tokens"])
+	}
+}
+
 func TestBuildRequestBody_NoThinking(t *testing.T) {
 	p := &AnthropicProvider{apiKey: "test"}
 	temp := 0.7

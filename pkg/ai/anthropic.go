@@ -193,6 +193,11 @@ func (p *AnthropicProvider) buildRequestBody(req StreamRequest) ([]byte, error) 
 	// Thinking.
 	if req.ThinkingLevel != "" && req.ThinkingLevel != ThinkingOff {
 		budget := thinkingBudget(req.ThinkingLevel)
+		// Anthropic requires budget_tokens < max_tokens.
+		if budget >= maxTokens {
+			maxTokens = budget + 1
+			body.MaxTokens = maxTokens
+		}
 		body.Thinking = &anthThinking{
 			Type:         "enabled",
 			BudgetTokens: budget,
