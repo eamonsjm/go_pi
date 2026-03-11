@@ -66,7 +66,7 @@ func NewChatView() *ChatView {
 	vp.YPosition = 0
 
 	r, _ := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
+		glamour.WithStandardStyle("dark"),
 		glamour.WithWordWrap(78),
 	)
 
@@ -89,7 +89,7 @@ func (c *ChatView) SetSize(w, h int) {
 		wrap = 40
 	}
 	r, err := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
+		glamour.WithStandardStyle("dark"),
 		glamour.WithWordWrap(wrap),
 	)
 	if err == nil {
