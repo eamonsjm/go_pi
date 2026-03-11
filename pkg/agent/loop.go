@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"sync"
 
 	"github.com/ejm/go_pi/pkg/ai"
@@ -389,12 +390,12 @@ func (a *AgentLoop) appendMessage(msg ai.Message) {
 }
 
 // emit sends an event to the events channel. It never blocks — if the channel
-// is full the event is dropped (the buffer is large enough that this should
-// not happen under normal conditions).
+// is full the event is dropped and a warning is logged.
 func (a *AgentLoop) emit(event AgentEvent) {
 	select {
 	case a.events <- event:
 	default:
+		log.Printf("agent: event dropped (type=%s), events channel buffer full", event.Type)
 	}
 }
 
