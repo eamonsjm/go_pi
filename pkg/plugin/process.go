@@ -66,6 +66,7 @@ func startPlugin(name, path string) (*PluginProcess, error) {
 	// for debugging purposes.
 
 	if err := cmd.Start(); err != nil {
+		stdoutPipe.Close()
 		stdinPipe.Close()
 		return nil, fmt.Errorf("starting plugin %s: %w", name, err)
 	}
