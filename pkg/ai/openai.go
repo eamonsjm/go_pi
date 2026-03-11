@@ -319,7 +319,8 @@ func (p *OpenAIProvider) readSSEStream(ctx context.Context, body io.ReadCloser, 
 			continue
 		}
 
-		delta := chunk.Choices[0].Delta
+		choice := chunk.Choices[0]
+		delta := choice.Delta
 
 		// Text content delta.
 		if delta.Content != nil && *delta.Content != "" {
@@ -360,8 +361,8 @@ func (p *OpenAIProvider) readSSEStream(ctx context.Context, body io.ReadCloser, 
 		}
 
 		// Check for finish_reason to close open tool calls.
-		if chunk.Choices[0].FinishReason != nil {
-			reason := *chunk.Choices[0].FinishReason
+		if choice.FinishReason != nil {
+			reason := *choice.FinishReason
 			if reason == "tool_calls" || reason == "stop" {
 				for idx, state := range toolCalls {
 					ch <- StreamEvent{

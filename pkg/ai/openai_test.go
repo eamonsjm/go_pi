@@ -449,6 +449,68 @@ data: [DONE]
 	}
 }
 
+func TestOpenAIStream_EmptyChoices(t *testing.T) {
+	// Verify that chunks with empty or missing Choices don't cause panics.
+	// The usage-only chunk and the interspersed empty-choices chunk must be
+	// silently skipped without a nil-pointer dereference.
+	sse := `data: {"id":"chatcmpl-e","choices":[{"index":0,"delta":{"role":"assistant","content":"hi"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-e","choices":[],"usage":null}
+
+data: {"id":"chatcmpl-e","choices":[{"index":0,"delta":{"content":" there"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-e","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+data: {"id":"chatcmpl-e","choices":[],"usage":{"prompt_tokens":5,"completion_tokens":2,"total_tokens":7}}
+
+data: [DONE]
+
+`
+	srv, p := newTestOpenAIServer(t, sse)
+	defer srv.Close()
+
+	ch, err := p.Stream(context.Background(), StreamRequest{
+		Model:    "gpt-4o",
+		Messages: []Message{NewTextMessage(RoleUser, "hi")},
+	})
+	if err != nil {
+		t.Fatalf("Stream failed: %v", err)
+	}
+
+	events := collectEvents(ch)
+
+	// Collect text deltas — should get "hi" and " there".
+	var textParts []string
+	for _, e := range events {
+		if e.Type == EventTextDelta {
+			textParts = append(textParts, e.Delta)
+		}
+	}
+	fullText := strings.Join(textParts, "")
+	if fullText != "hi there" {
+		t.Errorf("expected text %q, got %q", "hi there", fullText)
+	}
+
+	// Should end cleanly with usage.
+	last := events[len(events)-1]
+	if last.Type != EventMessageEnd {
+		t.Errorf("expected last event to be message_end, got %v", last.Type)
+	}
+	if last.Usage == nil {
+		t.Fatal("expected usage in message_end")
+	}
+	if last.Usage.InputTokens != 5 || last.Usage.OutputTokens != 2 {
+		t.Errorf("expected usage 5/2, got %d/%d", last.Usage.InputTokens, last.Usage.OutputTokens)
+	}
+
+	// No error events should be present.
+	for _, e := range events {
+		if e.Type == EventError {
+			t.Errorf("unexpected error event: %v", e.Error)
+		}
+	}
+}
+
 func TestOpenAIStream_HTTPError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
