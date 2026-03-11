@@ -3,6 +3,7 @@ package tui
 import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ejm/go_pi/pkg/agent"
+	"github.com/ejm/go_pi/pkg/session"
 )
 
 // ---------------------------------------------------------------------------
@@ -35,6 +36,38 @@ type ToolExecEndMsg struct {
 	Name    string
 	Result  string
 	IsError bool
+}
+
+// CommandResultMsg carries the result of a slash command execution back to the
+// chat view (e.g. informational output, errors, etc.).
+type CommandResultMsg struct {
+	Text    string
+	IsError bool
+}
+
+// ---------------------------------------------------------------------------
+// Session messages
+// ---------------------------------------------------------------------------
+
+// sessionCreatedMsg is sent when a new session is created.
+type sessionCreatedMsg struct {
+	id string
+}
+
+// sessionLoadedMsg is sent when a session is loaded from disk.
+type sessionLoadedMsg struct {
+	id           string
+	messageCount int
+}
+
+// sessionPickerShowMsg carries the list of sessions to display for /resume.
+type sessionPickerShowMsg struct {
+	sessions []session.SessionInfo
+}
+
+// sessionPickerSelectMsg is sent when a session is selected from the picker.
+type sessionPickerSelectMsg struct {
+	id string
 }
 
 // WindowSizeMsg re-exports the Bubble Tea window-size message for convenience.

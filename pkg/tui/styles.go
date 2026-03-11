@@ -124,4 +124,8 @@ var (
 	ErrorMsgStyle = lipgloss.NewStyle().
 			Foreground(ColorError).
 			Bold(true)
+
+	SystemMsgStyle = lipgloss.NewStyle().
+			Foreground(ColorMuted).
+			Italic(true)
 )

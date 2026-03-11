@@ -25,6 +25,8 @@ const (
 	blockToolCall
 	blockToolResult
 	blockError
+	blockSystem
+	blockCompaction
 )
 
 type chatBlock struct {
@@ -156,6 +158,15 @@ func (c *ChatView) HandleEvent(ev agent.AgentEvent) bool {
 		// ensuring next text delta starts a fresh block.
 		return false
 
+	// ---- compaction ----
+	case agent.EventCompaction:
+		c.blocks = append(c.blocks, chatBlock{
+			kind:      blockCompaction,
+			text:      ev.Delta,
+			collapsed: true,
+		})
+		return true
+
 	// ---- errors ----
 	case agent.EventAgentError:
 		msg := "unknown error"
@@ -179,6 +190,21 @@ func (c *ChatView) AddUserMessage(text string) {
 		kind: blockUser,
 		text: text,
 	})
+	c.rebuildContent()
+}
+
+// AddSystemMessage appends a system/informational message block.
+func (c *ChatView) AddSystemMessage(text string) {
+	c.blocks = append(c.blocks, chatBlock{
+		kind: blockSystem,
+		text: text,
+	})
+	c.rebuildContent()
+}
+
+// ClearBlocks removes all chat blocks and resets the viewport.
+func (c *ChatView) ClearBlocks() {
+	c.blocks = nil
 	c.rebuildContent()
 }
 
@@ -250,6 +276,10 @@ func (c *ChatView) rebuildContent() {
 			c.renderToolCall(&sb, blk)
 		case blockError:
 			c.renderError(&sb, blk)
+		case blockSystem:
+			c.renderSystem(&sb, blk)
+		case blockCompaction:
+			c.renderCompaction(&sb, blk)
 		}
 	}
 
@@ -324,6 +354,50 @@ func (c *ChatView) renderToolCall(sb *strings.Builder, blk chatBlock) {
 
 func (c *ChatView) renderError(sb *strings.Builder, blk chatBlock) {
 	sb.WriteString(ErrorMsgStyle.Render("Error: "+blk.text) + "\n")
+}
+
+func (c *ChatView) renderSystem(sb *strings.Builder, blk chatBlock) {
+	sb.WriteString(SystemMsgStyle.Render(blk.text) + "\n")
+}
+
+func (c *ChatView) renderCompaction(sb *strings.Builder, blk chatBlock) {
+	header := SystemMsgStyle.Render("--- Context compacted ---")
+	sb.WriteString(header + "\n")
+	if blk.collapsed {
+		lines := strings.Count(blk.text, "\n") + 1
+		summary := MutedStyle.Render(fmt.Sprintf("  (%d lines — press 'c' to expand)", lines))
+		sb.WriteString(summary + "\n")
+	} else {
+		rendered := blk.text
+		if c.renderer != nil {
+			if md, err := c.renderer.Render(blk.text); err == nil {
+				rendered = strings.TrimRight(md, "\n")
+			}
+		}
+		sb.WriteString(rendered + "\n")
+	}
+}
+
+// AddCompactionBlock replaces all existing blocks with a compaction summary block.
+func (c *ChatView) AddCompactionBlock(summary string) {
+	c.blocks = nil
+	c.blocks = append(c.blocks, chatBlock{
+		kind:      blockCompaction,
+		text:      summary,
+		collapsed: true,
+	})
+	c.rebuildContent()
+}
+
+// ToggleCompaction toggles the collapsed state of the most recent compaction block.
+func (c *ChatView) ToggleCompaction() {
+	for i := len(c.blocks) - 1; i >= 0; i-- {
+		if c.blocks[i].kind == blockCompaction {
+			c.blocks[i].collapsed = !c.blocks[i].collapsed
+			c.rebuildContent()
+			return
+		}
+	}
 }
 
 // lastBlock returns a pointer to the last block of the given kind, or nil.

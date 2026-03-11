@@ -89,6 +89,13 @@ func (a *AgentLoop) SetThinking(level ai.ThinkingLevel) {
 	a.thinking = level
 }
 
+// SetMaxTokens changes the max output tokens for subsequent LLM calls.
+func (a *AgentLoop) SetMaxTokens(n int) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.maxTokens = n
+}
+
 // SetSystemPrompt updates the system prompt for subsequent turns.
 func (a *AgentLoop) SetSystemPrompt(prompt string) {
 	a.mu.Lock()

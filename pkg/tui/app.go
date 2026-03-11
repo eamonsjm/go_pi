@@ -7,6 +7,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ejm/go_pi/pkg/agent"
 	"github.com/ejm/go_pi/pkg/ai"
+	"github.com/ejm/go_pi/pkg/config"
+	"github.com/ejm/go_pi/pkg/session"
 )
 
 // ---------------------------------------------------------------------------
@@ -16,10 +18,14 @@ import (
 // App is the top-level Bubble Tea model for the coding agent TUI.
 type App struct {
 	// Sub-components.
-	chat   *ChatView
-	editor *Editor
-	header *Header
-	footer *Footer
+	chat          *ChatView
+	editor        *Editor
+	header        *Header
+	footer        *Footer
+	modelSelector *ModelSelector
+
+	// Slash command registry.
+	commands *CommandRegistry
 
 	// Terminal dimensions.
 	width  int
@@ -29,9 +35,10 @@ type App struct {
 	agentRunning bool
 
 	// Callbacks wired by the caller that owns the agent loop.
-	onSubmit func(text string)
-	onCancel func()
-	onSteer  func(text string)
+	onSubmit      func(text string)
+	onCancel      func()
+	onSteer       func(text string)
+	onModelChange func(provider, model string)
 
 	// quitting tracks whether we are in the process of exiting.
 	quitting bool
@@ -39,12 +46,24 @@ type App struct {
 
 // NewApp creates a fully initialised App ready to be passed to tea.NewProgram.
 func NewApp() *App {
-	return &App{
-		chat:   NewChatView(),
-		editor: NewEditor(),
-		header: NewHeader(),
-		footer: NewFooter(),
+	reg := NewCommandRegistry()
+	editor := NewEditor()
+	editor.SetCommands(reg)
+
+	app := &App{
+		chat:          NewChatView(),
+		editor:        editor,
+		header:        NewHeader(),
+		footer:        NewFooter(),
+		modelSelector: NewModelSelector(),
+		commands:      reg,
 	}
+
+	// Register the /model command.
+	modelCmd := RegisterModelCommand()
+	reg.Register(&modelCmd)
+
+	return app
 }
 
 // SetCallbacks wires up the functions that bridge the TUI to the agent loop.
@@ -72,6 +91,30 @@ func (a *App) SetThinking(level string) {
 // SetSession updates the session name in the header.
 func (a *App) SetSession(name string) {
 	a.header.SetSession(name)
+}
+
+// SetModelChangeCallback sets the function called when the user switches the
+// AI model via the /model command. The callback receives the provider name
+// (may be empty if unknown) and the model identifier.
+func (a *App) SetModelChangeCallback(fn func(provider, model string)) {
+	a.onModelChange = fn
+}
+
+// RegisterCommand adds a slash command to the app's command registry. Commands
+// are available to the user by typing /name in the editor.
+func (a *App) RegisterCommand(cmd *SlashCommand) {
+	a.commands.Register(cmd)
+}
+
+// RegisterBuiltinCommands registers all built-in slash commands that need
+// access to external dependencies (agent loop, session manager, config).
+func (a *App) RegisterBuiltinCommands(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg *config.Config) {
+	a.RegisterCommand(NewCompactCommand(agentLoop))
+	a.RegisterCommand(NewSettingsCommand(cfg, agentLoop, a.header))
+	a.RegisterCommand(NewNewSessionCommand(agentLoop, sessionMgr, a.chat, a.header))
+	a.RegisterCommand(NewResumeCommand(agentLoop, sessionMgr, a.chat, a.header))
+	a.RegisterCommand(NewSessionInfoCommand(sessionMgr, a.chat))
+	a.RegisterCommand(NewNameCommand(sessionMgr, a.header, a.chat))
 }
 
 // ---------------------------------------------------------------------------
@@ -132,6 +175,69 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil
 
+	case editorCommandMsg:
+		cmd, ok := a.commands.Get(msg.name)
+		if !ok {
+			a.chat.AddUserMessage(fmt.Sprintf("Unknown command: /%s", msg.name))
+			return a, nil
+		}
+		return a, cmd.Execute(msg.args)
+
+	case CommandResultMsg:
+		if msg.IsError {
+			a.chat.AddSystemMessage("Error: " + msg.Text)
+		} else {
+			a.chat.AddSystemMessage(msg.Text)
+		}
+		return a, nil
+
+	case settingsDisplayMsg:
+		a.chat.AddSystemMessage(msg.text)
+		return a, nil
+
+	case settingsUpdatedMsg:
+		a.chat.AddSystemMessage(fmt.Sprintf("Updated %s to %s", msg.key, msg.value))
+		return a, nil
+
+	// ---- Model selector events ----
+	case showModelSelectorMsg:
+		a.modelSelector.SetSize(a.width, a.height)
+		a.modelSelector.Show()
+		a.editor.Blur()
+		return a, nil
+
+	case modelSelectedMsg:
+		a.modelSelector.Hide()
+		a.header.SetModel(msg.model)
+		a.chat.AddSystemMessage(fmt.Sprintf("Switched to model: %s", msg.model))
+		a.editor.Focus()
+		if a.onModelChange != nil {
+			a.onModelChange(msg.provider, msg.model)
+		}
+		return a, nil
+
+	case modelCancelledMsg:
+		a.modelSelector.Hide()
+		a.editor.Focus()
+		return a, nil
+
+	// ---- Compaction events ----
+	case compactionStartMsg:
+		a.chat.AddSystemMessage("Compacting conversation...")
+		return a, nil
+
+	case compactionDoneMsg:
+		a.chat.AddCompactionBlock(msg.summary)
+		return a, nil
+
+	case compactionErrorMsg:
+		a.chat.HandleEvent(agent.AgentEvent{
+			Type:  agent.EventAgentError,
+			Error: msg.err,
+		})
+		a.chat.rebuildContent()
+		return a, nil
+
 	case editorSteerMsg:
 		if a.onSteer != nil {
 			a.onSteer(msg.text)
@@ -150,6 +256,15 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// ---- Keyboard shortcuts handled at app level ----
 	case tea.KeyMsg:
+		// When the model selector overlay is visible, route all keys to it.
+		if a.modelSelector.Visible() {
+			cmd := a.modelSelector.Update(msg)
+			if cmd != nil {
+				return a, cmd
+			}
+			return a, nil
+		}
+
 		switch msg.String() {
 		case "t":
 			// Toggle thinking expand/collapse (only when not typing).
@@ -194,12 +309,19 @@ func (a *App) View() string {
 	editorView := a.editor.View()
 	footerView := a.footer.View()
 
-	return fmt.Sprintf("%s\n%s\n%s\n%s",
+	base := fmt.Sprintf("%s\n%s\n%s\n%s",
 		headerView,
 		chatView,
 		editorView,
 		footerView,
 	)
+
+	// If the model selector is visible, render it as an overlay.
+	if a.modelSelector.Visible() {
+		return a.modelSelector.View()
+	}
+
+	return base
 }
 
 // ---------------------------------------------------------------------------
@@ -249,6 +371,7 @@ func (a *App) layout() {
 	}
 
 	a.chat.SetSize(a.width, chatH)
+	a.modelSelector.SetSize(a.width, a.height)
 }
 
 // handleStateTransition updates agentRunning and editor state based on events.

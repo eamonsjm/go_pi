@@ -16,6 +16,7 @@ const (
 	EventToolExecEnd       AgentEventType = "tool_exec_end"
 	EventUsageUpdate       AgentEventType = "usage_update"
 	EventAgentError        AgentEventType = "agent_error"
+	EventCompaction        AgentEventType = "compaction"
 )
 
 // AgentEvent represents an event emitted during agent execution.
