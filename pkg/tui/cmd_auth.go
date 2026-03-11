@@ -10,16 +10,16 @@ import (
 	"github.com/ejm/go_pi/pkg/auth"
 )
 
-// authDeviceCodeMsg is sent when the device code has been obtained (Phase 1).
-// The handler shows the URL and code to the user, then starts polling (Phase 2).
-type authDeviceCodeMsg struct {
+// authOAuthMsg is sent when the authorization URL is ready (Phase 1).
+// The handler shows the URL to the user, then starts waiting for the
+// browser callback (Phase 2).
+type authOAuthMsg struct {
 	providerName string
 	url          string
-	userCode     string
-	pollCmd      tea.Cmd
+	waitCmd      tea.Cmd
 }
 
-// NewLoginCommand creates the /login slash command for OAuth device code login.
+// NewLoginCommand creates the /login slash command for OAuth browser login.
 func NewLoginCommand(store *auth.Store, resolver *auth.Resolver) *SlashCommand {
 	return &SlashCommand{
 		Name:        "login",
@@ -45,12 +45,12 @@ func NewLoginCommand(store *auth.Store, resolver *auth.Resolver) *SlashCommand {
 				}
 			}
 
-			// Phase 1: Request device code (fast HTTP call).
-			// Returns authDeviceCodeMsg which triggers Phase 2 in app.Update.
+			// Phase 1: Start auth flow (opens local callback server).
+			// Returns authOAuthMsg which triggers Phase 2 in app.Update.
 			return func() tea.Msg {
 				anthProv, ok := oauthProv.(*auth.AnthropicOAuth)
 				if !ok {
-					// Non-device-code provider: run full Login flow in one shot.
+					// Non-browser provider: run full Login flow in one shot.
 					cred, err := oauthProv.Login(auth.OAuthCallbacks{})
 					if err != nil {
 						return CommandResultMsg{
@@ -70,8 +70,8 @@ func NewLoginCommand(store *auth.Store, resolver *auth.Resolver) *SlashCommand {
 					}
 				}
 
-				// Anthropic: two-phase device code flow.
-				deviceResp, pkce, err := anthProv.RequestDeviceCode()
+				// Anthropic: two-phase authorization code + PKCE flow.
+				session, err := anthProv.StartAuthFlow()
 				if err != nil {
 					return CommandResultMsg{
 						Text:    fmt.Sprintf("Login failed: %v", err),
@@ -79,17 +79,11 @@ func NewLoginCommand(store *auth.Store, resolver *auth.Resolver) *SlashCommand {
 					}
 				}
 
-				interval := time.Duration(deviceResp.Interval) * time.Second
-				timeout := time.Duration(deviceResp.ExpiresIn) * time.Second
-
-				return authDeviceCodeMsg{
+				return authOAuthMsg{
 					providerName: oauthProv.Name(),
-					url:          deviceResp.VerificationURI,
-					userCode:     deviceResp.UserCode,
-					pollCmd: func() tea.Msg {
-						cred, err := anthProv.ExchangeDeviceCode(
-							deviceResp.DeviceCode, pkce.Verifier,
-							interval, timeout)
+					url:          session.AuthorizeURL,
+					waitCmd: func() tea.Msg {
+						cred, err := anthProv.ExchangeAuthCode(session, 0)
 						if err != nil {
 							return CommandResultMsg{
 								Text:    fmt.Sprintf("Login failed: %v", err),

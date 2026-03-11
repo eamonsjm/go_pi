@@ -220,11 +220,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.chat.AddPluginMessage(msg.PluginName, msg.Content, msg.IsLog, msg.LogLevel)
 		return a, nil
 
-	case authDeviceCodeMsg:
+	case authOAuthMsg:
 		a.chat.AddSystemMessage(fmt.Sprintf(
-			"Login to %s\n\n  Open: %s\n  Code: %s\n\nWaiting for authorization...",
-			msg.providerName, msg.url, msg.userCode))
-		return a, msg.pollCmd
+			"Login to %s\n\n  Open this URL in your browser:\n  %s\n\nWaiting for authorization...",
+			msg.providerName, msg.url))
+		return a, msg.waitCmd
 
 	case settingsDisplayMsg:
 		a.chat.AddSystemMessage(msg.text)

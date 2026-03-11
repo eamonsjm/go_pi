@@ -1,9 +1,13 @@
 package auth
 
 import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -11,16 +15,18 @@ import (
 )
 
 const (
-	defaultAnthropicAuthURL   = "https://console.anthropic.com"
-	defaultAnthropicClientID  = "pi-cli"
-	defaultDevicePollInterval = 5 // seconds
+	defaultAnthropicAuthURL  = "https://console.anthropic.com"
+	defaultAnthropicClientID = "pi-cli"
+	defaultAnthropicScope    = "org:create_api_key user:profile user:inference"
+	defaultAuthTimeout       = 5 * time.Minute
 )
 
 // AnthropicOAuth implements OAuthProvider for Anthropic using
-// OAuth 2.0 device authorization grant (RFC 8628) with PKCE (RFC 7636).
+// OAuth 2.0 authorization code grant with PKCE (RFC 7636).
 type AnthropicOAuth struct {
 	AuthURL    string
 	ClientID   string
+	Scope      string
 	HTTPClient *http.Client
 }
 
@@ -29,6 +35,7 @@ func NewAnthropicOAuth() *AnthropicOAuth {
 	return &AnthropicOAuth{
 		AuthURL:    defaultAnthropicAuthURL,
 		ClientID:   defaultAnthropicClientID,
+		Scope:      defaultAnthropicScope,
 		HTTPClient: &http.Client{Timeout: 30 * time.Second},
 	}
 }
@@ -36,13 +43,24 @@ func NewAnthropicOAuth() *AnthropicOAuth {
 func (a *AnthropicOAuth) ID() string   { return "anthropic" }
 func (a *AnthropicOAuth) Name() string { return "Anthropic (Claude)" }
 
-// DeviceCodeResponse holds the response from the device authorization endpoint.
-type DeviceCodeResponse struct {
-	DeviceCode      string `json:"device_code"`
-	UserCode        string `json:"user_code"`
-	VerificationURI string `json:"verification_uri"`
-	ExpiresIn       int    `json:"expires_in"`
-	Interval        int    `json:"interval"`
+// AuthSession holds state for an in-progress authorization code flow.
+type AuthSession struct {
+	AuthorizeURL string
+	PKCE         *PKCEChallenge
+	State        string
+	RedirectURI  string
+
+	listener net.Listener
+	codeCh   chan string
+	errCh    chan error
+	server   *http.Server
+}
+
+// Close shuts down the callback server and releases the port.
+func (s *AuthSession) Close() {
+	if s.server != nil {
+		s.server.Shutdown(context.Background())
+	}
 }
 
 // tokenResponse is the JSON response from the token endpoint.
@@ -54,129 +72,155 @@ type tokenResponse struct {
 	APIKey       string `json:"api_key,omitempty"`
 }
 
-// tokenErrorResponse is the error response from the token endpoint during polling.
+// tokenErrorResponse is the error response from the token endpoint.
 type tokenErrorResponse struct {
 	Error            string `json:"error"`
 	ErrorDescription string `json:"error_description"`
 }
 
-// RequestDeviceCode initiates the device authorization flow with PKCE.
-// Returns the device code response and PKCE challenge (caller needs the
-// verifier for ExchangeDeviceCode).
-func (a *AnthropicOAuth) RequestDeviceCode() (*DeviceCodeResponse, *PKCEChallenge, error) {
+// StartAuthFlow initiates the authorization code flow with PKCE.
+// It starts a local HTTP server to receive the callback and returns an
+// AuthSession containing the authorization URL to open in a browser.
+func (a *AnthropicOAuth) StartAuthFlow() (*AuthSession, error) {
 	pkce, err := GeneratePKCE()
 	if err != nil {
-		return nil, nil, fmt.Errorf("generate PKCE: %w", err)
+		return nil, fmt.Errorf("generate PKCE: %w", err)
+	}
+
+	state, err := randomHex(16)
+	if err != nil {
+		return nil, fmt.Errorf("generate state: %w", err)
+	}
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return nil, fmt.Errorf("start callback server: %w", err)
+	}
+
+	port := listener.Addr().(*net.TCPAddr).Port
+	redirectURI := fmt.Sprintf("http://localhost:%d/callback", port)
+
+	params := url.Values{
+		"client_id":             {a.ClientID},
+		"response_type":        {"code"},
+		"redirect_uri":         {redirectURI},
+		"scope":                {a.Scope},
+		"code_challenge":        {pkce.Challenge},
+		"code_challenge_method": {"S256"},
+		"state":                {state},
+	}
+
+	authorizeURL := a.AuthURL + "/oauth/authorize?" + params.Encode()
+
+	session := &AuthSession{
+		AuthorizeURL: authorizeURL,
+		PKCE:         pkce,
+		State:        state,
+		RedirectURI:  redirectURI,
+		listener:     listener,
+		codeCh:       make(chan string, 1),
+		errCh:        make(chan error, 1),
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
+		if errMsg := r.URL.Query().Get("error"); errMsg != "" {
+			desc := r.URL.Query().Get("error_description")
+			if desc == "" {
+				desc = errMsg
+			}
+			http.Error(w, "Authorization failed. You can close this tab.", http.StatusBadRequest)
+			session.errCh <- fmt.Errorf("authorization error: %s", desc)
+			return
+		}
+
+		if r.URL.Query().Get("state") != state {
+			http.Error(w, "Invalid state parameter.", http.StatusBadRequest)
+			session.errCh <- fmt.Errorf("state mismatch")
+			return
+		}
+
+		code := r.URL.Query().Get("code")
+		if code == "" {
+			http.Error(w, "Missing authorization code.", http.StatusBadRequest)
+			session.errCh <- fmt.Errorf("missing authorization code in callback")
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/html")
+		fmt.Fprint(w, "<html><body><h2>Authorization successful!</h2><p>You can close this tab and return to the terminal.</p></body></html>")
+		session.codeCh <- code
+	})
+
+	session.server = &http.Server{Handler: mux}
+	go session.server.Serve(listener)
+
+	return session, nil
+}
+
+// ExchangeAuthCode waits for the browser callback and exchanges the
+// authorization code for tokens. The session's callback server is shut
+// down when this method returns.
+func (a *AnthropicOAuth) ExchangeAuthCode(session *AuthSession, timeout time.Duration) (*Credential, error) {
+	defer session.Close()
+
+	if timeout <= 0 {
+		timeout = defaultAuthTimeout
+	}
+
+	var code string
+	select {
+	case code = <-session.codeCh:
+	case err := <-session.errCh:
+		return nil, err
+	case <-time.After(timeout):
+		return nil, fmt.Errorf("authorization timed out — no response within %v", timeout)
 	}
 
 	form := url.Values{
-		"client_id":             {a.ClientID},
-		"scope":                 {"api"},
-		"code_challenge":        {pkce.Challenge},
-		"code_challenge_method": {"S256"},
+		"grant_type":    {"authorization_code"},
+		"code":          {code},
+		"client_id":     {a.ClientID},
+		"redirect_uri":  {session.RedirectURI},
+		"code_verifier": {session.PKCE.Verifier},
 	}
 
-	resp, err := a.HTTPClient.PostForm(a.AuthURL+"/oauth/authorize/device", form)
+	resp, err := a.HTTPClient.PostForm(a.tokenURL(), form)
 	if err != nil {
-		return nil, nil, fmt.Errorf("HTTP request: %w", err)
+		return nil, fmt.Errorf("token exchange: %w", err)
 	}
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		return nil, nil, fmt.Errorf("device code request failed (%d): %s",
+		return nil, fmt.Errorf("token exchange failed (%d): %s",
 			resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
-	var result DeviceCodeResponse
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, nil, fmt.Errorf("parse response: %w", err)
+	var token tokenResponse
+	if err := json.Unmarshal(body, &token); err != nil {
+		return nil, fmt.Errorf("parse token response: %w", err)
 	}
-	return &result, pkce, nil
+	return a.tokenToCredential(&token), nil
 }
 
-// ExchangeDeviceCode polls the token endpoint until the user completes
-// authorization or the device code expires.
-func (a *AnthropicOAuth) ExchangeDeviceCode(deviceCode, codeVerifier string, interval, timeout time.Duration) (*Credential, error) {
-	if interval <= 0 {
-		interval = time.Duration(defaultDevicePollInterval) * time.Second
-	}
-	deadline := time.Now().Add(timeout)
-
-	for {
-		if time.Now().After(deadline) {
-			return nil, fmt.Errorf("authorization timed out — device code expired")
-		}
-
-		time.Sleep(interval)
-
-		form := url.Values{
-			"grant_type":    {"urn:ietf:params:oauth:grant-type:device_code"},
-			"device_code":   {deviceCode},
-			"client_id":     {a.ClientID},
-			"code_verifier": {codeVerifier},
-		}
-
-		resp, err := a.HTTPClient.PostForm(a.AuthURL+"/oauth/token", form)
-		if err != nil {
-			return nil, fmt.Errorf("poll request: %w", err)
-		}
-
-		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-
-		if resp.StatusCode == http.StatusOK {
-			var token tokenResponse
-			if err := json.Unmarshal(body, &token); err != nil {
-				return nil, fmt.Errorf("parse token response: %w", err)
-			}
-			return a.tokenToCredential(&token), nil
-		}
-
-		var errResp tokenErrorResponse
-		if err := json.Unmarshal(body, &errResp); err != nil {
-			return nil, fmt.Errorf("parse error response (%d): %s",
-				resp.StatusCode, string(body))
-		}
-
-		switch errResp.Error {
-		case "authorization_pending":
-			continue
-		case "slow_down":
-			interval += 5 * time.Second
-			continue
-		case "expired_token":
-			return nil, fmt.Errorf("device code expired — please retry /login")
-		case "access_denied":
-			return nil, fmt.Errorf("authorization denied by user")
-		default:
-			return nil, fmt.Errorf("token error: %s: %s",
-				errResp.Error, errResp.ErrorDescription)
-		}
-	}
-}
-
-// Login implements OAuthProvider.Login by running the full device code + PKCE
-// flow, using callbacks for user interaction.
+// Login implements OAuthProvider.Login by running the full authorization code
+// + PKCE flow, using callbacks for user interaction.
 func (a *AnthropicOAuth) Login(cb OAuthCallbacks) (*Credential, error) {
-	deviceResp, pkce, err := a.RequestDeviceCode()
+	session, err := a.StartAuthFlow()
 	if err != nil {
 		return nil, err
 	}
 
 	if cb.OnAuth != nil {
-		cb.OnAuth(deviceResp.VerificationURI,
-			fmt.Sprintf("Enter the code: %s", deviceResp.UserCode))
+		cb.OnAuth(session.AuthorizeURL,
+			"Open this URL in your browser to authorize")
 	}
 	if cb.OnProgress != nil {
 		cb.OnProgress("Waiting for authorization...")
 	}
 
-	interval := time.Duration(deviceResp.Interval) * time.Second
-	timeout := time.Duration(deviceResp.ExpiresIn) * time.Second
-
-	cred, err := a.ExchangeDeviceCode(
-		deviceResp.DeviceCode, pkce.Verifier, interval, timeout)
+	cred, err := a.ExchangeAuthCode(session, defaultAuthTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -199,7 +243,7 @@ func (a *AnthropicOAuth) RefreshToken(cred *Credential) (*Credential, error) {
 		"client_id":     {a.ClientID},
 	}
 
-	resp, err := a.HTTPClient.PostForm(a.AuthURL+"/oauth/token", form)
+	resp, err := a.HTTPClient.PostForm(a.tokenURL(), form)
 	if err != nil {
 		return nil, fmt.Errorf("refresh request: %w", err)
 	}
@@ -234,6 +278,11 @@ func (a *AnthropicOAuth) GetAPIKey(cred *Credential) string {
 	return cred.AccessToken
 }
 
+// tokenURL returns the token endpoint URL.
+func (a *AnthropicOAuth) tokenURL() string {
+	return a.AuthURL + "/v1/oauth/token"
+}
+
 // tokenToCredential converts a token response to a Credential.
 func (a *AnthropicOAuth) tokenToCredential(token *tokenResponse) *Credential {
 	cred := &Credential{
@@ -246,4 +295,12 @@ func (a *AnthropicOAuth) tokenToCredential(token *tokenResponse) *Credential {
 		cred.Key = token.APIKey
 	}
 	return cred
+}
+
+func randomHex(n int) (string, error) {
+	buf := make([]byte, n)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(buf), nil
 }
