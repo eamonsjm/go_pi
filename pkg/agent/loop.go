@@ -177,6 +177,13 @@ func (a *AgentLoop) run(ctx context.Context) error {
 		toolCalls := assistantMsg.GetToolCalls()
 		if len(toolCalls) == 0 {
 			// No tool calls — the model is done.
+			// Check for a follow-up message before fully stopping.
+			select {
+			case followUp := <-a.followUpCh:
+				a.appendMessage(ai.NewTextMessage(ai.RoleUser, followUp))
+				continue
+			default:
+			}
 			break
 		}
 
@@ -218,14 +225,6 @@ func (a *AgentLoop) run(ctx context.Context) error {
 			}
 		}
 		// Loop back to send tool results (or steering message) to the model.
-	}
-
-	// Check for follow-up messages before fully stopping.
-	select {
-	case followUp := <-a.followUpCh:
-		a.appendMessage(ai.NewTextMessage(ai.RoleUser, followUp))
-		return a.run(ctx)
-	default:
 	}
 
 	return nil
