@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -217,7 +218,7 @@ func buildSystemPrompt() string {
 	sb.WriteString("You help with software engineering tasks: writing code, debugging, explaining, refactoring.\n\n")
 	sb.WriteString("## Environment\n")
 	sb.WriteString(fmt.Sprintf("- Working directory: %s\n", cwd))
-	sb.WriteString(fmt.Sprintf("- Platform: %s\n", os.Getenv("GOOS")))
+	sb.WriteString(fmt.Sprintf("- Platform: %s/%s\n", runtime.GOOS, runtime.GOARCH))
 	sb.WriteString("- You have access to tools: read, write, edit, bash, glob, grep\n\n")
 
 	sb.WriteString("## Guidelines\n")
