@@ -412,6 +412,104 @@ data: [DONE]
 	}
 }
 
+func TestOpenAIStream_ToolCallDeltaBeforeID(t *testing.T) {
+	// Simulate out-of-order: argument delta arrives before the tool call ID chunk.
+	// This must not panic (nil dereference) and should gracefully skip the orphan delta.
+	sse := `data: {"id":"chatcmpl-ooo","choices":[{"index":0,"delta":{"role":"assistant","content":null},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-ooo","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"q\":"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-ooo","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_late","type":"function","function":{"name":"search","arguments":""}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-ooo","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"hello\"}"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-ooo","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}
+
+data: {"id":"chatcmpl-ooo","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}
+
+data: [DONE]
+
+`
+	srv, p := newTestOpenAIServer(t, sse)
+	defer srv.Close()
+
+	ch, err := p.Stream(context.Background(), StreamRequest{
+		Model:    "gpt-4o",
+		Messages: []Message{NewTextMessage(RoleUser, "search hello")},
+	})
+	if err != nil {
+		t.Fatalf("Stream failed: %v", err)
+	}
+
+	events := collectEvents(ch)
+
+	// The orphan delta (before ID) should be dropped; no panic should occur.
+	var toolStartCount, toolDeltaCount, toolEndCount int
+	for _, e := range events {
+		switch e.Type {
+		case EventToolUseStart:
+			toolStartCount++
+			if e.ToolCallID != "call_late" {
+				t.Errorf("expected tool call ID %q, got %q", "call_late", e.ToolCallID)
+			}
+		case EventToolUseDelta:
+			toolDeltaCount++
+		case EventToolUseEnd:
+			toolEndCount++
+		case EventError:
+			t.Fatalf("unexpected error event: %v", e.Error)
+		}
+	}
+
+	if toolStartCount != 1 {
+		t.Errorf("expected 1 tool_use_start, got %d", toolStartCount)
+	}
+	// Only the delta AFTER the ID should be emitted (the orphan is dropped).
+	if toolDeltaCount != 1 {
+		t.Errorf("expected 1 tool_use_delta (orphan dropped), got %d", toolDeltaCount)
+	}
+	if toolEndCount != 1 {
+		t.Errorf("expected 1 tool_use_end, got %d", toolEndCount)
+	}
+}
+
+func TestOpenAIStream_ToolCallMalformedDelta(t *testing.T) {
+	// Deltas for unknown indices with no ID should never panic.
+	sse := `data: {"id":"chatcmpl-mal","choices":[{"index":0,"delta":{"role":"assistant","content":null},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mal","choices":[{"index":0,"delta":{"tool_calls":[{"index":5,"function":{"arguments":"garbage"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mal","choices":[{"index":0,"delta":{"tool_calls":[{"index":99,"function":{"arguments":"more"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mal","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+data: [DONE]
+
+`
+	srv, p := newTestOpenAIServer(t, sse)
+	defer srv.Close()
+
+	ch, err := p.Stream(context.Background(), StreamRequest{
+		Model:    "gpt-4o",
+		Messages: []Message{NewTextMessage(RoleUser, "test")},
+	})
+	if err != nil {
+		t.Fatalf("Stream failed: %v", err)
+	}
+
+	events := collectEvents(ch)
+
+	// No tool events should be emitted — all deltas are for unknown indices.
+	for _, e := range events {
+		switch e.Type {
+		case EventToolUseStart, EventToolUseDelta, EventToolUseEnd:
+			t.Errorf("unexpected tool event %v for orphan delta", e.Type)
+		case EventError:
+			t.Fatalf("unexpected error event: %v", e.Error)
+		}
+	}
+}
+
 func TestOpenAIStream_DoneHandling(t *testing.T) {
 	sse := `data: {"id":"chatcmpl-3","choices":[{"index":0,"delta":{"role":"assistant","content":"ok"},"finish_reason":null}]}
 

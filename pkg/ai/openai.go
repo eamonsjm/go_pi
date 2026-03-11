@@ -329,7 +329,7 @@ func (p *OpenAIProvider) readSSEStream(ctx context.Context, body io.ReadCloser, 
 
 		// Tool call deltas.
 		for _, tc := range delta.ToolCalls {
-			state, exists := toolCalls[tc.Index]
+			state := toolCalls[tc.Index]
 
 			// New tool call starts when we get an ID.
 			if tc.ID != "" {
@@ -342,9 +342,7 @@ func (p *OpenAIProvider) readSSEStream(ctx context.Context, body io.ReadCloser, 
 				}
 			}
 
-			if !exists && state == nil {
-				continue
-			}
+			// Skip deltas that arrive before the tool call ID is known.
 			if state == nil {
 				continue
 			}
