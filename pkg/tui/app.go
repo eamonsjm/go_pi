@@ -209,11 +209,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case PluginInjectMsg:
-		if msg.IsLog {
-			a.chat.AddSystemMessage(fmt.Sprintf("[%s] %s", msg.PluginName, msg.Content))
-		} else {
-			a.chat.AddSystemMessage(msg.Content)
-		}
+		a.chat.AddPluginMessage(msg.PluginName, msg.Content, msg.IsLog, msg.LogLevel)
 		return a, nil
 
 	case settingsDisplayMsg:

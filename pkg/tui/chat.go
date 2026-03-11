@@ -25,6 +25,7 @@ const (
 	blockToolResult
 	blockError
 	blockSystem
+	blockPlugin
 	blockCompaction
 )
 
@@ -37,6 +38,10 @@ type chatBlock struct {
 	toolResult string
 	toolError  bool
 	collapsed  bool // for thinking / tool-result expand/collapse
+
+	// Plugin fields (blockPlugin only).
+	pluginName string
+	logLevel   string // "info", "warn", "error" — non-empty for log messages
 }
 
 // ---------------------------------------------------------------------------
@@ -203,6 +208,26 @@ func (c *ChatView) AddSystemMessage(text string) {
 	c.rebuildContent()
 }
 
+// AddPluginMessage appends a plugin inject or log message block with plugin
+// attribution. Log messages (logLevel non-empty) are rendered with level
+// indicators; inject messages are rendered as markdown content.
+func (c *ChatView) AddPluginMessage(pluginName, content string, isLog bool, logLevel string) {
+	lvl := ""
+	if isLog {
+		lvl = logLevel
+		if lvl == "" {
+			lvl = "info"
+		}
+	}
+	c.blocks = append(c.blocks, chatBlock{
+		kind:       blockPlugin,
+		text:       content,
+		pluginName: pluginName,
+		logLevel:   lvl,
+	})
+	c.rebuildContent()
+}
+
 // ClearBlocks removes all chat blocks and resets the viewport.
 func (c *ChatView) ClearBlocks() {
 	c.blocks = nil
@@ -274,6 +299,8 @@ func (c *ChatView) rebuildContent() {
 			c.renderError(&sb, blk)
 		case blockSystem:
 			c.renderSystem(&sb, blk)
+		case blockPlugin:
+			c.renderPlugin(&sb, blk)
 		case blockCompaction:
 			c.renderCompaction(&sb, blk)
 		}
@@ -356,6 +383,33 @@ func (c *ChatView) renderError(sb *strings.Builder, blk chatBlock) {
 
 func (c *ChatView) renderSystem(sb *strings.Builder, blk chatBlock) {
 	sb.WriteString(SystemMsgStyle.Render(blk.text) + "\n")
+}
+
+func (c *ChatView) renderPlugin(sb *strings.Builder, blk chatBlock) {
+	label := PluginNameStyle.Render(fmt.Sprintf("[%s]", blk.pluginName))
+
+	if blk.logLevel != "" {
+		// Log message — single line with level-appropriate styling.
+		switch blk.logLevel {
+		case "error":
+			sb.WriteString(label + " " + ErrorMsgStyle.Render(blk.text) + "\n")
+		case "warn":
+			sb.WriteString(label + " " + PluginLogWarnStyle.Render(blk.text) + "\n")
+		default:
+			sb.WriteString(label + " " + MutedStyle.Render(blk.text) + "\n")
+		}
+		return
+	}
+
+	// Inject message — render content as markdown with plugin attribution.
+	sb.WriteString(label + "\n")
+	rendered := blk.text
+	if c.renderer != nil {
+		if md, err := c.renderer.Render(blk.text); err == nil {
+			rendered = strings.TrimRight(md, "\n")
+		}
+	}
+	sb.WriteString(rendered + "\n")
 }
 
 func (c *ChatView) renderCompaction(sb *strings.Builder, blk chatBlock) {

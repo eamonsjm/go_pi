@@ -113,6 +113,16 @@ var (
 			Padding(0, 2)
 )
 
+// Plugin message styles.
+var (
+	PluginNameStyle = lipgloss.NewStyle().
+			Foreground(ColorSuccess).
+			Bold(true)
+
+	PluginLogWarnStyle = lipgloss.NewStyle().
+				Foreground(ColorWarning)
+)
+
 // Misc.
 var (
 	SpinnerStyle = lipgloss.NewStyle().
