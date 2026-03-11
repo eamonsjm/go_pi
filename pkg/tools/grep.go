@@ -150,7 +150,6 @@ func (t *GrepTool) Execute(ctx context.Context, params map[string]any) (string, 
 		fileResults, n := searchFile(absPath, re, contextLines, maxGrepMatches)
 		results = fileResults
 		totalMatches = n
-		_ = n
 	}
 
 	if err != nil {

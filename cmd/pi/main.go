@@ -300,9 +300,7 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 
 	// Register plugin-provided slash commands.
 	for _, proc := range pluginMgr.Plugins() {
-		proc := proc // capture for closure
 		for _, cmdDef := range proc.Commands() {
-			cmdDef := cmdDef // capture for closure
 			app.RegisterCommand(&tui.SlashCommand{
 				Name:        cmdDef.Name,
 				Description: cmdDef.Description,

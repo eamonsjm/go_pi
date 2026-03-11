@@ -8,7 +8,6 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/ejm/go_pi/pkg/agent"
 )
 
@@ -208,14 +207,6 @@ func (c *ChatView) AddSystemMessage(text string) {
 func (c *ChatView) ClearBlocks() {
 	c.blocks = nil
 	c.rebuildContent()
-}
-
-// BreakAssistantBlock ensures the next assistant_text delta starts a new block
-// (used between turns so consecutive turns don't merge).
-func (c *ChatView) BreakAssistantBlock() {
-	// Append a zero-width sentinel — the renderer will skip empty blocks.
-	// Actually the simplest approach: just ensure the last block is not
-	// blockAssistantText, which HandleEvent already checks.
 }
 
 // ToggleThinking toggles the collapsed state of the most recent thinking block.
@@ -452,16 +443,3 @@ func truncateLines(text string, n int) string {
 	return strings.Join(lines[:n], "\n")
 }
 
-// scrollPercent returns the viewport scroll percentage (0-100).
-func (c *ChatView) scrollPercent() float64 {
-	return c.viewport.ScrollPercent() * 100
-}
-
-// borderColor returns a lipgloss.Color suitable for rendering the chat
-// viewport border based on whether the view has focus.
-func chatBorderColor(focused bool) lipgloss.TerminalColor {
-	if focused {
-		return ColorPrimary
-	}
-	return ColorBorder
-}

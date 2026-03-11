@@ -3,7 +3,6 @@ package tui
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/ejm/go_pi/pkg/ai"
@@ -150,6 +149,3 @@ func stripAnsi(s string) string {
 	}
 	return b.String()
 }
-
-// Ensure filepath is used (it may be useful for future cwd logic).
-var _ = filepath.Base
