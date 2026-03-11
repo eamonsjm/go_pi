@@ -369,7 +369,6 @@ func (p *AnthropicProvider) readSSEStream(ctx context.Context, body io.ReadClose
 				return
 			}
 			usage.InputTokens += d.Message.Usage.InputTokens
-			usage.OutputTokens += d.Message.Usage.OutputTokens
 			usage.CacheRead += d.Message.Usage.CacheReadInputTokens
 			usage.CacheWrite += d.Message.Usage.CacheCreationInputTokens
 			p.send(ch, StreamEvent{

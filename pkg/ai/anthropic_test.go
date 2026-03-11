@@ -417,7 +417,7 @@ data: {"type":"message_stop"}
 	if last.Usage.InputTokens != 10 {
 		t.Errorf("expected input_tokens=10, got %d", last.Usage.InputTokens)
 	}
-	// output_tokens accumulates: 0 from message_start + 5 from message_delta = 5.
+	// output_tokens comes solely from message_delta.
 	if last.Usage.OutputTokens != 5 {
 		t.Errorf("expected output_tokens=5, got %d", last.Usage.OutputTokens)
 	}
@@ -659,7 +659,7 @@ data: {"type":"message_stop"}
 	if endUsage.InputTokens != 100 {
 		t.Errorf("expected accumulated input_tokens=100, got %d", endUsage.InputTokens)
 	}
-	// Output tokens: 0 from message_start + 20 from message_delta = 20.
+	// Output tokens come solely from message_delta.
 	if endUsage.OutputTokens != 20 {
 		t.Errorf("expected accumulated output_tokens=20, got %d", endUsage.OutputTokens)
 	}
