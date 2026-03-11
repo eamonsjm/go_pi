@@ -111,10 +111,9 @@ func (a *AgentLoop) SetSystemPrompt(prompt string) {
 // Cancel aborts the current Prompt execution.
 func (a *AgentLoop) Cancel() {
 	a.mu.Lock()
-	cancel := a.cancel
-	a.mu.Unlock()
-	if cancel != nil {
-		cancel()
+	defer a.mu.Unlock()
+	if a.cancel != nil {
+		a.cancel()
 	}
 }
 

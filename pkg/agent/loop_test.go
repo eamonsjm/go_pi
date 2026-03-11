@@ -775,6 +775,39 @@ func TestOptions(t *testing.T) {
 	}
 }
 
+func TestCancelRacesWithPromptCompletion(t *testing.T) {
+	// Exercise concurrent Cancel() calls racing with Prompt() cleanup.
+	// Run with -race to verify no data races.
+	for i := 0; i < 100; i++ {
+		provider := &mockProvider{streamFn: textResponse("done")}
+		reg := tools.NewRegistry()
+		a := NewAgentLoop(provider, reg)
+
+		errCh := make(chan error, 1)
+		go func() {
+			errCh <- a.Prompt(context.Background(), "hi")
+		}()
+
+		// Race Cancel against Prompt completion from multiple goroutines.
+		var wg sync.WaitGroup
+		for j := 0; j < 5; j++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				a.Cancel()
+			}()
+		}
+
+		select {
+		case <-errCh:
+			// Either nil (completed normally) or non-nil (cancelled) — both OK.
+		case <-time.After(5 * time.Second):
+			t.Fatal("Prompt did not return")
+		}
+		wg.Wait()
+	}
+}
+
 func TestSettersAndMessages(t *testing.T) {
 	provider := &mockProvider{}
 	reg := tools.NewRegistry()
