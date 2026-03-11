@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ejm/go_pi/pkg/agent"
 	"github.com/ejm/go_pi/pkg/ai"
+	"github.com/ejm/go_pi/pkg/auth"
 	"github.com/ejm/go_pi/pkg/config"
 	"github.com/ejm/go_pi/pkg/session"
 )
@@ -120,13 +121,20 @@ func (a *App) ShowWelcome(text string) {
 // access to external dependencies (agent loop, session manager, config).
 // The ctx should be the application lifecycle context so that long-running
 // commands like /compact are cancelled when the application exits.
-func (a *App) RegisterBuiltinCommands(ctx context.Context, agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg *config.Config) {
+func (a *App) RegisterBuiltinCommands(ctx context.Context, agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg *config.Config, authStore *auth.Store, authResolver *auth.Resolver) {
 	a.RegisterCommand(NewCompactCommand(ctx, agentLoop))
 	a.RegisterCommand(NewSettingsCommand(cfg, agentLoop, a.header))
 	a.RegisterCommand(NewNewSessionCommand(agentLoop, sessionMgr, a.chat, a.header))
 	a.RegisterCommand(NewResumeCommand(agentLoop, sessionMgr, a.chat, a.header))
 	a.RegisterCommand(NewSessionInfoCommand(sessionMgr, a.chat))
 	a.RegisterCommand(NewNameCommand(sessionMgr, a.header, a.chat))
+
+	// Auth commands.
+	if authStore != nil && authResolver != nil {
+		a.RegisterCommand(NewLoginCommand(authStore, authResolver))
+		a.RegisterCommand(NewLogoutCommand(authStore))
+		a.RegisterCommand(NewAuthStatusCommand(authStore, authResolver))
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -211,6 +219,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case PluginInjectMsg:
 		a.chat.AddPluginMessage(msg.PluginName, msg.Content, msg.IsLog, msg.LogLevel)
 		return a, nil
+
+	case authDeviceCodeMsg:
+		a.chat.AddSystemMessage(fmt.Sprintf(
+			"Login to %s\n\n  Open: %s\n  Code: %s\n\nWaiting for authorization...",
+			msg.providerName, msg.url, msg.userCode))
+		return a, msg.pollCmd
 
 	case settingsDisplayMsg:
 		a.chat.AddSystemMessage(msg.text)

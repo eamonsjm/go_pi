@@ -157,6 +157,25 @@ func TestResolve_OAuthExpiredRefresh(t *testing.T) {
 	}
 }
 
+func TestResolve_GetOAuthProvider(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := NewStore(filepath.Join(dir, "auth.json"))
+	r := NewResolver(s)
+
+	// Not registered.
+	if got := r.GetOAuthProvider("anthropic"); got != nil {
+		t.Errorf("expected nil, got %v", got)
+	}
+
+	// Register and retrieve.
+	mp := &mockProvider{id: "anthropic"}
+	r.RegisterProvider(mp)
+	got := r.GetOAuthProvider("anthropic")
+	if got == nil || got.ID() != "anthropic" {
+		t.Errorf("expected anthropic provider, got %v", got)
+	}
+}
+
 func TestResolve_Empty(t *testing.T) {
 	dir := t.TempDir()
 	s, _ := NewStore(filepath.Join(dir, "auth.json"))

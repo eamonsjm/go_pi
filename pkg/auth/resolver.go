@@ -48,6 +48,12 @@ func (r *Resolver) SetOverride(provider, key string) {
 	r.overrides[provider] = key
 }
 
+// GetOAuthProvider returns the registered OAuth provider for the given ID,
+// or nil if none is registered.
+func (r *Resolver) GetOAuthProvider(id string) OAuthProvider {
+	return r.providers[id]
+}
+
 // Resolve returns a usable API key for the given provider by walking
 // the resolution chain. Returns an error only if resolution fails at every
 // level; an empty key with nil error means no credentials are configured.

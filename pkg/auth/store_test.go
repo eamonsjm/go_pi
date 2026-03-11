@@ -129,3 +129,96 @@ func TestStoreDefaultPath(t *testing.T) {
 		t.Errorf("default path: got %q, want %q", s.path, expected)
 	}
 }
+
+func TestStoreLoadLegacyFormat(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "auth.json")
+
+	// Write legacy format: {"keys": {"anthropic": "sk-ant-legacy"}}
+	legacy := []byte(`{"keys": {"anthropic": "sk-ant-legacy", "openai": "sk-oai-legacy"}}`)
+	if err := os.WriteFile(path, legacy, 0o600); err != nil {
+		t.Fatalf("write legacy: %v", err)
+	}
+
+	s, err := NewStore(path)
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	if err := s.Load(); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	// Should have converted to Credential entries.
+	ant := s.Get("anthropic")
+	if ant == nil || ant.Type != CredentialAPIKey || ant.Key != "sk-ant-legacy" {
+		t.Errorf("anthropic: got %+v", ant)
+	}
+
+	oai := s.Get("openai")
+	if oai == nil || oai.Type != CredentialAPIKey || oai.Key != "sk-oai-legacy" {
+		t.Errorf("openai: got %+v", oai)
+	}
+
+	// File should have been migrated to new format.
+	s2, _ := NewStore(path)
+	if err := s2.Load(); err != nil {
+		t.Fatalf("Load migrated: %v", err)
+	}
+	ant2 := s2.Get("anthropic")
+	if ant2 == nil || ant2.Key != "sk-ant-legacy" {
+		t.Errorf("migrated anthropic: got %+v", ant2)
+	}
+}
+
+func TestStoreLoadLegacyFormatMigrationPreservesData(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "auth.json")
+
+	legacy := []byte(`{"keys": {"anthropic": "sk-key-123"}}`)
+	if err := os.WriteFile(path, legacy, 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	s, _ := NewStore(path)
+	if err := s.Load(); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	// After migration, re-read should show new format.
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+
+	// Should NOT contain "keys" at top level anymore.
+	content := string(data)
+	if content == "" {
+		t.Fatal("migrated file is empty")
+	}
+
+	// Load again to verify round-trip.
+	s2, _ := NewStore(path)
+	if err := s2.Load(); err != nil {
+		t.Fatalf("Load round-trip: %v", err)
+	}
+	cred := s2.Get("anthropic")
+	if cred == nil || cred.Key != "sk-key-123" || cred.Type != CredentialAPIKey {
+		t.Errorf("round-trip: got %+v", cred)
+	}
+}
+
+func TestStoreProvidersSorted(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := NewStore(filepath.Join(dir, "auth.json"))
+	s.Set("openai", &Credential{Type: CredentialAPIKey, Key: "k"})
+	s.Set("anthropic", &Credential{Type: CredentialAPIKey, Key: "k"})
+	s.Set("google", &Credential{Type: CredentialAPIKey, Key: "k"})
+
+	providers := s.Providers()
+	if len(providers) != 3 {
+		t.Fatalf("len(Providers()) = %d, want 3", len(providers))
+	}
+	if providers[0] != "anthropic" || providers[1] != "google" || providers[2] != "openai" {
+		t.Errorf("Providers() not sorted: %v", providers)
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"syscall"
 )
 
@@ -34,6 +35,10 @@ func NewStore(path string) (*Store, error) {
 
 // Load reads credentials from the backing file. If the file does not exist,
 // the store starts empty (not an error).
+//
+// Supports two formats:
+//   - New: {"provider": {"type":"api_key","key":"sk-..."}, ...}
+//   - Legacy: {"keys": {"provider": "sk-...", ...}}  (auto-migrated on load)
 func (s *Store) Load() error {
 	data, err := os.ReadFile(s.path)
 	if err != nil {
@@ -43,12 +48,43 @@ func (s *Store) Load() error {
 		return fmt.Errorf("read auth store: %w", err)
 	}
 
+	// Probe the JSON structure to detect format.
+	var probe map[string]json.RawMessage
+	if err := json.Unmarshal(data, &probe); err != nil {
+		return fmt.Errorf("parse auth store: %w", err)
+	}
+
+	// Legacy format: top-level "keys" field with string values.
+	if _, hasKeys := probe["keys"]; hasKeys {
+		return s.loadLegacy(data)
+	}
+
+	// New format: map[string]*Credential.
 	var entries map[string]*Credential
 	if err := json.Unmarshal(data, &entries); err != nil {
 		return fmt.Errorf("parse auth store: %w", err)
 	}
 	s.entries = entries
 	return nil
+}
+
+// loadLegacy converts the old {"keys":{"provider":"key"}} format
+// to Credential entries and saves in the new format.
+func (s *Store) loadLegacy(data []byte) error {
+	var legacy struct {
+		Keys map[string]string `json:"keys"`
+	}
+	if err := json.Unmarshal(data, &legacy); err != nil {
+		return fmt.Errorf("parse legacy auth store: %w", err)
+	}
+	for provider, key := range legacy.Keys {
+		s.entries[provider] = &Credential{
+			Type: CredentialAPIKey,
+			Key:  key,
+		}
+	}
+	// Migrate to new format on disk.
+	return s.Save()
 }
 
 // Save writes the current credentials to disk with strict permissions (0600).
@@ -85,12 +121,13 @@ func (s *Store) Delete(provider string) {
 	delete(s.entries, provider)
 }
 
-// Providers returns the list of provider IDs that have stored credentials.
+// Providers returns the sorted list of provider IDs that have stored credentials.
 func (s *Store) Providers() []string {
 	out := make([]string, 0, len(s.entries))
 	for k := range s.entries {
 		out = append(out, k)
 	}
+	sort.Strings(out)
 	return out
 }
 

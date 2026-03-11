@@ -15,6 +15,7 @@ import (
 
 	"github.com/ejm/go_pi/pkg/agent"
 	"github.com/ejm/go_pi/pkg/ai"
+	"github.com/ejm/go_pi/pkg/auth"
 	"github.com/ejm/go_pi/pkg/config"
 	"github.com/ejm/go_pi/pkg/plugin"
 	"github.com/ejm/go_pi/pkg/session"
@@ -96,8 +97,14 @@ func main() {
 	}
 	sessionMgr := session.NewManager(sessionDir)
 
+	// Set up auth store and resolver.
+	authStore, authResolver, authErr := setupAuth()
+	if authErr != nil {
+		log.Fatalf("Failed to initialize auth: %v", authErr)
+	}
+
 	// Resolve provider (may fail if no API key — that's ok for interactive mode)
-	provider, providerErr := resolveProvider(cfg)
+	provider, providerErr := resolveProvider(cfg, authResolver)
 
 	// Print mode requires a working provider
 	if *printFlag != "" {
@@ -138,26 +145,38 @@ func main() {
 	}
 
 	// Interactive mode
-	runInteractive(agentLoop, sessionMgr, cfg, providerErr, pluginMgr)
+	runInteractive(agentLoop, sessionMgr, cfg, providerErr, pluginMgr, authStore, authResolver)
 }
 
-func resolveProvider(cfg *config.Config) (ai.Provider, error) {
-	auth, err := config.LoadAuth()
+// setupAuth creates the auth store and resolver with registered OAuth providers.
+func setupAuth() (*auth.Store, *auth.Resolver, error) {
+	store, err := auth.NewStore("")
 	if err != nil {
-		return nil, fmt.Errorf("loading auth: %w", err)
+		return nil, nil, err
+	}
+	if err := store.Load(); err != nil {
+		return nil, nil, err
 	}
 
+	resolver := auth.NewResolver(store)
+	resolver.RegisterProvider(auth.NewAnthropicOAuth())
+
+	return store, resolver, nil
+}
+
+func resolveProvider(cfg *config.Config, resolver *auth.Resolver) (ai.Provider, error) {
 	providerName := cfg.DefaultProvider
 	if providerName == "" {
-		// Auto-detect based on available keys
-		if auth.GetKey("anthropic") != "" {
-			providerName = "anthropic"
-		} else if auth.GetKey("openrouter") != "" {
-			providerName = "openrouter"
-		} else if auth.GetKey("openai") != "" {
-			providerName = "openai"
-		} else {
-			return nil, fmt.Errorf("no API key found. Set ANTHROPIC_API_KEY, OPENROUTER_API_KEY, or OPENAI_API_KEY")
+		// Auto-detect based on available credentials.
+		for _, name := range []string{"anthropic", "openrouter", "openai"} {
+			key, _ := resolver.Resolve(name)
+			if key != "" {
+				providerName = name
+				break
+			}
+		}
+		if providerName == "" {
+			return nil, fmt.Errorf("no API key found. Set ANTHROPIC_API_KEY, OPENROUTER_API_KEY, or OPENAI_API_KEY, or use /login <provider>")
 		}
 	}
 
@@ -174,37 +193,21 @@ func resolveProvider(cfg *config.Config) (ai.Provider, error) {
 		cfg.DefaultModel = model
 	}
 
+	key, err := resolver.Resolve(providerName)
+	if err != nil {
+		return nil, fmt.Errorf("resolve %s credentials: %w", providerName, err)
+	}
+	if key == "" {
+		return nil, fmt.Errorf("%s: no API key configured (set env var or use /login %s)", providerName, providerName)
+	}
+
 	switch providerName {
 	case "anthropic":
-		key := auth.GetKey("anthropic")
-		if key == "" {
-			return nil, fmt.Errorf("ANTHROPIC_API_KEY not set")
-		}
-		p, err := ai.NewAnthropicProvider(key)
-		if err != nil {
-			return nil, err
-		}
-		return p, nil
+		return ai.NewAnthropicProvider(key)
 	case "openrouter":
-		key := auth.GetKey("openrouter")
-		if key == "" {
-			return nil, fmt.Errorf("OPENROUTER_API_KEY not set")
-		}
-		p, err := ai.NewOpenRouterProvider(key)
-		if err != nil {
-			return nil, err
-		}
-		return p, nil
+		return ai.NewOpenRouterProvider(key)
 	case "openai":
-		key := auth.GetKey("openai")
-		if key == "" {
-			return nil, fmt.Errorf("OPENAI_API_KEY not set")
-		}
-		p, err := ai.NewOpenAIProvider(key)
-		if err != nil {
-			return nil, err
-		}
-		return p, nil
+		return ai.NewOpenAIProvider(key)
 	default:
 		return nil, fmt.Errorf("unknown provider: %s", providerName)
 	}
@@ -289,7 +292,7 @@ func makeAgentLoop(provider ai.Provider, registry *tools.Registry, cfg *config.C
 	)
 }
 
-func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg *config.Config, providerErr error, pluginMgr *plugin.Manager) {
+func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg *config.Config, providerErr error, pluginMgr *plugin.Manager, authStore *auth.Store, authResolver *auth.Resolver) {
 	// Create the application lifecycle context. This is cancelled when
 	// runInteractive returns, ensuring all background operations (such as
 	// compaction) are stopped when the user quits.
@@ -299,7 +302,7 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 	app := tui.NewApp()
 	app.SetModel(cfg.DefaultModel)
 	app.SetThinking(cfg.ThinkingLevel)
-	app.RegisterBuiltinCommands(ctx, agentLoop, sessionMgr, cfg)
+	app.RegisterBuiltinCommands(ctx, agentLoop, sessionMgr, cfg, authStore, authResolver)
 	app.SetModelChangeCallback(func(provider, model string) {
 		agentLoop.SetModel(model)
 	})
@@ -327,12 +330,11 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 	if providerErr != nil {
 		app.ShowWelcome(fmt.Sprintf(
 			"No API key configured. To get started:\n\n"+
-				"  export ANTHROPIC_API_KEY=sk-...\n"+
-				"  export OPENROUTER_API_KEY=sk-...\n"+
-				"  export OPENAI_API_KEY=sk-...\n\n"+
-				"Or save to ~/.pi/auth.json:\n"+
-				"  {\"keys\": {\"anthropic\": \"sk-...\"}}\n\n"+
-				"Then restart pi. (%v)", providerErr))
+				"  /login anthropic          — OAuth login (Claude Pro/Max)\n"+
+				"  export ANTHROPIC_API_KEY=sk-...  — API key\n"+
+				"  export OPENAI_API_KEY=sk-...     — OpenAI key\n\n"+
+				"Or save to ~/.pi/auth.json.\n"+
+				"Use /auth to check status. (%v)", providerErr))
 	}
 
 	// Create the Bubble Tea program
