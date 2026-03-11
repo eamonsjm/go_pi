@@ -759,3 +759,201 @@ func TestAnthropicStream_HTTPError(t *testing.T) {
 		t.Errorf("expected status 429 in error, got %q", err.Error())
 	}
 }
+
+func TestAnthropicStream_MalformedJSON(t *testing.T) {
+	tests := []struct {
+		name    string
+		sse     string
+		errPart string
+	}{
+		{
+			name:    "message_start",
+			sse:     "event: message_start\ndata: {not valid\n\n",
+			errPart: "message_start",
+		},
+		{
+			name: "content_block_start",
+			sse: "event: message_start\n" +
+				"data: {\"type\":\"message_start\",\"message\":{\"id\":\"m\",\"role\":\"assistant\",\"usage\":{\"input_tokens\":1,\"output_tokens\":0}}}\n\n" +
+				"event: content_block_start\ndata: !!!broken!!!\n\n",
+			errPart: "content_block_start",
+		},
+		{
+			name: "content_block_delta",
+			sse: "event: message_start\n" +
+				"data: {\"type\":\"message_start\",\"message\":{\"id\":\"m\",\"role\":\"assistant\",\"usage\":{\"input_tokens\":1,\"output_tokens\":0}}}\n\n" +
+				"event: content_block_start\n" +
+				"data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n" +
+				"event: content_block_delta\ndata: NOTJSON\n\n",
+			errPart: "content_block_delta",
+		},
+		{
+			name: "message_delta",
+			sse: "event: message_start\n" +
+				"data: {\"type\":\"message_start\",\"message\":{\"id\":\"m\",\"role\":\"assistant\",\"usage\":{\"input_tokens\":1,\"output_tokens\":0}}}\n\n" +
+				"event: content_block_start\n" +
+				"data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n" +
+				"event: content_block_stop\n" +
+				"data: {\"type\":\"content_block_stop\",\"index\":0}\n\n" +
+				"event: message_delta\ndata: {garbage\n\n",
+			errPart: "message_delta",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv, p := newTestAnthropicServer(t, tt.sse)
+			defer srv.Close()
+
+			ch, err := p.Stream(context.Background(), StreamRequest{
+				Model:    "test",
+				Messages: []Message{NewTextMessage(RoleUser, "hi")},
+			})
+			if err != nil {
+				t.Fatalf("Stream failed: %v", err)
+			}
+
+			events := collectEvents(ch)
+			last := events[len(events)-1]
+			if last.Type != EventError {
+				t.Fatalf("expected last event to be error, got %v", last.Type)
+			}
+			if !strings.Contains(last.Error.Error(), tt.errPart) {
+				t.Errorf("expected error containing %q, got %q", tt.errPart, last.Error.Error())
+			}
+		})
+	}
+}
+
+func TestAnthropicStream_PartialToolUse(t *testing.T) {
+	// Stream cuts off mid-tool-call: no content_block_stop or message_stop.
+	sse := "event: message_start\n" +
+		"data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg\",\"role\":\"assistant\",\"usage\":{\"input_tokens\":5,\"output_tokens\":0}}}\n\n" +
+		"event: content_block_start\n" +
+		"data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_partial\",\"name\":\"search\"}}\n\n" +
+		"event: content_block_delta\n" +
+		"data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"q\\\":\"}}\n\n"
+
+	srv, p := newTestAnthropicServer(t, sse)
+	defer srv.Close()
+
+	ch, err := p.Stream(context.Background(), StreamRequest{
+		Model:    "test",
+		Messages: []Message{NewTextMessage(RoleUser, "hi")},
+	})
+	if err != nil {
+		t.Fatalf("Stream failed: %v", err)
+	}
+
+	events := collectEvents(ch)
+
+	var hasStart, hasDelta, hasEnd, hasMessageEnd bool
+	for _, e := range events {
+		switch e.Type {
+		case EventToolUseStart:
+			hasStart = true
+		case EventToolUseDelta:
+			hasDelta = true
+		case EventToolUseEnd:
+			hasEnd = true
+		case EventMessageEnd:
+			hasMessageEnd = true
+		}
+	}
+
+	if !hasStart {
+		t.Error("expected tool_use_start event")
+	}
+	if !hasDelta {
+		t.Error("expected tool_use_delta event")
+	}
+	if hasEnd {
+		t.Error("should NOT have tool_use_end (stream cut off)")
+	}
+	if hasMessageEnd {
+		t.Error("should NOT have message_end (stream cut off)")
+	}
+}
+
+func TestAnthropicStream_ContextCancellation(t *testing.T) {
+	ready := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		flusher := w.(http.Flusher)
+		fmt.Fprint(w, "event: message_start\n"+
+			"data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg\",\"role\":\"assistant\",\"usage\":{\"input_tokens\":5,\"output_tokens\":0}}}\n\n")
+		flusher.Flush()
+		close(ready)
+		<-r.Context().Done()
+	}))
+	defer srv.Close()
+
+	p := &AnthropicProvider{
+		apiKey:     "test-key",
+		httpClient: srv.Client(),
+		baseURL:    srv.URL,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ch, err := p.Stream(ctx, StreamRequest{
+		Model:    "test",
+		Messages: []Message{NewTextMessage(RoleUser, "hi")},
+	})
+	if err != nil {
+		t.Fatalf("Stream failed: %v", err)
+	}
+
+	<-ready
+
+	evt := <-ch
+	if evt.Type != EventMessageStart {
+		t.Fatalf("expected message_start, got %v", evt.Type)
+	}
+
+	cancel()
+
+	var gotError bool
+	for e := range ch {
+		if e.Type == EventError {
+			gotError = true
+		}
+	}
+	if !gotError {
+		t.Error("expected error event from context cancellation")
+	}
+}
+
+func TestAnthropicStream_ScannerBufferOverflow(t *testing.T) {
+	// Create a data line that exceeds the 1MB scanner buffer limit.
+	longPayload := strings.Repeat("x", 1024*1024)
+	sse := "event: message_start\ndata: " + longPayload + "\n\n"
+
+	srv, p := newTestAnthropicServer(t, sse)
+	defer srv.Close()
+
+	ch, err := p.Stream(context.Background(), StreamRequest{
+		Model:    "test",
+		Messages: []Message{NewTextMessage(RoleUser, "hi")},
+	})
+	if err != nil {
+		t.Fatalf("Stream failed: %v", err)
+	}
+
+	events := collectEvents(ch)
+
+	var gotError bool
+	for _, e := range events {
+		if e.Type == EventError {
+			gotError = true
+			if !strings.Contains(e.Error.Error(), "token too long") {
+				t.Errorf("expected 'token too long' error, got %q", e.Error.Error())
+			}
+		}
+	}
+	if !gotError {
+		t.Error("expected error event from scanner buffer overflow")
+	}
+}

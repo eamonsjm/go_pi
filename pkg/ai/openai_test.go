@@ -535,3 +535,160 @@ func TestOpenAIStream_HTTPError(t *testing.T) {
 		t.Errorf("expected status 401 in error, got %q", err.Error())
 	}
 }
+
+func TestOpenAIStream_MalformedChunk(t *testing.T) {
+	sse := "data: {\"id\":\"chatcmpl-1\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}\n\n" +
+		"data: {this is not valid json}\n\n" +
+		"data: [DONE]\n\n"
+
+	srv, p := newTestOpenAIServer(t, sse)
+	defer srv.Close()
+
+	ch, err := p.Stream(context.Background(), StreamRequest{
+		Model:    "gpt-4o",
+		Messages: []Message{NewTextMessage(RoleUser, "hi")},
+	})
+	if err != nil {
+		t.Fatalf("Stream failed: %v", err)
+	}
+
+	events := collectEvents(ch)
+
+	last := events[len(events)-1]
+	if last.Type != EventError {
+		t.Fatalf("expected last event to be error, got %v", last.Type)
+	}
+	if !strings.Contains(last.Error.Error(), "parse chunk") {
+		t.Errorf("expected error about parsing chunk, got %q", last.Error.Error())
+	}
+}
+
+func TestOpenAIStream_PartialToolUse(t *testing.T) {
+	// Stream cuts off mid-tool-call: no finish_reason or [DONE].
+	sse := "data: {\"id\":\"chatcmpl-p\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":null},\"finish_reason\":null}]}\n\n" +
+		"data: {\"id\":\"chatcmpl-p\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_partial\",\"type\":\"function\",\"function\":{\"name\":\"search\",\"arguments\":\"\"}}]},\"finish_reason\":null}]}\n\n" +
+		"data: {\"id\":\"chatcmpl-p\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"{\\\"q\\\":\"}}]},\"finish_reason\":null}]}\n\n"
+
+	srv, p := newTestOpenAIServer(t, sse)
+	defer srv.Close()
+
+	ch, err := p.Stream(context.Background(), StreamRequest{
+		Model:    "gpt-4o",
+		Messages: []Message{NewTextMessage(RoleUser, "hi")},
+	})
+	if err != nil {
+		t.Fatalf("Stream failed: %v", err)
+	}
+
+	events := collectEvents(ch)
+
+	var hasStart, hasDelta, hasEnd, hasMessageEnd bool
+	for _, e := range events {
+		switch e.Type {
+		case EventToolUseStart:
+			hasStart = true
+		case EventToolUseDelta:
+			hasDelta = true
+		case EventToolUseEnd:
+			hasEnd = true
+		case EventMessageEnd:
+			hasMessageEnd = true
+		}
+	}
+
+	if !hasStart {
+		t.Error("expected tool_use_start event")
+	}
+	if !hasDelta {
+		t.Error("expected tool_use_delta event")
+	}
+	if hasEnd {
+		t.Error("should NOT have tool_use_end (stream cut off)")
+	}
+	if hasMessageEnd {
+		t.Error("should NOT have message_end (stream cut off)")
+	}
+}
+
+func TestOpenAIStream_ContextCancellation(t *testing.T) {
+	ready := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		flusher := w.(http.Flusher)
+		fmt.Fprint(w, "data: {\"id\":\"chatcmpl-c\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"hi\"},\"finish_reason\":null}]}\n\n")
+		flusher.Flush()
+		close(ready)
+		<-r.Context().Done()
+	}))
+	defer srv.Close()
+
+	p := &OpenAIProvider{
+		apiKey:     "test-key",
+		httpClient: srv.Client(),
+		baseURL:    srv.URL,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ch, err := p.Stream(ctx, StreamRequest{
+		Model:    "gpt-4o",
+		Messages: []Message{NewTextMessage(RoleUser, "hi")},
+	})
+	if err != nil {
+		t.Fatalf("Stream failed: %v", err)
+	}
+
+	<-ready
+
+	// Read the initial message_start event.
+	evt := <-ch
+	if evt.Type != EventMessageStart {
+		t.Fatalf("expected message_start, got %v", evt.Type)
+	}
+
+	cancel()
+
+	var gotError bool
+	for e := range ch {
+		if e.Type == EventError {
+			gotError = true
+		}
+	}
+	if !gotError {
+		t.Error("expected error event from context cancellation")
+	}
+}
+
+func TestOpenAIStream_ScannerBufferOverflow(t *testing.T) {
+	// Create a data line that exceeds the 1MB scanner buffer limit.
+	longPayload := strings.Repeat("x", 1024*1024)
+	sse := "data: " + longPayload + "\n\n"
+
+	srv, p := newTestOpenAIServer(t, sse)
+	defer srv.Close()
+
+	ch, err := p.Stream(context.Background(), StreamRequest{
+		Model:    "gpt-4o",
+		Messages: []Message{NewTextMessage(RoleUser, "hi")},
+	})
+	if err != nil {
+		t.Fatalf("Stream failed: %v", err)
+	}
+
+	events := collectEvents(ch)
+
+	var gotError bool
+	for _, e := range events {
+		if e.Type == EventError {
+			gotError = true
+			if !strings.Contains(e.Error.Error(), "token too long") {
+				t.Errorf("expected 'token too long' error, got %q", e.Error.Error())
+			}
+		}
+	}
+	if !gotError {
+		t.Error("expected error event from scanner buffer overflow")
+	}
+}
