@@ -437,17 +437,19 @@ func (p *AnthropicProvider) readSSEStream(ctx context.Context, body io.ReadClose
 			var d struct {
 				Index int `json:"index"`
 			}
-			if err := json.Unmarshal(data, &d); err == nil {
-				bs := blocks[d.Index]
-				if bs != nil && bs.blockType == "tool_use" {
-					p.send(ch, StreamEvent{
-						Type:       EventToolUseEnd,
-						ToolCallID: bs.toolID,
-						ToolName:   bs.toolName,
-					})
-				}
-				delete(blocks, d.Index)
+			if err := json.Unmarshal(data, &d); err != nil {
+				p.send(ch, StreamEvent{Type: EventError, Error: fmt.Errorf("anthropic: failed to parse content_block_stop: %w", err)})
+				return
 			}
+			bs := blocks[d.Index]
+			if bs != nil && bs.blockType == "tool_use" {
+				p.send(ch, StreamEvent{
+					Type:       EventToolUseEnd,
+					ToolCallID: bs.toolID,
+					ToolName:   bs.toolName,
+				})
+			}
+			delete(blocks, d.Index)
 
 		case "message_delta":
 			var d anthMessageDeltaData

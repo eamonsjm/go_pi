@@ -671,6 +671,70 @@ data: {"type":"message_stop"}
 	}
 }
 
+func TestAnthropicStream_MalformedContentBlockStop(t *testing.T) {
+	sse := `event: message_start
+data: {"type":"message_start","message":{"id":"msg_05","role":"assistant","usage":{"input_tokens":5,"output_tokens":0}}}
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_99","name":"search"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"q\":\"hi\"}"}}
+
+event: content_block_stop
+data: {not valid json!!!
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":5}}
+
+event: message_stop
+data: {"type":"message_stop"}
+
+`
+	srv, p := newTestAnthropicServer(t, sse)
+	defer srv.Close()
+
+	ch, err := p.Stream(context.Background(), StreamRequest{
+		Model:    "test",
+		Messages: []Message{NewTextMessage(RoleUser, "hi")},
+	})
+	if err != nil {
+		t.Fatalf("Stream failed: %v", err)
+	}
+
+	events := collectEvents(ch)
+
+	// Stream must terminate with an error event for the malformed JSON.
+	var errorEvents []StreamEvent
+	var toolEndCount int
+	for _, e := range events {
+		if e.Type == EventError {
+			errorEvents = append(errorEvents, e)
+		}
+		if e.Type == EventToolUseEnd {
+			toolEndCount++
+		}
+	}
+
+	if len(errorEvents) != 1 {
+		t.Fatalf("expected 1 error event, got %d", len(errorEvents))
+	}
+	if !strings.Contains(errorEvents[0].Error.Error(), "content_block_stop") {
+		t.Errorf("expected error about content_block_stop, got %q", errorEvents[0].Error.Error())
+	}
+
+	// Must NOT emit a tool_use_end with stale data from the block.
+	if toolEndCount != 0 {
+		t.Errorf("expected 0 tool_use_end events (block state must not be modified on parse failure), got %d", toolEndCount)
+	}
+
+	// Stream must stop — no message_end event after the error.
+	last := events[len(events)-1]
+	if last.Type != EventError {
+		t.Errorf("expected last event to be error (stream should stop), got %v", last.Type)
+	}
+}
+
 func TestAnthropicStream_HTTPError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusTooManyRequests)
