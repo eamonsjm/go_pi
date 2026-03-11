@@ -1,9 +1,12 @@
 package session
 
 import (
+	"bufio"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -267,4 +270,316 @@ func TestNonMessageEntriesSkipped(t *testing.T) {
 	if msgs[0].GetText() != "hello" {
 		t.Errorf("expected 'hello', got %q", msgs[0].GetText())
 	}
+}
+
+// --- Concurrency tests ------------------------------------------------------
+
+func TestConcurrentAppendEntry(t *testing.T) {
+	dir := t.TempDir()
+	m := NewManager(dir)
+	id := m.NewSession()
+
+	const goroutines = 10
+	const entriesPerGoroutine = 50
+
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	errs := make(chan error, goroutines*entriesPerGoroutine)
+
+	for g := 0; g < goroutines; g++ {
+		go func(gid int) {
+			defer wg.Done()
+			for i := 0; i < entriesPerGoroutine; i++ {
+				entry := Entry{
+					ID:        fmt.Sprintf("g%d-e%d", gid, i),
+					Timestamp: time.Now().UTC(),
+					Type:      "message",
+					Data: MessageData{
+						Role:    ai.RoleUser,
+						Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: fmt.Sprintf("msg-%d-%d", gid, i)}},
+					},
+				}
+				if err := m.AppendEntry(entry); err != nil {
+					errs <- err
+				}
+			}
+		}(g)
+	}
+
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		t.Errorf("AppendEntry error: %v", err)
+	}
+
+	// Verify in-memory entry count.
+	msgs := m.GetMessages()
+	expected := goroutines * entriesPerGoroutine
+	if len(msgs) != expected {
+		t.Errorf("in-memory: expected %d messages, got %d", expected, len(msgs))
+	}
+
+	// Verify on-disk entry count by reading the JSONL file.
+	path := filepath.Join(dir, id+".jsonl")
+	diskCount := countJSONLLines(t, path)
+	if diskCount != expected {
+		t.Errorf("on-disk: expected %d lines, got %d", expected, diskCount)
+	}
+}
+
+func TestConcurrentSaveMessage(t *testing.T) {
+	dir := t.TempDir()
+	m := NewManager(dir)
+	id := m.NewSession()
+
+	const goroutines = 8
+	const msgsPerGoroutine = 25
+
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	errs := make(chan error, goroutines*msgsPerGoroutine)
+
+	for g := 0; g < goroutines; g++ {
+		go func(gid int) {
+			defer wg.Done()
+			for i := 0; i < msgsPerGoroutine; i++ {
+				msg := ai.NewTextMessage(ai.RoleUser, fmt.Sprintf("concurrent-%d-%d", gid, i))
+				if err := m.SaveMessage(msg); err != nil {
+					errs <- err
+				}
+			}
+		}(g)
+	}
+
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		t.Errorf("SaveMessage error: %v", err)
+	}
+
+	expected := goroutines * msgsPerGoroutine
+	msgs := m.GetMessages()
+	if len(msgs) != expected {
+		t.Errorf("expected %d messages, got %d", expected, len(msgs))
+	}
+
+	// Verify each message text is present on disk.
+	path := filepath.Join(dir, id+".jsonl")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	content := string(data)
+	for g := 0; g < goroutines; g++ {
+		for i := 0; i < msgsPerGoroutine; i++ {
+			needle := fmt.Sprintf("concurrent-%d-%d", g, i)
+			if !strings.Contains(content, needle) {
+				t.Errorf("missing entry on disk: %s", needle)
+			}
+		}
+	}
+}
+
+func TestListSessionsDuringConcurrentWrites(t *testing.T) {
+	dir := t.TempDir()
+	m := NewManager(dir)
+	m.NewSession()
+
+	// Seed one entry so the session file exists on disk before concurrent reads.
+	if err := m.SaveMessage(ai.NewTextMessage(ai.RoleUser, "seed")); err != nil {
+		t.Fatalf("seed SaveMessage: %v", err)
+	}
+
+	const writers = 4
+	const writesPerWriter = 30
+	const readers = 4
+	const readsPerReader = 20
+
+	var wg sync.WaitGroup
+	wg.Add(writers + readers)
+	writeErrs := make(chan error, writers*writesPerWriter)
+
+	// Writers append entries concurrently.
+	for w := 0; w < writers; w++ {
+		go func(wid int) {
+			defer wg.Done()
+			for i := 0; i < writesPerWriter; i++ {
+				msg := ai.NewTextMessage(ai.RoleUser, fmt.Sprintf("w%d-%d", wid, i))
+				if err := m.SaveMessage(msg); err != nil {
+					writeErrs <- err
+				}
+			}
+		}(w)
+	}
+
+	// Readers list sessions concurrently with the writes.
+	for r := 0; r < readers; r++ {
+		go func() {
+			defer wg.Done()
+			for i := 0; i < readsPerReader; i++ {
+				sessions := m.ListSessions()
+				// Should always see at least 1 session (the one we created).
+				if len(sessions) < 1 {
+					t.Errorf("ListSessions returned %d sessions, expected >= 1", len(sessions))
+				}
+			}
+		}()
+	}
+
+	wg.Wait()
+	close(writeErrs)
+
+	for err := range writeErrs {
+		t.Errorf("write error: %v", err)
+	}
+}
+
+func TestConcurrentGetMessagesDuringAppend(t *testing.T) {
+	dir := t.TempDir()
+	m := NewManager(dir)
+	m.NewSession()
+
+	const writers = 4
+	const writesPerWriter = 50
+	const readers = 4
+	const readsPerReader = 50
+
+	var wg sync.WaitGroup
+	wg.Add(writers + readers)
+
+	// Writers.
+	for w := 0; w < writers; w++ {
+		go func(wid int) {
+			defer wg.Done()
+			for i := 0; i < writesPerWriter; i++ {
+				msg := ai.NewTextMessage(ai.RoleUser, fmt.Sprintf("r%d-%d", wid, i))
+				_ = m.SaveMessage(msg)
+			}
+		}(w)
+	}
+
+	// Readers call GetMessages concurrently.
+	for r := 0; r < readers; r++ {
+		go func() {
+			defer wg.Done()
+			for i := 0; i < readsPerReader; i++ {
+				msgs := m.GetMessages()
+				// Message count should be monotonically non-decreasing within
+				// a single reader, but across readers we just check sanity.
+				if len(msgs) < 0 {
+					t.Errorf("negative message count: %d", len(msgs))
+				}
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	// Final count must match total writes.
+	expected := writers * writesPerWriter
+	msgs := m.GetMessages()
+	if len(msgs) != expected {
+		t.Errorf("expected %d messages after concurrent access, got %d", expected, len(msgs))
+	}
+}
+
+func TestConcurrentAppendEntryDataIntegrity(t *testing.T) {
+	dir := t.TempDir()
+	m := NewManager(dir)
+	id := m.NewSession()
+
+	const goroutines = 10
+	const entriesPerGoroutine = 20
+
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+
+	for g := 0; g < goroutines; g++ {
+		go func(gid int) {
+			defer wg.Done()
+			for i := 0; i < entriesPerGoroutine; i++ {
+				msg := ai.NewTextMessage(ai.RoleUser, fmt.Sprintf("integrity-%d-%d", gid, i))
+				_ = m.SaveMessage(msg)
+			}
+		}(g)
+	}
+
+	wg.Wait()
+
+	// Reload from disk and verify all entries survived.
+	m2 := NewManager(dir)
+	if err := m2.LoadSession(id); err != nil {
+		t.Fatalf("LoadSession: %v", err)
+	}
+
+	msgs := m2.GetMessages()
+	expected := goroutines * entriesPerGoroutine
+	if len(msgs) != expected {
+		t.Fatalf("expected %d messages after reload, got %d", expected, len(msgs))
+	}
+
+	// Build a set of expected texts and verify each is present.
+	seen := make(map[string]bool)
+	for _, msg := range msgs {
+		seen[msg.GetText()] = true
+	}
+	for g := 0; g < goroutines; g++ {
+		for i := 0; i < entriesPerGoroutine; i++ {
+			key := fmt.Sprintf("integrity-%d-%d", g, i)
+			if !seen[key] {
+				t.Errorf("missing message after reload: %s", key)
+			}
+		}
+	}
+}
+
+func TestConcurrentCurrentID(t *testing.T) {
+	dir := t.TempDir()
+	m := NewManager(dir)
+	m.NewSession()
+
+	const goroutines = 10
+	const iterations = 100
+
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+
+	for g := 0; g < goroutines; g++ {
+		go func() {
+			defer wg.Done()
+			for i := 0; i < iterations; i++ {
+				id := m.CurrentID()
+				if id == "" {
+					t.Errorf("CurrentID returned empty during concurrent access")
+				}
+			}
+		}()
+	}
+
+	wg.Wait()
+}
+
+// countJSONLLines counts non-empty lines in a JSONL file.
+func countJSONLLines(t *testing.T, path string) int {
+	t.Helper()
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatalf("open %s: %v", path, err)
+	}
+	defer f.Close()
+
+	count := 0
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
+	for scanner.Scan() {
+		if strings.TrimSpace(scanner.Text()) != "" {
+			count++
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		t.Fatalf("scan %s: %v", path, err)
+	}
+	return count
 }

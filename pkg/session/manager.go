@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ejm/go_pi/pkg/ai"
@@ -39,7 +40,9 @@ type SessionInfo struct {
 }
 
 // Manager handles session persistence using JSONL files.
+// All exported methods are safe for concurrent use.
 type Manager struct {
+	mu      sync.RWMutex
 	dir     string // root directory, e.g. ~/.pi/sessions/
 	current string // active session ID
 	entries []Entry
@@ -56,13 +59,17 @@ func NewManager(dir string) *Manager {
 // NewSession creates a new session and returns its ID.
 func (m *Manager) NewSession() string {
 	id := generateID()
+	m.mu.Lock()
 	m.current = id
 	m.entries = nil
+	m.mu.Unlock()
 	return id
 }
 
 // CurrentID returns the ID of the active session, or empty if none.
 func (m *Manager) CurrentID() string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	return m.current
 }
 
@@ -94,8 +101,10 @@ func (m *Manager) LoadSession(id string) error {
 		return fmt.Errorf("read session %s: %w", id, err)
 	}
 
+	m.mu.Lock()
 	m.current = id
 	m.entries = entries
+	m.mu.Unlock()
 	return nil
 }
 
@@ -153,6 +162,9 @@ func (m *Manager) ListSessions() []SessionInfo {
 // AppendEntry appends a single entry to the current session's JSONL file
 // and the in-memory entry list.
 func (m *Manager) AppendEntry(entry Entry) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	if m.current == "" {
 		return fmt.Errorf("no active session")
 	}
@@ -184,8 +196,13 @@ func (m *Manager) AppendEntry(entry Entry) error {
 // GetMessages reconstructs the conversation messages from the current session's
 // message entries, in order. Non-message entries are skipped.
 func (m *Manager) GetMessages() []ai.Message {
+	m.mu.RLock()
+	entries := make([]Entry, len(m.entries))
+	copy(entries, m.entries)
+	m.mu.RUnlock()
+
 	var msgs []ai.Message
-	for _, e := range m.entries {
+	for _, e := range entries {
 		if e.Type != "message" {
 			continue
 		}
