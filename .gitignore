@@ -12,8 +12,8 @@
 hello-plugin
 
 # Gas Town (added by gt)
+.beads/
 .runtime/
 .claude/
 .logs/
 __pycache__/
-.beads/
