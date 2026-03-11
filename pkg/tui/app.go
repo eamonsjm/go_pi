@@ -106,6 +106,12 @@ func (a *App) RegisterCommand(cmd *SlashCommand) {
 	a.commands.Register(cmd)
 }
 
+// ShowWelcome adds an initial system message to the chat view. Use this to
+// display setup instructions or welcome text before the user interacts.
+func (a *App) ShowWelcome(text string) {
+	a.chat.AddSystemMessage(text)
+}
+
 // RegisterBuiltinCommands registers all built-in slash commands that need
 // access to external dependencies (agent loop, session manager, config).
 func (a *App) RegisterBuiltinCommands(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg *config.Config) {

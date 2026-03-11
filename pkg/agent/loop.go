@@ -138,6 +138,9 @@ func (a *AgentLoop) FollowUp(text string) {
 // throughout execution. Prompt blocks until the agent run completes or the context
 // is cancelled.
 func (a *AgentLoop) Prompt(ctx context.Context, text string) error {
+	if a.provider == nil {
+		return fmt.Errorf("no AI provider configured. Set an API key (ANTHROPIC_API_KEY, OPENROUTER_API_KEY, or OPENAI_API_KEY) and restart pi")
+	}
 	ctx, cancel := context.WithCancel(ctx)
 	a.mu.Lock()
 	a.cancel = cancel
