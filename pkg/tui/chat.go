@@ -185,12 +185,14 @@ func (c *ChatView) HandleEvent(ev agent.AgentEvent) bool {
 }
 
 // AddUserMessage appends a rendered user message block.
+// Always scrolls to bottom since the user actively submitted input.
 func (c *ChatView) AddUserMessage(text string) {
 	c.blocks = append(c.blocks, chatBlock{
 		kind: blockUser,
 		text: text,
 	})
 	c.rebuildContent()
+	c.viewport.GotoBottom()
 }
 
 // AddSystemMessage appends a system/informational message block.
@@ -257,8 +259,11 @@ func (c *ChatView) View() string {
 // ---------------------------------------------------------------------------
 
 // rebuildContent renders all blocks into a single string and pushes it into
-// the viewport. It also auto-scrolls to the bottom.
+// the viewport. Auto-scrolls to the bottom only if the viewport was already
+// at the bottom (so manual scroll-back is preserved during streaming).
 func (c *ChatView) rebuildContent() {
+	wasAtBottom := c.viewport.AtBottom()
+
 	var sb strings.Builder
 
 	for i, blk := range c.blocks {
@@ -284,7 +289,9 @@ func (c *ChatView) rebuildContent() {
 	}
 
 	c.viewport.SetContent(sb.String())
-	c.viewport.GotoBottom()
+	if wasAtBottom {
+		c.viewport.GotoBottom()
+	}
 }
 
 func (c *ChatView) renderUser(sb *strings.Builder, blk chatBlock) {
