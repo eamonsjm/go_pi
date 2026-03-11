@@ -129,28 +129,15 @@ func (m *Manager) startAndRegister(name, execPath string) error {
 }
 
 // Initialize sends the initialize message to all loaded plugins and registers
-// their tools and commands. Plugins that fail initialization are stopped and
-// removed.
+// their tools and commands. Plugins that fail initialization or registration
+// are stopped and removed.
 func (m *Manager) Initialize(cfg PluginConfig) error {
 	var alive []*PluginProcess
 
 	for _, p := range m.plugins {
-		if err := p.Initialize(cfg); err != nil {
+		if err := m.initializePlugin(p, cfg); err != nil {
 			log.Printf("plugin: %s initialization failed: %v", p.name, err)
-			_ = p.Stop()
 			continue
-		}
-
-		// Register plugin tools.
-		for _, td := range p.tools {
-			if _, exists := m.toolRegistry.Get(td.Name); exists {
-				log.Printf("plugin: %s tool %q conflicts with existing tool, skipping", p.name, td.Name)
-				continue
-			}
-			m.toolRegistry.Register(&PluginTool{
-				def:     td,
-				process: p,
-			})
 		}
 
 		alive = append(alive, p)
@@ -158,6 +145,40 @@ func (m *Manager) Initialize(cfg PluginConfig) error {
 	}
 
 	m.plugins = alive
+	return nil
+}
+
+// initializePlugin initializes a single plugin and registers its tools.
+// If any step after successful Initialize() fails (including panics during
+// tool registration), the plugin process is stopped to prevent leaks.
+func (m *Manager) initializePlugin(p *PluginProcess, cfg PluginConfig) (retErr error) {
+	if err := p.Initialize(cfg); err != nil {
+		_ = p.Stop()
+		return err
+	}
+
+	// Ensure the process is stopped if anything after Initialize() fails.
+	defer func() {
+		if r := recover(); r != nil {
+			_ = p.Stop()
+			retErr = fmt.Errorf("plugin %s: registration panicked: %v", p.name, r)
+		} else if retErr != nil {
+			_ = p.Stop()
+		}
+	}()
+
+	// Register plugin tools.
+	for _, td := range p.tools {
+		if _, exists := m.toolRegistry.Get(td.Name); exists {
+			log.Printf("plugin: %s tool %q conflicts with existing tool, skipping", p.name, td.Name)
+			continue
+		}
+		m.toolRegistry.Register(&PluginTool{
+			def:     td,
+			process: p,
+		})
+	}
+
 	return nil
 }
 

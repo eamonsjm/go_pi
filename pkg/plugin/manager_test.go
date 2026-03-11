@@ -515,6 +515,32 @@ func TestAgentEventToPayload_OtherEvent(t *testing.T) {
 	}
 }
 
+func TestInitialize_StopsPluginOnRegistrationPanic(t *testing.T) {
+	p := startTestPlugin(t, "echo_caps")
+
+	// A nil toolRegistry causes a panic during tool registration, after
+	// the plugin process has already been successfully initialized.
+	m := &Manager{
+		plugins:      []*PluginProcess{p},
+		toolRegistry: nil,
+	}
+
+	err := m.Initialize(PluginConfig{})
+	if err != nil {
+		t.Fatalf("Initialize returned error: %v", err)
+	}
+
+	// The plugin should have been removed from the alive list.
+	if len(m.plugins) != 0 {
+		t.Errorf("plugins = %d, want 0 (panicked plugin should be removed)", len(m.plugins))
+	}
+
+	// The plugin process should have been stopped (not leaked).
+	if p.Alive() {
+		t.Error("plugin process still alive after registration panic")
+	}
+}
+
 // dummyTool is a minimal tools.Tool implementation for testing.
 type dummyTool struct {
 	name string
