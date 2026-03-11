@@ -16,3 +16,4 @@ hello-plugin
 .claude/
 .logs/
 __pycache__/
+.beads/
