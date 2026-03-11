@@ -51,7 +51,9 @@ func NewEditor() *Editor {
 	ta.CharLimit = 0 // unlimited
 	ta.ShowLineNumbers = false
 	ta.SetHeight(3)
-	ta.Focus()
+	// Don't focus immediately — terminal color query responses can leak into
+	// the textarea before the TUI is fully initialized. Focus is deferred
+	// until the first WindowSizeMsg arrives (see App.Update).
 
 	// Style the textarea itself.
 	ta.FocusedStyle.CursorLine = lipgloss.NewStyle()

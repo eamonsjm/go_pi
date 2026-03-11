@@ -42,6 +42,9 @@ type App struct {
 
 	// quitting tracks whether we are in the process of exiting.
 	quitting bool
+
+	// initialized is set after the first WindowSizeMsg to defer editor focus.
+	initialized bool
 }
 
 // NewApp creates a fully initialised App ready to be passed to tea.NewProgram.
@@ -143,6 +146,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.width = msg.Width
 		a.height = msg.Height
 		a.layout()
+		if !a.initialized {
+			a.initialized = true
+			a.editor.Focus()
+		}
 		return a, nil
 
 	// ---- Agent events flowing in ----
