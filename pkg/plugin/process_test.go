@@ -593,3 +593,42 @@ func TestAlive_FalseAfterClose(t *testing.T) {
 		t.Error("Alive() = true for closed process, want false")
 	}
 }
+
+func TestWaitResponse_Timeout(t *testing.T) {
+	p := &PluginProcess{
+		name:       "timeout-test",
+		responseCh: make(chan PluginMessage), // unbuffered, nothing will send
+	}
+
+	start := time.Now()
+	_, err := p.waitResponse(50 * time.Millisecond)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected timeout error")
+	}
+	if !strings.Contains(err.Error(), "timed out") {
+		t.Errorf("error = %q, want containing %q", err.Error(), "timed out")
+	}
+	if elapsed < 40*time.Millisecond {
+		t.Errorf("returned too quickly (%v), expected ~50ms timeout", elapsed)
+	}
+}
+
+func TestWaitResponse_ChannelClosed(t *testing.T) {
+	responseCh := make(chan PluginMessage)
+	close(responseCh)
+
+	p := &PluginProcess{
+		name:       "closed-test",
+		responseCh: responseCh,
+	}
+
+	_, err := p.waitResponse(5 * time.Second)
+	if err == nil {
+		t.Fatal("expected error from closed channel")
+	}
+	if !strings.Contains(err.Error(), "process exited") {
+		t.Errorf("error = %q, want containing %q", err.Error(), "process exited")
+	}
+}
