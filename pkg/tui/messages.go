@@ -45,6 +45,16 @@ type CommandResultMsg struct {
 	IsError bool
 }
 
+// PluginInjectMsg carries an inject_message or log message from a plugin
+// process into the TUI for display or agent injection.
+type PluginInjectMsg struct {
+	PluginName string
+	Content    string
+	Role       string // "user" to feed back to the agent, otherwise display only
+	IsLog      bool
+	LogLevel   string
+}
+
 // ---------------------------------------------------------------------------
 // Session messages
 // ---------------------------------------------------------------------------

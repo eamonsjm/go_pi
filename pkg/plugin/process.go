@@ -276,6 +276,11 @@ func (p *PluginProcess) Stop() error {
 	}
 }
 
+// Name returns the plugin's display name.
+func (p *PluginProcess) Name() string {
+	return p.name
+}
+
 // Commands returns the slash commands declared by this plugin during initialization.
 func (p *PluginProcess) Commands() []CommandDef {
 	return p.commands

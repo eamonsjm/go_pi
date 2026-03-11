@@ -376,6 +376,31 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 		},
 	)
 
+	// Consume inject messages from all plugins and route to TUI/agent.
+	for _, proc := range pluginMgr.Plugins() {
+		go func(proc *plugin.PluginProcess) {
+			for msg := range proc.InjectMessages() {
+				content := msg.Content
+				if msg.Type == "log" {
+					content = msg.Message
+				}
+
+				p.Send(tui.PluginInjectMsg{
+					PluginName: proc.Name(),
+					Content:    content,
+					Role:       msg.Role,
+					IsLog:      msg.Type == "log",
+					LogLevel:   msg.Level,
+				})
+
+				// If the plugin injects a "user" role message, feed it to the agent.
+				if msg.Type == "inject_message" && msg.Role == "user" && content != "" {
+					agentLoop.FollowUp(content)
+				}
+			}
+		}(proc)
+	}
+
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
