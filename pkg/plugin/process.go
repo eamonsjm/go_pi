@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"os/exec"
 	"sync"
 	"time"
@@ -106,13 +107,10 @@ func (p *PluginProcess) readLoop() {
 			select {
 			case p.injectCh <- msg:
 			default:
-				// Drop if channel is full.
+				log.Printf("plugin %s: dropped %s message (channel full)", p.name, msg.Type)
 			}
 		case "capabilities", "tool_result", "command_result":
-			select {
-			case p.responseCh <- msg:
-			default:
-			}
+			p.responseCh <- msg
 		}
 	}
 }
