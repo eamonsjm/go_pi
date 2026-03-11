@@ -289,6 +289,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.quitting = true
 		return a, tea.Quit
 
+	// ---- Mouse events (silently discard) ----
+	case tea.MouseMsg:
+		return a, nil
+
 	// ---- Keyboard shortcuts handled at app level ----
 	case tea.KeyMsg:
 		// When the model selector overlay is visible, route all keys to it.

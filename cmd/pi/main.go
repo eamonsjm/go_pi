@@ -338,7 +338,7 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 	}
 
 	// Create the Bubble Tea program
-	p := tea.NewProgram(app, tea.WithAltScreen(), tea.WithMouseAllMotion())
+	p := tea.NewProgram(app, tea.WithAltScreen())
 
 	// Wire up callbacks
 	app.SetCallbacks(
