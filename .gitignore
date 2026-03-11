@@ -10,3 +10,9 @@ pi
 # OS
 .DS_Store
 hello-plugin
+
+# Gas Town (added by gt)
+.runtime/
+.claude/
+.logs/
+__pycache__/
