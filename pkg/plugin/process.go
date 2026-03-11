@@ -276,6 +276,11 @@ func (p *PluginProcess) Stop() error {
 	}
 }
 
+// Commands returns the slash commands declared by this plugin during initialization.
+func (p *PluginProcess) Commands() []CommandDef {
+	return p.commands
+}
+
 // Alive returns true if the plugin process has not been marked as closed.
 func (p *PluginProcess) Alive() bool {
 	p.mu.Lock()

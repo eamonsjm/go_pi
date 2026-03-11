@@ -132,7 +132,7 @@ func (a *App) RegisterBuiltinCommands(agentLoop *agent.AgentLoop, sessionMgr *se
 
 // Init returns the initial command to start the cursor blink in the editor.
 func (a *App) Init() tea.Cmd {
-	return textarea.Blink
+	return nil
 }
 
 // Update processes messages and delegates to sub-components.
@@ -149,6 +149,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !a.initialized {
 			a.initialized = true
 			a.editor.Focus()
+			return a, textarea.Blink
 		}
 		return a, nil
 

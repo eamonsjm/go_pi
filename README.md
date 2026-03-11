@@ -2,6 +2,8 @@
 
 An AI coding agent for the terminal, implemented in Go with [Bubble Tea](https://github.com/charmbracelet/bubbletea).
 
+> **Disclaimer:** This project is an experiment in using [Gas Town](https://github.com/ejm/gt) for multi-agent development coordination. It serves as a testbed for exploring how multiple AI agents can collaborate on a shared codebase through structured workflows and issue tracking.
+
 ## Features
 
 - **Multi-provider AI** -- supports Anthropic, OpenAI, and OpenRouter out of the box
