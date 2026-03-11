@@ -225,3 +225,203 @@ func TestMergeZeroMaxTokensDoesNotOverride(t *testing.T) {
 		t.Errorf("zero max_tokens should not override default, got %d", cfg.MaxTokens)
 	}
 }
+
+func TestMergeFromFileTrailingComma(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "settings.json")
+
+	// Trailing comma is invalid JSON.
+	data := []byte(`{"default_model": "gpt-4o",}`)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	cfg := DefaultConfig()
+	err := mergeFromFile(cfg, path)
+	if err == nil {
+		t.Error("expected error for JSON with trailing comma")
+	}
+}
+
+func TestMergeFromFileEmptyFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "settings.json")
+
+	// 0-byte file.
+	if err := os.WriteFile(path, []byte{}, 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	cfg := DefaultConfig()
+	err := mergeFromFile(cfg, path)
+	if err == nil {
+		t.Error("expected error for empty config file")
+	}
+}
+
+func TestMergeFromFileAllZeroValues(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "settings.json")
+
+	// Every field set to its zero value — none should overwrite defaults.
+	data := []byte(`{
+		"default_provider": "",
+		"default_model": "",
+		"thinking_level": "",
+		"max_tokens": 0,
+		"session_dir": "",
+		"config_dir": ""
+	}`)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	cfg := DefaultConfig()
+	defaults := DefaultConfig()
+
+	if err := mergeFromFile(cfg, path); err != nil {
+		t.Fatalf("mergeFromFile: %v", err)
+	}
+
+	if cfg.DefaultProvider != defaults.DefaultProvider {
+		t.Errorf("DefaultProvider changed to %q, want %q", cfg.DefaultProvider, defaults.DefaultProvider)
+	}
+	if cfg.DefaultModel != defaults.DefaultModel {
+		t.Errorf("DefaultModel changed to %q, want %q", cfg.DefaultModel, defaults.DefaultModel)
+	}
+	if cfg.ThinkingLevel != defaults.ThinkingLevel {
+		t.Errorf("ThinkingLevel changed to %q, want %q", cfg.ThinkingLevel, defaults.ThinkingLevel)
+	}
+	if cfg.MaxTokens != defaults.MaxTokens {
+		t.Errorf("MaxTokens changed to %d, want %d", cfg.MaxTokens, defaults.MaxTokens)
+	}
+	if cfg.SessionDir != defaults.SessionDir {
+		t.Errorf("SessionDir changed to %q, want %q", cfg.SessionDir, defaults.SessionDir)
+	}
+	if cfg.ConfigDir != defaults.ConfigDir {
+		t.Errorf("ConfigDir changed to %q, want %q", cfg.ConfigDir, defaults.ConfigDir)
+	}
+}
+
+func TestMergeFromFileNegativeMaxTokens(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "settings.json")
+
+	data := []byte(`{"max_tokens": -100}`)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	cfg := DefaultConfig()
+	if err := mergeFromFile(cfg, path); err != nil {
+		t.Fatalf("mergeFromFile: %v", err)
+	}
+
+	if cfg.MaxTokens != 8192 {
+		t.Errorf("negative max_tokens should not override default, got %d", cfg.MaxTokens)
+	}
+}
+
+func TestMergeFromFileUnknownKeys(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "settings.json")
+
+	// Unknown top-level keys and nested objects should be silently ignored.
+	data := []byte(`{
+		"default_model": "gpt-4o",
+		"unknown_field": "should be ignored",
+		"nested": {"deep": {"key": "value"}},
+		"extra_list": [1, 2, 3]
+	}`)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	cfg := DefaultConfig()
+	if err := mergeFromFile(cfg, path); err != nil {
+		t.Fatalf("mergeFromFile: %v", err)
+	}
+
+	// Known field should still be applied.
+	if cfg.DefaultModel != "gpt-4o" {
+		t.Errorf("expected DefaultModel 'gpt-4o', got %q", cfg.DefaultModel)
+	}
+
+	// Other defaults should be untouched.
+	if cfg.DefaultProvider != "anthropic" {
+		t.Errorf("DefaultProvider changed unexpectedly to %q", cfg.DefaultProvider)
+	}
+}
+
+func TestMergeFromFilePermissionError(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("skipping permission test when running as root")
+	}
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "settings.json")
+
+	if err := os.WriteFile(path, []byte(`{"default_model": "x"}`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	// Remove read permission.
+	if err := os.Chmod(path, 0o000); err != nil {
+		t.Fatalf("Chmod: %v", err)
+	}
+	t.Cleanup(func() { os.Chmod(path, 0o600) })
+
+	cfg := DefaultConfig()
+	err := mergeFromFile(cfg, path)
+	if err == nil {
+		t.Error("expected error for unreadable config file")
+	}
+}
+
+func TestMergeFromFileWrongType(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "settings.json")
+
+	// max_tokens as a string instead of int — should not crash, field stays default.
+	data := []byte(`{"max_tokens": "not a number", "default_model": "good-model"}`)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	cfg := DefaultConfig()
+	if err := mergeFromFile(cfg, path); err != nil {
+		t.Fatalf("mergeFromFile: %v", err)
+	}
+
+	// Wrong-type field should be silently skipped (unmarshal into int fails).
+	if cfg.MaxTokens != 8192 {
+		t.Errorf("max_tokens with wrong type should not override default, got %d", cfg.MaxTokens)
+	}
+	// Correct-type field should still apply.
+	if cfg.DefaultModel != "good-model" {
+		t.Errorf("expected DefaultModel 'good-model', got %q", cfg.DefaultModel)
+	}
+}
+
+func TestMergeFromFileNullValues(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "settings.json")
+
+	// Explicit null values should not overwrite defaults.
+	data := []byte(`{"default_provider": null, "max_tokens": null}`)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	cfg := DefaultConfig()
+	if err := mergeFromFile(cfg, path); err != nil {
+		t.Fatalf("mergeFromFile: %v", err)
+	}
+
+	if cfg.DefaultProvider != "anthropic" {
+		t.Errorf("null should not override default_provider, got %q", cfg.DefaultProvider)
+	}
+	if cfg.MaxTokens != 8192 {
+		t.Errorf("null should not override max_tokens, got %d", cfg.MaxTokens)
+	}
+}
