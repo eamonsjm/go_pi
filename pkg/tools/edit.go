@@ -77,8 +77,14 @@ func (t *EditTool) Execute(ctx context.Context, params map[string]any) (string, 
 	// Perform the replacement.
 	newContent := strings.Replace(content, oldString, newString, 1)
 
+	// Preserve original file permissions.
+	mode := os.FileMode(0644)
+	if info, err := os.Stat(filePath); err == nil {
+		mode = info.Mode()
+	}
+
 	// Write the file back.
-	if err := os.WriteFile(filePath, []byte(newContent), 0644); err != nil {
+	if err := os.WriteFile(filePath, []byte(newContent), mode); err != nil {
 		return "", fmt.Errorf("cannot write file: %v", err)
 	}
 

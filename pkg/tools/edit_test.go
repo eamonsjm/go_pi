@@ -110,6 +110,30 @@ func TestEditTool_MissingFile(t *testing.T) {
 	}
 }
 
+func TestEditTool_PreservesFilePermissions(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "script.sh")
+	os.WriteFile(path, []byte("#!/bin/bash\necho hello\n"), 0755)
+
+	tool := &EditTool{}
+	_, err := tool.Execute(context.Background(), map[string]any{
+		"file_path":  path,
+		"old_string": "echo hello",
+		"new_string": "echo world",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("cannot stat file: %v", err)
+	}
+	if info.Mode().Perm() != 0755 {
+		t.Errorf("expected permissions 0755, got %04o", info.Mode().Perm())
+	}
+}
+
 func TestEditTool_MissingFilePath(t *testing.T) {
 	tool := &EditTool{}
 	_, err := tool.Execute(context.Background(), map[string]any{
