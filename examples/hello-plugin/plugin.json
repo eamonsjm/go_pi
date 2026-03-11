@@ -1,0 +1,7 @@
+{
+  "name": "hello-plugin",
+  "version": "0.1.0",
+  "description": "A minimal example plugin that provides a hello tool and greet command",
+  "executable": "./hello-plugin",
+  "capabilities": ["tools", "commands", "events"]
+}
