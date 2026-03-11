@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -322,6 +323,126 @@ func TestSteerInterruptsToolExecution(t *testing.T) {
 	if !found {
 		t.Error("expected steered text response")
 	}
+}
+
+func TestPostExecSteerAddsSkipResults(t *testing.T) {
+	// Verify that when a steering message arrives after a tool executes,
+	// the remaining tool calls get skip results (tool_result messages).
+	call := 0
+	provider := &mockProvider{
+		streamFn: func(_ context.Context, req ai.StreamRequest) (<-chan ai.StreamEvent, error) {
+			ch := make(chan ai.StreamEvent, 20)
+			call++
+			current := call
+			go func() {
+				defer close(ch)
+				if current == 1 {
+					ch <- ai.StreamEvent{Type: ai.EventMessageStart}
+					ch <- ai.StreamEvent{Type: ai.EventToolUseStart, ToolCallID: "tc-1", ToolName: "steer-trigger"}
+					ch <- ai.StreamEvent{Type: ai.EventToolUseDelta, PartialInput: `{}`}
+					ch <- ai.StreamEvent{Type: ai.EventToolUseEnd}
+					ch <- ai.StreamEvent{Type: ai.EventToolUseStart, ToolCallID: "tc-2", ToolName: "noop"}
+					ch <- ai.StreamEvent{Type: ai.EventToolUseDelta, PartialInput: `{}`}
+					ch <- ai.StreamEvent{Type: ai.EventToolUseEnd}
+					ch <- ai.StreamEvent{Type: ai.EventToolUseStart, ToolCallID: "tc-3", ToolName: "noop"}
+					ch <- ai.StreamEvent{Type: ai.EventToolUseDelta, PartialInput: `{}`}
+					ch <- ai.StreamEvent{Type: ai.EventToolUseEnd}
+					ch <- ai.StreamEvent{Type: ai.EventMessageEnd}
+				} else {
+					// After steering, model returns text.
+					ch <- ai.StreamEvent{Type: ai.EventMessageStart}
+					ch <- ai.StreamEvent{Type: ai.EventTextDelta, Delta: "redirected"}
+					ch <- ai.StreamEvent{Type: ai.EventMessageEnd}
+				}
+			}()
+			return ch, nil
+		},
+	}
+
+	var agent *AgentLoop
+	var steerOnce sync.Once
+
+	reg := tools.NewRegistry()
+	// This tool steers during its own execution, guaranteeing the steer
+	// message lands in the channel before the post-exec select runs.
+	reg.Register(&callbackTool{name: "steer-trigger", fn: func() (string, error) {
+		steerOnce.Do(func() {
+			agent.Steer("redirect now")
+		})
+		return "executed", nil
+	}})
+	reg.Register(&mockTool{name: "noop", result: "noop"})
+
+	agent = NewAgentLoop(provider, reg)
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- agent.Prompt(context.Background(), "run tools")
+	}()
+
+	events := drainEvents(agent, 2*time.Second)
+
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("Prompt returned error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Prompt did not return")
+	}
+
+	// Verify: messages should contain tool results for all three tool calls.
+	msgs := agent.Messages()
+	tc2HasResult := false
+	tc3HasResult := false
+	for _, msg := range msgs {
+		for _, block := range msg.Content {
+			if block.Type == ai.ContentTypeToolResult {
+				switch block.ToolResultID {
+				case "tc-2":
+					tc2HasResult = true
+					if !block.IsError {
+						t.Error("tc-2 skip result should be an error")
+					}
+				case "tc-3":
+					tc3HasResult = true
+					if !block.IsError {
+						t.Error("tc-3 skip result should be an error")
+					}
+				}
+			}
+		}
+	}
+	if !tc2HasResult {
+		t.Error("missing skip result for tc-2")
+	}
+	if !tc3HasResult {
+		t.Error("missing skip result for tc-3")
+	}
+
+	// Verify the redirected response came through.
+	found := false
+	for _, ev := range events {
+		if ev.Type == EventAssistantText && ev.Delta == "redirected" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected redirected text response")
+	}
+}
+
+// callbackTool is a mock tool that calls a function during execution.
+type callbackTool struct {
+	name string
+	fn   func() (string, error)
+}
+
+func (t *callbackTool) Name() string        { return t.name }
+func (t *callbackTool) Description() string  { return "callback tool" }
+func (t *callbackTool) Schema() any          { return nil }
+func (t *callbackTool) Execute(_ context.Context, _ map[string]any) (string, error) {
+	return t.fn()
 }
 
 func TestFollowUpProcessed(t *testing.T) {

@@ -181,7 +181,7 @@ func (a *AgentLoop) run(ctx context.Context) error {
 
 		// Execute tool calls sequentially. A steering message can interrupt.
 		steered := false
-		for _, tc := range toolCalls {
+		for i, tc := range toolCalls {
 			// Check for steering interrupt before each tool.
 			select {
 			case steerMsg := <-a.steerCh:
@@ -204,7 +204,10 @@ func (a *AgentLoop) run(ctx context.Context) error {
 			// Check for steering after execution too.
 			select {
 			case steerMsg := <-a.steerCh:
-				a.addSteeringSkipResults(toolCalls, "")
+				// Current tool already has a result; skip remaining tools.
+				for _, remaining := range toolCalls[i+1:] {
+					a.appendMessage(ai.NewToolResultMessage(remaining.ToolUseID, "tool execution skipped: user sent a new message", true))
+				}
 				a.appendMessage(ai.NewTextMessage(ai.RoleUser, steerMsg))
 				steered = true
 			default:
