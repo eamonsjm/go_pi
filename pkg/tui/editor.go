@@ -153,6 +153,14 @@ func (e *Editor) Update(msg tea.Msg) tea.Cmd {
 			}
 			return nil
 
+		case tea.KeyCtrlD:
+			// Ctrl+D (EOF) quits when idle and the editor is empty,
+			// matching standard terminal behavior.
+			if e.state == editorIdle && e.textarea.Value() == "" {
+				return func() tea.Msg { return editorQuitMsg{} }
+			}
+			return nil
+
 		case tea.KeyEscape:
 			if e.state != editorIdle {
 				return func() tea.Msg { return editorCancelMsg{} }
