@@ -24,7 +24,6 @@ import (
 )
 
 func main() {
-	// Flags
 	modelFlag := flag.String("model", "", "Model to use (e.g. claude-sonnet-4-20250514)")
 	providerFlag := flag.String("provider", "", "Provider (anthropic, openai)")
 	thinkingFlag := flag.String("thinking", "", "Thinking level (off, low, medium, high)")
@@ -34,13 +33,11 @@ func main() {
 	pluginFlag := flag.String("plugin", "", "Comma-separated paths to plugin executables or directories")
 	flag.Parse()
 
-	// Load config
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
-	// Apply flag overrides
 	if *modelFlag != "" {
 		cfg.DefaultModel = *modelFlag
 	}
@@ -51,18 +48,15 @@ func main() {
 		cfg.ThinkingLevel = *thinkingFlag
 	}
 
-	// Set working directory
 	if *cwdFlag != "" {
 		if err := os.Chdir(*cwdFlag); err != nil {
 			log.Fatalf("Failed to change directory: %v", err)
 		}
 	}
 
-	// Set up tools
 	registry := tools.NewRegistry()
 	tools.RegisterDefaults(registry)
 
-	// Set up plugin manager
 	pluginMgr := plugin.NewManager(registry)
 	home, _ := os.UserHomeDir()
 	cwd, _ := os.Getwd()
@@ -89,7 +83,6 @@ func main() {
 	})
 	defer pluginMgr.Shutdown()
 
-	// Set up session manager
 	sessionDir := cfg.SessionDir
 	if sessionDir == "" {
 		home, _ := os.UserHomeDir()
@@ -97,7 +90,6 @@ func main() {
 	}
 	sessionMgr := session.NewManager(sessionDir)
 
-	// Set up auth store and resolver.
 	authStore, authResolver, authErr := setupAuth()
 	if authErr != nil {
 		log.Fatalf("Failed to initialize auth: %v", authErr)
@@ -117,7 +109,7 @@ func main() {
 		return
 	}
 
-	// Interactive mode — launch TUI even without a provider
+	// Create agent loop - may be nil provider if no API key configured
 	var agentLoop *agent.AgentLoop
 	if provider != nil {
 		agentLoop = makeAgentLoop(provider, registry, cfg)
@@ -144,7 +136,6 @@ func main() {
 		sessionMgr.NewSession()
 	}
 
-	// Interactive mode
 	runInteractive(agentLoop, sessionMgr, cfg, providerErr, pluginMgr, authStore, authResolver)
 }
 
@@ -349,7 +340,6 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 				"Use /auth to check status. (%v)", providerErr))
 	}
 
-	// Create the Bubble Tea program
 	p := tea.NewProgram(app, tea.WithAltScreen())
 
 	// Wire up callbacks
