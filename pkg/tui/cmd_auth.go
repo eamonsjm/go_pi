@@ -24,6 +24,14 @@ func openBrowser(url string) error {
 	}
 }
 
+// authLoginSuccessMsg is sent after a successful login. The app handles this
+// by re-resolving the provider and wiring it into the agent loop, so that
+// the user can immediately start chatting after /login.
+type authLoginSuccessMsg struct {
+	providerName string
+	text         string
+}
+
 // authOAuthMsg is sent when the authorization URL is ready. The app shows
 // the URL and instructions, then enters "auth pending" mode. The user's
 // next input is treated as the authorization code and sent to codeCh.
@@ -80,8 +88,9 @@ func NewLoginCommand(store *auth.Store, resolver *auth.Resolver) *SlashCommand {
 							IsError: true,
 						}
 					}
-					return CommandResultMsg{
-						Text: fmt.Sprintf("Logged in to %s!", oauthProv.Name()),
+					return authLoginSuccessMsg{
+						providerName: provider,
+						text:         fmt.Sprintf("Logged in to %s!", oauthProv.Name()),
 					}
 				}
 
@@ -135,8 +144,9 @@ func NewLoginCommand(store *auth.Store, resolver *auth.Resolver) *SlashCommand {
 								IsError: true,
 							}
 						}
-						return CommandResultMsg{
-							Text: fmt.Sprintf("Successfully logged in to %s!", oauthProv.Name()),
+						return authLoginSuccessMsg{
+							providerName: provider,
+							text:         fmt.Sprintf("Successfully logged in to %s!", oauthProv.Name()),
 						}
 					},
 				}

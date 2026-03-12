@@ -101,6 +101,15 @@ func (a *AgentLoop) SetMaxTokens(n int) {
 	a.maxTokens = n
 }
 
+// SetProvider replaces the AI provider used for subsequent LLM calls.
+// This is used to wire up a provider after login when the app started
+// without one.
+func (a *AgentLoop) SetProvider(p ai.Provider) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.provider = p
+}
+
 // SetSystemPrompt updates the system prompt for subsequent turns.
 func (a *AgentLoop) SetSystemPrompt(prompt string) {
 	a.mu.Lock()

@@ -42,10 +42,11 @@ type App struct {
 	authPendingCodeCh chan string
 
 	// Callbacks wired by the caller that owns the agent loop.
-	onSubmit      func(text string)
-	onCancel      func()
-	onSteer       func(text string)
-	onModelChange func(provider, model string)
+	onSubmit       func(text string)
+	onCancel       func()
+	onSteer        func(text string)
+	onModelChange  func(provider, model string)
+	onLoginSuccess func(provider string)
 
 	// quitting tracks whether we are in the process of exiting.
 	quitting bool
@@ -108,6 +109,13 @@ func (a *App) SetSession(name string) {
 // (may be empty if unknown) and the model identifier.
 func (a *App) SetModelChangeCallback(fn func(provider, model string)) {
 	a.onModelChange = fn
+}
+
+// SetLoginSuccessCallback sets the function called after a successful /login.
+// The callback receives the provider name and should re-resolve credentials
+// and wire the new provider into the agent loop.
+func (a *App) SetLoginSuccessCallback(fn func(provider string)) {
+	a.onLoginSuccess = fn
 }
 
 // RegisterCommand adds a slash command to the app's command registry. Commands
@@ -227,6 +235,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.chat.AddSystemMessage("Error: " + msg.Text)
 		} else {
 			a.chat.AddSystemMessage(msg.Text)
+		}
+		return a, nil
+
+	case authLoginSuccessMsg:
+		a.chat.AddSystemMessage(msg.text)
+		if a.onLoginSuccess != nil {
+			a.onLoginSuccess(msg.providerName)
 		}
 		return a, nil
 

@@ -306,6 +306,15 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 	app.SetModelChangeCallback(func(provider, model string) {
 		agentLoop.SetModel(model)
 	})
+	app.SetLoginSuccessCallback(func(providerName string) {
+		p, err := resolveProvider(cfg, authResolver)
+		if err != nil {
+			log.Printf("Failed to resolve provider after login: %v", err)
+			return
+		}
+		agentLoop.SetProvider(p)
+		app.SetModel(cfg.DefaultModel)
+	})
 
 	// Register plugin-provided slash commands.
 	for _, proc := range pluginMgr.Plugins() {
