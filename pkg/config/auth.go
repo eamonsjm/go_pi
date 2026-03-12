@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 )
 
-// Known environment variable names for each provider.
-var providerEnvVars = map[string]string{
+// ProviderEnvVars maps provider names to their API key environment variable names.
+var ProviderEnvVars = map[string]string{
 	"anthropic":  "ANTHROPIC_API_KEY",
 	"openrouter": "OPENROUTER_API_KEY",
 	"openai":     "OPENAI_API_KEY",
@@ -45,7 +45,7 @@ func LoadAuth() (*AuthStore, error) {
 	}
 
 	// Environment variables take precedence.
-	for provider, envVar := range providerEnvVars {
+	for provider, envVar := range ProviderEnvVars {
 		if val := os.Getenv(envVar); val != "" {
 			store.Keys[provider] = val
 		}

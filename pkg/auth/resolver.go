@@ -3,15 +3,9 @@ package auth
 import (
 	"fmt"
 	"os"
-)
 
-// Known environment variable names for provider API keys.
-var providerEnvVars = map[string]string{
-	"anthropic":  "ANTHROPIC_API_KEY",
-	"openai":     "OPENAI_API_KEY",
-	"openrouter": "OPENROUTER_API_KEY",
-	"google":     "GOOGLE_API_KEY",
-}
+	"github.com/ejm/go_pi/pkg/config"
+)
 
 // Resolver resolves an API key for a provider by walking a priority chain:
 //
@@ -73,7 +67,7 @@ func (r *Resolver) Resolve(provider string) (string, error) {
 	}
 
 	// 4. Environment variable.
-	if envName, ok := providerEnvVars[provider]; ok {
+	if envName, ok := config.ProviderEnvVars[provider]; ok {
 		if val := os.Getenv(envName); val != "" {
 			return val, nil
 		}
