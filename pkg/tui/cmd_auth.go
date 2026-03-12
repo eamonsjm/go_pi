@@ -175,7 +175,7 @@ func NewAuthStatusCommand(store *auth.Store, resolver *auth.Resolver) *SlashComm
 				var sb strings.Builder
 				sb.WriteString("Authentication Status:\n")
 
-				providers := []string{"anthropic", "openrouter", "openai", "google"}
+				providers := []string{"anthropic", "openrouter", "openai"}
 				for _, p := range providers {
 					key, _ := resolver.Resolve(p)
 					cred := store.Get(p)

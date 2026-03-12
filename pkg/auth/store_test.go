@@ -212,13 +212,13 @@ func TestStoreProvidersSorted(t *testing.T) {
 	s, _ := NewStore(filepath.Join(dir, "auth.json"))
 	s.Set("openai", &Credential{Type: CredentialAPIKey, Key: "k"})
 	s.Set("anthropic", &Credential{Type: CredentialAPIKey, Key: "k"})
-	s.Set("google", &Credential{Type: CredentialAPIKey, Key: "k"})
+	s.Set("openrouter", &Credential{Type: CredentialAPIKey, Key: "k"})
 
 	providers := s.Providers()
 	if len(providers) != 3 {
 		t.Fatalf("len(Providers()) = %d, want 3", len(providers))
 	}
-	if providers[0] != "anthropic" || providers[1] != "google" || providers[2] != "openai" {
+	if providers[0] != "anthropic" || providers[1] != "openai" || providers[2] != "openrouter" {
 		t.Errorf("Providers() not sorted: %v", providers)
 	}
 }
