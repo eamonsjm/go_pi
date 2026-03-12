@@ -35,6 +35,10 @@ type Editor struct {
 	// commands is the registry used for slash command dispatch and autocomplete.
 	commands *CommandRegistry
 
+	// defaultPlaceholder is the standard placeholder text, stored so it can
+	// be restored after a temporary override (e.g. auth code entry).
+	defaultPlaceholder string
+
 	// lastMsg stores the previously submitted text so the user can recall it
 	// with the up-arrow key when the textarea is empty.
 	lastMsg string
@@ -61,8 +65,9 @@ func NewEditor() *Editor {
 	ta.BlurredStyle.Base = lipgloss.NewStyle().Foreground(ColorMuted)
 
 	return &Editor{
-		textarea: ta,
-		state:    editorIdle,
+		textarea:           ta,
+		state:              editorIdle,
+		defaultPlaceholder: ta.Placeholder,
 	}
 }
 
@@ -82,6 +87,16 @@ func (e *Editor) SetState(s editorState) {
 	e.state = s
 	// Reset Ctrl-C counter whenever state changes.
 	e.ctrlCCount = 0
+}
+
+// SetPlaceholder temporarily overrides the placeholder text.
+func (e *Editor) SetPlaceholder(text string) {
+	e.textarea.Placeholder = text
+}
+
+// ResetPlaceholder restores the default placeholder text.
+func (e *Editor) ResetPlaceholder() {
+	e.textarea.Placeholder = e.defaultPlaceholder
 }
 
 // Focus gives the textarea keyboard focus.
