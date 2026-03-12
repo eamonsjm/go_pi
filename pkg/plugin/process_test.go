@@ -297,6 +297,64 @@ func TestHelperPlugin(t *testing.T) {
 			}
 		}
 
+	case "crash_on_tool":
+		// Initialize normally, then crash when a tool_call arrives.
+		if !scanner.Scan() {
+			os.Exit(1)
+		}
+		resp := PluginMessage{Type: "capabilities"}
+		data, _ := json.Marshal(resp)
+		fmt.Fprintln(os.Stdout, string(data))
+
+		for scanner.Scan() {
+			var req HostMessage
+			json.Unmarshal(scanner.Bytes(), &req)
+			if req.Type == "tool_call" {
+				os.Exit(1) // crash mid-operation
+			}
+			if req.Type == "shutdown" {
+				os.Exit(0)
+			}
+		}
+
+	case "close_stdout_early":
+		// Initialize normally, then close stdout while process stays alive.
+		if !scanner.Scan() {
+			os.Exit(1)
+		}
+		resp := PluginMessage{Type: "capabilities"}
+		data, _ := json.Marshal(resp)
+		fmt.Fprintln(os.Stdout, string(data))
+		os.Stdout.Close()
+		// Keep reading stdin so process stays alive (but can't respond).
+		for scanner.Scan() {
+			var req HostMessage
+			json.Unmarshal(scanner.Bytes(), &req)
+			if req.Type == "shutdown" {
+				os.Exit(0)
+			}
+		}
+
+	case "hang_on_tool":
+		// Initialize normally, then hang forever on tool_call.
+		if !scanner.Scan() {
+			os.Exit(1)
+		}
+		resp := PluginMessage{Type: "capabilities"}
+		data, _ := json.Marshal(resp)
+		fmt.Fprintln(os.Stdout, string(data))
+
+		for scanner.Scan() {
+			var req HostMessage
+			json.Unmarshal(scanner.Bytes(), &req)
+			if req.Type == "tool_call" {
+				select {} // hang forever
+			}
+			if req.Type == "shutdown" {
+				os.Exit(0)
+			}
+		}
+
 	case "exit_immediately":
 		// Exit without reading anything — simulates crash.
 		os.Exit(1)
@@ -630,5 +688,110 @@ func TestWaitResponse_ChannelClosed(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "process exited") {
 		t.Errorf("error = %q, want containing %q", err.Error(), "process exited")
+	}
+}
+
+// --- Plugin process failure scenario tests ---
+
+func TestCrashDuringActiveSend(t *testing.T) {
+	p := startTestPlugin(t, "crash_on_tool")
+	if err := p.Initialize(PluginConfig{}); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+
+	// Send a tool call — the plugin crashes upon receiving it.
+	_, _, err := p.ExecuteTool("call-crash", "anything", nil)
+	if err == nil {
+		t.Fatal("expected error from crashed process during tool call")
+	}
+
+	// Verify cleanup works on a crashed process.
+	p.Stop()
+	if p.Alive() {
+		t.Error("process still alive after crash and stop")
+	}
+}
+
+func TestPrematureStdoutClose(t *testing.T) {
+	p := startTestPlugin(t, "close_stdout_early")
+	if err := p.Initialize(PluginConfig{}); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+
+	// Wait for readLoop to detect stdout EOF and close channels.
+	select {
+	case _, ok := <-p.InjectMessages():
+		if ok {
+			t.Fatal("unexpected message on injectCh")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("readLoop did not finish after stdout close")
+	}
+
+	// Plugin closed stdout; responseCh is now closed.
+	// ExecuteTool should fail with "process exited".
+	_, _, err := p.ExecuteTool("call-closed", "anything", nil)
+	if err == nil {
+		t.Fatal("expected error when plugin closed stdout")
+	}
+	if !strings.Contains(err.Error(), "process exited") {
+		t.Errorf("error = %q, want containing %q", err.Error(), "process exited")
+	}
+}
+
+func TestHangingPluginTimeout(t *testing.T) {
+	p := startTestPlugin(t, "hang_on_tool")
+	if err := p.Initialize(PluginConfig{}); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+
+	// Send a tool call — the plugin will hang and never respond.
+	if err := p.Send(HostMessage{
+		Type: "tool_call",
+		ID:   "call-hang",
+		Name: "anything",
+	}); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	// Use a short timeout to verify timeout enforcement without waiting 30s.
+	_, err := p.waitResponse(100 * time.Millisecond)
+	if err == nil {
+		t.Fatal("expected timeout error from hanging plugin")
+	}
+	if !strings.Contains(err.Error(), "timed out") {
+		t.Errorf("error = %q, want containing %q", err.Error(), "timed out")
+	}
+}
+
+func TestExecuteToolOnClosedProcess(t *testing.T) {
+	p := startTestPlugin(t, "echo_caps")
+	if err := p.Initialize(PluginConfig{}); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	p.Stop()
+
+	_, _, err := p.ExecuteTool("call-after-close", "echo", nil)
+	if err == nil {
+		t.Fatal("expected error from ExecuteTool on closed process")
+	}
+	if !strings.Contains(err.Error(), "process closed") {
+		t.Errorf("error = %q, want containing %q", err.Error(), "process closed")
+	}
+}
+
+func TestExecuteCommandOnClosedProcess(t *testing.T) {
+	p := startTestPlugin(t, "echo_caps")
+	if err := p.Initialize(PluginConfig{}); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	p.Stop()
+
+	_, _, err := p.ExecuteCommand("greet", "world")
+	if err == nil {
+		t.Fatal("expected error from ExecuteCommand on closed process")
+	}
+	if !strings.Contains(err.Error(), "process closed") {
+		t.Errorf("error = %q, want containing %q", err.Error(), "process closed")
 	}
 }
