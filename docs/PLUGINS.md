@@ -1,10 +1,10 @@
-# Pi Plugin System
+# Gi Plugin System
 
 ## Overview
 
-Pi plugins are external executables that communicate with the host via JSONL over stdin/stdout. This makes plugins language-agnostic -- they can be written in Go, Python, Node.js, Rust, or any language that can read and write JSON lines.
+Gi plugins are external executables that communicate with the host via JSONL over stdin/stdout. This makes plugins language-agnostic -- they can be written in Go, Python, Node.js, Rust, or any language that can read and write JSON lines.
 
-Each plugin runs as a subprocess managed by the Pi host process. The host sends structured messages to the plugin's stdin and reads responses from the plugin's stdout. The plugin's stderr is captured for logging but does not participate in the protocol.
+Each plugin runs as a subprocess managed by the Gi host process. The host sends structured messages to the plugin's stdin and reads responses from the plugin's stdout. The plugin's stderr is captured for logging but does not participate in the protocol.
 
 ## Plugin Capabilities
 
@@ -22,8 +22,8 @@ A plugin can declare any combination of the following capabilities:
 
 Plugins are discovered from three locations, searched in order:
 
-1. **Global plugins**: `~/.pi/plugins/` directory
-2. **Project-local plugins**: `.pi/plugins/` directory (relative to cwd)
+1. **Global plugins**: `~/.gi/plugins/` directory
+2. **Project-local plugins**: `.gi/plugins/` directory (relative to cwd)
 3. **CLI flag**: `--plugin ./path/to/plugin` (can be specified multiple times)
 
 ### Plugin Directory Layout
@@ -36,7 +36,7 @@ Each plugin lives in its own subdirectory and contains either:
 Example directory structure:
 
 ```
-~/.pi/plugins/
+~/.gi/plugins/
   rtk-optimizer/
     plugin.json
     rtk-optimizer          # the executable
@@ -83,7 +83,7 @@ Sent once after the plugin process starts. The plugin must respond with a `capab
     "cwd": "/home/user/project",
     "model": "claude-sonnet-4-20250514",
     "provider": "anthropic",
-    "pi_version": "0.1.0"
+    "gi_version": "0.1.0"
   }
 }
 ```
@@ -143,7 +143,7 @@ The `event.type` field corresponds to the `AgentEventType` constants defined in 
 
 #### shutdown
 
-Sent when Pi is exiting. The plugin should perform any cleanup and exit.
+Sent when Gi is exiting. The plugin should perform any cleanup and exit.
 
 ```json
 {
@@ -224,7 +224,7 @@ Proactively inject a message into the conversation. This can be sent at any time
 
 #### log
 
-Emit a log message. These are displayed in the Pi debug log, not in the conversation.
+Emit a log message. These are displayed in the Gi debug log, not in the conversation.
 
 ```json
 {
@@ -314,13 +314,13 @@ Valid levels: `info`, `warn`, `error`.
 
 ### Full Lifecycle
 
-1. **Discovery**: The host scans plugin directories (`~/.pi/plugins/`, `.pi/plugins/`) and processes `--plugin` CLI flags.
+1. **Discovery**: The host scans plugin directories (`~/.gi/plugins/`, `.gi/plugins/`) and processes `--plugin` CLI flags.
 
 2. **Loading**: For each discovered plugin, the host reads the manifest (if present), validates it, and records the plugin's path and declared capabilities.
 
 3. **Spawning**: The host starts each plugin as a subprocess with stdin/stdout pipes. The plugin's stderr is connected to the host's logging system.
 
-4. **Initialization**: The host sends an `initialize` message with configuration (cwd, model, provider, pi version). The plugin responds with its `capabilities` declaration listing tools and commands.
+4. **Initialization**: The host sends an `initialize` message with configuration (cwd, model, provider, gi version). The plugin responds with its `capabilities` declaration listing tools and commands.
 
 5. **Registration**: The host registers plugin-provided tools into the `tools.Registry` and commands into the `CommandRegistry`, alongside built-in tools and commands. Name collisions are resolved by preferring built-in tools (plugin tools with conflicting names are rejected with a warning).
 
@@ -330,7 +330,7 @@ Valid levels: `info`, `warn`, `error`.
    - Agent lifecycle events are forwarded to all plugins that declared the `events` capability.
    - Plugins may send `inject_message` at any time to add context to the conversation.
 
-7. **Shutdown**: When Pi exits, the host sends a `shutdown` message to each plugin and waits up to 5 seconds for the process to exit. If the plugin has not exited after 5 seconds, it is killed with SIGKILL.
+7. **Shutdown**: When Gi exits, the host sends a `shutdown` message to each plugin and waits up to 5 seconds for the process to exit. If the plugin has not exited after 5 seconds, it is killed with SIGKILL.
 
 ## Error Handling
 
@@ -364,11 +364,11 @@ If a plugin fails to respond to `initialize` within 10 seconds:
 
 ## Security Considerations
 
-- **Same permissions**: Plugins run with the same OS permissions as the Pi host process. A plugin can read, write, and execute anything the user can.
+- **Same permissions**: Plugins run with the same OS permissions as the Gi host process. A plugin can read, write, and execute anything the user can.
 
-- **No sandboxing**: There is no filesystem or network sandboxing. This is consistent with Pi's built-in tools (e.g., `bash` can execute arbitrary commands).
+- **No sandboxing**: There is no filesystem or network sandboxing. This is consistent with Gi's built-in tools (e.g., `bash` can execute arbitrary commands).
 
-- **Trust model**: Users must trust the plugins they install, just as they trust the Pi binary itself. Plugin discovery is limited to well-known directories and explicit CLI flags -- Pi does not download or auto-install plugins.
+- **Trust model**: Users must trust the plugins they install, just as they trust the Gi binary itself. Plugin discovery is limited to well-known directories and explicit CLI flags -- Gi does not download or auto-install plugins.
 
 - **No secret isolation**: Plugin config may include API keys or tokens if passed through environment variables. Plugins have access to the same environment as the host.
 

@@ -67,8 +67,8 @@ func main() {
 	home, _ := os.UserHomeDir()
 	cwd, _ := os.Getwd()
 	pluginMgr.Discover([]string{
-		filepath.Join(home, ".pi", "plugins"),
-		filepath.Join(cwd, ".pi", "plugins"),
+		filepath.Join(home, ".gi", "plugins"),
+		filepath.Join(cwd, ".gi", "plugins"),
 	})
 	if *pluginFlag != "" {
 		for _, p := range strings.Split(*pluginFlag, ",") {
@@ -85,7 +85,7 @@ func main() {
 		Cwd:       cwd,
 		Model:     cfg.DefaultModel,
 		Provider:  cfg.DefaultProvider,
-		PiVersion: "0.1.0",
+		GiVersion: "0.1.0",
 	})
 	defer pluginMgr.Shutdown()
 
@@ -93,7 +93,7 @@ func main() {
 	sessionDir := cfg.SessionDir
 	if sessionDir == "" {
 		home, _ := os.UserHomeDir()
-		sessionDir = filepath.Join(home, ".pi", "sessions")
+		sessionDir = filepath.Join(home, ".gi", "sessions")
 	}
 	sessionMgr := session.NewManager(sessionDir)
 
@@ -217,7 +217,7 @@ func buildSystemPrompt() string {
 	cwd, _ := os.Getwd()
 
 	var sb strings.Builder
-	sb.WriteString("You are pi, an AI coding assistant running in the user's terminal.\n")
+	sb.WriteString("You are gi, an AI coding assistant running in the user's terminal.\n")
 	sb.WriteString("You help with software engineering tasks: writing code, debugging, explaining, refactoring.\n\n")
 	sb.WriteString("## Environment\n")
 	sb.WriteString(fmt.Sprintf("- Working directory: %s\n", cwd))
@@ -235,7 +235,7 @@ func buildSystemPrompt() string {
 	sb.WriteString("- Be careful with destructive operations\n\n")
 
 	// Load AGENTS.md or CLAUDE.md if present
-	for _, name := range []string{"AGENTS.md", "CLAUDE.md", ".pi/SYSTEM.md"} {
+	for _, name := range []string{"AGENTS.md", "CLAUDE.md", ".gi/SYSTEM.md"} {
 		path := filepath.Join(cwd, name)
 		data, err := os.ReadFile(path)
 		if err == nil {
@@ -333,7 +333,7 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 				"  /login anthropic          — OAuth login (Claude Pro/Max)\n"+
 				"  export ANTHROPIC_API_KEY=sk-...  — API key\n"+
 				"  export OPENAI_API_KEY=sk-...     — OpenAI key\n\n"+
-				"Or save to ~/.pi/auth.json.\n"+
+				"Or save to ~/.gi/auth.json.\n"+
 				"Use /auth to check status. (%v)", providerErr))
 	}
 

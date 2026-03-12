@@ -1,4 +1,4 @@
-// Package plugin implements the Pi plugin system. Plugins are external
+// Package plugin implements the Gi plugin system. Plugins are external
 // executables that communicate with the host via JSONL over stdin/stdout,
 // enabling language-agnostic extensibility.
 package plugin
@@ -23,7 +23,7 @@ type PluginConfig struct {
 	Cwd       string `json:"cwd"`
 	Model     string `json:"model"`
 	Provider  string `json:"provider"`
-	PiVersion string `json:"pi_version"`
+	GiVersion string `json:"gi_version"`
 }
 
 // EventPayload carries agent lifecycle event data forwarded to plugins.

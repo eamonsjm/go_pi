@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 )
 
-// Config holds all pi settings.
+// Config holds all gi settings.
 type Config struct {
 	// Provider settings
 	DefaultProvider string `json:"default_provider"`
@@ -25,21 +25,21 @@ type Config struct {
 // DefaultConfig returns a Config populated with sensible defaults.
 func DefaultConfig() *Config {
 	home, _ := os.UserHomeDir()
-	piDir := filepath.Join(home, ".pi")
+	giDir := filepath.Join(home, ".gi")
 	return &Config{
 		DefaultProvider: "anthropic",
 		DefaultModel:    "claude-sonnet-4-20250514",
 		ThinkingLevel:   "off",
 		MaxTokens:       8192,
-		SessionDir:      filepath.Join(piDir, "sessions"),
-		ConfigDir:       piDir,
+		SessionDir:      filepath.Join(giDir, "sessions"),
+		ConfigDir:       giDir,
 	}
 }
 
 // LoadConfig loads configuration by merging (in order):
 //  1. Built-in defaults
-//  2. Global settings from ~/.pi/settings.json
-//  3. Project-local settings from .pi/settings.json (cwd)
+//  2. Global settings from ~/.gi/settings.json
+//  3. Project-local settings from .gi/settings.json (cwd)
 //
 // Later sources override earlier ones. Missing files are silently ignored.
 func LoadConfig() (*Config, error) {
@@ -52,7 +52,7 @@ func LoadConfig() (*Config, error) {
 	}
 
 	// Project-local config.
-	localPath := filepath.Join(".pi", "settings.json")
+	localPath := filepath.Join(".gi", "settings.json")
 	if err := mergeFromFile(cfg, localPath); err != nil {
 		return nil, fmt.Errorf("local config: %w", err)
 	}
@@ -60,7 +60,7 @@ func LoadConfig() (*Config, error) {
 	return cfg, nil
 }
 
-// Save writes the config to ~/.pi/settings.json.
+// Save writes the config to ~/.gi/settings.json.
 func (c *Config) Save() error {
 	dir := c.ConfigDir
 	if dir == "" {
@@ -68,7 +68,7 @@ func (c *Config) Save() error {
 		if err != nil {
 			return fmt.Errorf("resolve home dir: %w", err)
 		}
-		dir = filepath.Join(home, ".pi")
+		dir = filepath.Join(home, ".gi")
 	}
 
 	if err := os.MkdirAll(dir, 0o700); err != nil {

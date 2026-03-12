@@ -21,7 +21,7 @@ type AuthStore struct {
 }
 
 // LoadAuth loads API keys by merging:
-//  1. Keys from ~/.pi/auth.json
+//  1. Keys from ~/.gi/auth.json
 //  2. Environment variables (override file-based keys)
 func LoadAuth() (*AuthStore, error) {
 	store := &AuthStore{
@@ -31,7 +31,7 @@ func LoadAuth() (*AuthStore, error) {
 	// Load from file.
 	home, err := os.UserHomeDir()
 	if err == nil {
-		path := filepath.Join(home, ".pi", "auth.json")
+		path := filepath.Join(home, ".gi", "auth.json")
 		if data, err := os.ReadFile(path); err == nil {
 			var fileStore AuthStore
 			if err := json.Unmarshal(data, &fileStore); err != nil {
@@ -64,14 +64,14 @@ func (a *AuthStore) SetKey(provider, key string) {
 	a.Keys[provider] = key
 }
 
-// Save writes the auth store to ~/.pi/auth.json.
+// Save writes the auth store to ~/.gi/auth.json.
 func (a *AuthStore) Save() error {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return fmt.Errorf("resolve home dir: %w", err)
 	}
 
-	dir := filepath.Join(home, ".pi")
+	dir := filepath.Join(home, ".gi")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create config dir: %w", err)
 	}

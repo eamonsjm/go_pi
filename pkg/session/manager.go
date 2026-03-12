@@ -43,7 +43,7 @@ type SessionInfo struct {
 // All exported methods are safe for concurrent use.
 type Manager struct {
 	mu      sync.RWMutex
-	dir     string // root directory, e.g. ~/.pi/sessions/
+	dir     string // root directory, e.g. ~/.gi/sessions/
 	current string // active session ID
 	entries []Entry
 }

@@ -124,7 +124,7 @@ func TestStoreDefaultPath(t *testing.T) {
 		t.Fatalf("NewStore: %v", err)
 	}
 
-	expected := filepath.Join(dir, ".pi", "auth.json")
+	expected := filepath.Join(dir, ".gi", "auth.json")
 	if s.path != expected {
 		t.Errorf("default path: got %q, want %q", s.path, expected)
 	}

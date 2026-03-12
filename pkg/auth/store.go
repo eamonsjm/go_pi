@@ -10,7 +10,7 @@ import (
 )
 
 // Store manages persisted authentication credentials for all providers.
-// It reads from and writes to ~/.pi/auth.json with file-level locking
+// It reads from and writes to ~/.gi/auth.json with file-level locking
 // to prevent concurrent refresh races.
 type Store struct {
 	path     string                 // path to auth.json
@@ -19,14 +19,14 @@ type Store struct {
 }
 
 // NewStore creates a Store backed by the given file path.
-// If path is empty, it defaults to ~/.pi/auth.json.
+// If path is empty, it defaults to ~/.gi/auth.json.
 func NewStore(path string) (*Store, error) {
 	if path == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return nil, fmt.Errorf("resolve home dir: %w", err)
 		}
-		path = filepath.Join(home, ".pi", "auth.json")
+		path = filepath.Join(home, ".gi", "auth.json")
 	}
 	return &Store{
 		path:    path,

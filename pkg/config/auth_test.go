@@ -69,7 +69,7 @@ func TestSaveAndLoadAuthRoundTrip(t *testing.T) {
 	}
 
 	// Verify file exists.
-	path := filepath.Join(dir, ".pi", "auth.json")
+	path := filepath.Join(dir, ".gi", "auth.json")
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("auth.json not found: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestEnvVarsOverrideFileValues(t *testing.T) {
 	t.Setenv("HOME", dir)
 
 	// Write an auth file with one key.
-	piDir := filepath.Join(dir, ".pi")
+	piDir := filepath.Join(dir, ".gi")
 	if err := os.MkdirAll(piDir, 0o700); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
@@ -155,7 +155,7 @@ func TestSaveCreatesDirectory(t *testing.T) {
 		t.Fatalf("Save: %v", err)
 	}
 
-	path := filepath.Join(dir, ".pi", "auth.json")
+	path := filepath.Join(dir, ".gi", "auth.json")
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("auth.json not created: %v", err)
 	}

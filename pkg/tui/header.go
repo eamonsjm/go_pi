@@ -52,7 +52,7 @@ func (h *Header) View() string {
 	appName := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(ColorPrimary).
-		Render("pi")
+		Render("gi")
 
 	// Model badge.
 	modelBadge := lipgloss.NewStyle().

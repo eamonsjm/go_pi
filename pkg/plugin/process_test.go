@@ -426,7 +426,7 @@ func TestInitialize_Success(t *testing.T) {
 		Cwd:       "/tmp",
 		Model:     "test-model",
 		Provider:  "test",
-		PiVersion: "0.0.1",
+		GiVersion: "0.0.1",
 	})
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)

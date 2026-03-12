@@ -99,13 +99,13 @@ func TestHeader_View_ContainsSession(t *testing.T) {
 	}
 }
 
-func TestHeader_View_ContainsPi(t *testing.T) {
+func TestHeader_View_ContainsGi(t *testing.T) {
 	h := NewHeader()
 	h.SetWidth(80)
 	view := h.View()
 	stripped := stripAnsi(view)
-	if !containsSubstring(stripped, "pi") {
-		t.Errorf("expected View to contain app name 'pi', got %q", stripped)
+	if !containsSubstring(stripped, "gi") {
+		t.Errorf("expected View to contain app name 'gi', got %q", stripped)
 	}
 }
 

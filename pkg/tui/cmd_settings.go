@@ -147,7 +147,7 @@ func settingsUpdate(key, value string, cfg *config.Config, agentLoop *agent.Agen
 		if !valid[value] {
 			return settingsError(fmt.Sprintf("unknown provider %q — valid: anthropic, openrouter, openai", value))
 		}
-		return settingsError(fmt.Sprintf("provider change to %q requires restart. Edit ~/.pi/settings.json and relaunch.", value))
+		return settingsError(fmt.Sprintf("provider change to %q requires restart. Edit ~/.gi/settings.json and relaunch.", value))
 
 	default:
 		return settingsError(fmt.Sprintf("unknown setting %q — valid keys: thinking, model, max_tokens, provider", key))

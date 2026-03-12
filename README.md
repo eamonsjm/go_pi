@@ -1,4 +1,4 @@
-# pi
+# gi
 
 An AI coding agent for the terminal, implemented in Go with [Bubble Tea](https://github.com/charmbracelet/bubbletea).
 
@@ -12,7 +12,7 @@ An AI coding agent for the terminal, implemented in Go with [Bubble Tea](https:/
 - **Print mode** -- pipe a prompt in and get a response on stdout, no TUI required
 - **Extended thinking** -- configurable thinking levels (off, low, medium, high) for supported models
 - **Session persistence** -- conversations are saved and can be resumed by session ID
-- **Project-aware** -- automatically loads AGENTS.md, CLAUDE.md, or .pi/SYSTEM.md from the working directory
+- **Project-aware** -- automatically loads AGENTS.md, CLAUDE.md, or .gi/SYSTEM.md from the working directory
 
 ## Install
 
@@ -23,7 +23,7 @@ An AI coding agent for the terminal, implemented in Go with [Bubble Tea](https:/
 ### From source
 
 ```bash
-go install github.com/ejm/go_pi/cmd/pi@latest
+go install github.com/ejm/go_pi/cmd/gi@latest
 ```
 
 Or clone and build manually:
@@ -31,14 +31,14 @@ Or clone and build manually:
 ```bash
 git clone https://github.com/ejm/go_pi.git
 cd go_pi
-go build -o pi ./cmd/pi/
+go build -o gi ./cmd/gi/
 ```
 
 ## Configuration
 
 ### API keys
 
-Keys can be set via environment variables or stored in `~/.pi/auth.json`. Environment variables take precedence over the file.
+Keys can be set via environment variables or stored in `~/.gi/auth.json`. Environment variables take precedence over the file.
 
 ```bash
 export ANTHROPIC_API_KEY="sk-ant-..."
@@ -46,7 +46,7 @@ export OPENROUTER_API_KEY="sk-or-..."
 export OPENAI_API_KEY="sk-..."
 ```
 
-Or create `~/.pi/auth.json`:
+Or create `~/.gi/auth.json`:
 
 ```json
 {
@@ -63,8 +63,8 @@ Or create `~/.pi/auth.json`:
 Settings are loaded by merging (in order of precedence):
 
 1. Built-in defaults
-2. Global settings: `~/.pi/settings.json`
-3. Project-local settings: `.pi/settings.json` (in the working directory)
+2. Global settings: `~/.gi/settings.json`
+3. Project-local settings: `.gi/settings.json` (in the working directory)
 
 Example `settings.json`:
 
@@ -82,12 +82,12 @@ Example `settings.json`:
 ### Interactive mode
 
 ```bash
-pi
-pi -model claude-sonnet-4-20250514
-pi -provider openrouter -model anthropic/claude-sonnet-4-20250514
-pi -thinking high
-pi -session abc123
-pi -cwd /path/to/project
+gi
+gi -model claude-sonnet-4-20250514
+gi -provider openrouter -model anthropic/claude-sonnet-4-20250514
+gi -thinking high
+gi -session abc123
+gi -cwd /path/to/project
 ```
 
 ### Print mode
@@ -95,7 +95,7 @@ pi -cwd /path/to/project
 Send a single prompt and print the response to stdout (no TUI):
 
 ```bash
-pi -p "explain this code"
+gi -p "explain this code"
 ```
 
 ### CLI flags
@@ -129,11 +129,11 @@ pi -p "explain this code"
 | OpenRouter | `OPENROUTER_API_KEY` | `anthropic/claude-sonnet-4-20250514` |
 | OpenAI | `OPENAI_API_KEY` | `gpt-4o` |
 
-If no provider is specified, pi auto-detects based on which API key is available (checked in the order above).
+If no provider is specified, gi auto-detects based on which API key is available (checked in the order above).
 
 ## Tools
 
-pi exposes the following tools to the AI model:
+gi exposes the following tools to the AI model:
 
 | Tool | Description |
 |------|-------------|
@@ -149,7 +149,7 @@ pi exposes the following tools to the AI model:
 ```
 go_pi/
   cmd/
-    pi/
+    gi/
       main.go           # Entry point, flag parsing, provider/agent wiring
   pkg/
     agent/
@@ -193,7 +193,7 @@ go_pi/
 go test ./...
 
 # Build
-go build -o pi ./cmd/pi/
+go build -o gi ./cmd/gi/
 
 # Vet
 go vet ./...
