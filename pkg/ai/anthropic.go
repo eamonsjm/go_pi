@@ -73,6 +73,7 @@ func (p *AnthropicProvider) Stream(ctx context.Context, req StreamRequest) (<-ch
 	httpReq.Header.Set("Content-Type", "application/json")
 	if p.useBearer {
 		httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
+		httpReq.Header.Set("anthropic-beta", "oauth-2025-04-20")
 	} else {
 		httpReq.Header.Set("x-api-key", p.apiKey)
 	}
