@@ -30,6 +30,7 @@ func main() {
 	thinkingFlag := flag.String("thinking", "", "Thinking level (off, low, medium, high)")
 	printFlag := flag.String("p", "", "Print mode: send prompt and print response")
 	sessionFlag := flag.String("session", "", "Resume a session by ID")
+	newFlag := flag.Bool("new", false, "Start a fresh session instead of resuming")
 	cwdFlag := flag.String("cwd", "", "Working directory")
 	pluginFlag := flag.String("plugin", "", "Comma-separated paths to plugin executables or directories")
 	flag.Parse()
@@ -133,19 +134,39 @@ func main() {
 		)
 	}
 
-	// Restore session if requested
+	// Restore or create session.
+	var restoredMsgs []ai.Message
+	var restoredSessionID string
+
 	if *sessionFlag != "" {
+		// Explicit --session flag: load the specified session.
 		if err := sessionMgr.LoadSession(*sessionFlag); err != nil {
 			log.Fatalf("Failed to load session: %v", err)
 		}
-		msgs := sessionMgr.GetMessages()
-		agentLoop.SetMessages(msgs)
-	} else {
+		restoredMsgs = sessionMgr.GetMessages()
+		restoredSessionID = sessionMgr.CurrentID()
+		agentLoop.SetMessages(restoredMsgs)
+	} else if *newFlag {
+		// Explicit --new flag: start fresh.
 		sessionMgr.NewSession()
+	} else {
+		// Auto-resume the most recent session.
+		if latest := sessionMgr.LatestSessionID(); latest != "" {
+			if err := sessionMgr.LoadSession(latest); err == nil {
+				restoredMsgs = sessionMgr.GetMessages()
+				restoredSessionID = latest
+				agentLoop.SetMessages(restoredMsgs)
+			} else {
+				// Failed to load — start fresh.
+				sessionMgr.NewSession()
+			}
+		} else {
+			sessionMgr.NewSession()
+		}
 	}
 
 	// Interactive mode
-	runInteractive(agentLoop, sessionMgr, cfg, providerErr, pluginMgr, authStore, authResolver)
+	runInteractive(agentLoop, sessionMgr, cfg, providerErr, pluginMgr, authStore, authResolver, restoredSessionID, restoredMsgs)
 }
 
 // setupAuth creates the auth store and resolver with registered OAuth providers.
@@ -295,7 +316,7 @@ func makeAgentLoop(provider ai.Provider, registry *tools.Registry, cfg *config.C
 	)
 }
 
-func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg *config.Config, providerErr error, pluginMgr *plugin.Manager, authStore *auth.Store, authResolver *auth.Resolver) {
+func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg *config.Config, providerErr error, pluginMgr *plugin.Manager, authStore *auth.Store, authResolver *auth.Resolver, restoredSessionID string, restoredMsgs []ai.Message) {
 	// Create the application lifecycle context. This is cancelled when
 	// runInteractive returns, ensuring all background operations (such as
 	// compaction) are stopped when the user quits.
@@ -336,6 +357,11 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 				},
 			})
 		}
+	}
+
+	// Replay restored session messages into the chat view.
+	if restoredSessionID != "" && len(restoredMsgs) > 0 {
+		app.RestoreSession(restoredSessionID, restoredMsgs)
 	}
 
 	// Show setup message if no provider is configured

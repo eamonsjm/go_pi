@@ -196,6 +196,59 @@ func TestListSessionsEmpty(t *testing.T) {
 	}
 }
 
+func TestLatestSessionID(t *testing.T) {
+	dir := t.TempDir()
+	m := NewManager(dir)
+
+	// No sessions — should return empty.
+	if got := m.LatestSessionID(); got != "" {
+		t.Errorf("expected empty, got %q", got)
+	}
+
+	// Create first session.
+	m.NewSession()
+	if err := m.SaveMessage(ai.NewTextMessage(ai.RoleUser, "first")); err != nil {
+		t.Fatalf("SaveMessage: %v", err)
+	}
+
+	time.Sleep(10 * time.Millisecond)
+
+	// Create second session — should be the latest.
+	id2 := m.NewSession()
+	if err := m.SaveMessage(ai.NewTextMessage(ai.RoleUser, "second")); err != nil {
+		t.Fatalf("SaveMessage: %v", err)
+	}
+
+	if got := m.LatestSessionID(); got != id2 {
+		t.Errorf("expected latest %q, got %q", id2, got)
+	}
+}
+
+func TestListSessionsPreview(t *testing.T) {
+	dir := t.TempDir()
+	m := NewManager(dir)
+
+	m.NewSession()
+	if err := m.SaveMessage(ai.NewTextMessage(ai.RoleUser, "hello world")); err != nil {
+		t.Fatalf("SaveMessage: %v", err)
+	}
+	if err := m.SaveMessage(ai.NewTextMessage(ai.RoleAssistant, "hi there")); err != nil {
+		t.Fatalf("SaveMessage: %v", err)
+	}
+	if err := m.SaveMessage(ai.NewTextMessage(ai.RoleUser, "tell me more\nwith multiple lines")); err != nil {
+		t.Fatalf("SaveMessage: %v", err)
+	}
+
+	sessions := m.ListSessions()
+	if len(sessions) != 1 {
+		t.Fatalf("expected 1 session, got %d", len(sessions))
+	}
+	// Preview should be the first line of the last user message.
+	if sessions[0].Preview != "tell me more" {
+		t.Errorf("expected preview %q, got %q", "tell me more", sessions[0].Preview)
+	}
+}
+
 func TestMultipleSessions(t *testing.T) {
 	dir := t.TempDir()
 	m := NewManager(dir)
