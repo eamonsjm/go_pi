@@ -216,7 +216,6 @@ func (a *AgentLoop) run(ctx context.Context) error {
 
 		toolCalls := assistantMsg.GetToolCalls()
 		if len(toolCalls) == 0 {
-			// No tool calls — the model is done.
 			// Check for a follow-up message before fully stopping.
 			select {
 			case followUp := <-a.followUpCh:
@@ -264,7 +263,6 @@ func (a *AgentLoop) run(ctx context.Context) error {
 				break
 			}
 		}
-		// Loop back to send tool results (or steering message) to the model.
 	}
 
 	return nil
@@ -305,7 +303,6 @@ func (a *AgentLoop) doTurn(ctx context.Context) (*ai.Message, error) {
 	for event := range stream {
 		switch event.Type {
 		case ai.EventMessageStart:
-			// Nothing to do; we already initialized assistantMsg.
 
 		case ai.EventTextDelta:
 			a.emit(AgentEvent{Type: EventAssistantText, Delta: event.Delta})

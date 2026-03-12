@@ -84,7 +84,6 @@ func (s *Store) loadLegacy(data []byte) error {
 			Key:  key,
 		}
 	}
-	// Migrate to new format on disk.
 	return s.Save()
 }
 

@@ -94,7 +94,6 @@ func (a *AgentLoop) Compact(ctx context.Context, instructions string) error {
 	a.messages = []ai.Message{compactedMsg}
 	a.mu.Unlock()
 
-	// Emit a compaction event so the TUI knows what happened.
 	a.emit(AgentEvent{
 		Type:  EventCompaction,
 		Delta: summaryText,

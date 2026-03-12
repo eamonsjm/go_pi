@@ -53,7 +53,6 @@ func RunJSONStream(agentLoop *agent.AgentLoop, prompt string) {
 	}
 }
 
-// readStdin reads all of stdin into a string (for piped input).
 func readStdin() string {
 	info, _ := os.Stdin.Stat()
 	if info.Mode()&os.ModeCharDevice != 0 {
