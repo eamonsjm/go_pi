@@ -34,6 +34,12 @@ func main() {
 	pluginFlag := flag.String("plugin", "", "Comma-separated paths to plugin executables or directories")
 	flag.Parse()
 
+	// Process @filepath arguments from remaining CLI args.
+	initialPrompt, err := processFileArgs(flag.Args())
+	if err != nil {
+		log.Fatalf("Error processing arguments: %v", err)
+	}
+
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
@@ -106,7 +112,11 @@ func main() {
 		}
 		agentLoop := makeAgentLoop(provider, registry, cfg)
 		sessionMgr.NewSession()
-		runPrintMode(agentLoop, sessionMgr, *printFlag)
+		prompt := *printFlag
+		if initialPrompt != "" {
+			prompt = initialPrompt + "\n\n" + prompt
+		}
+		runPrintMode(agentLoop, sessionMgr, prompt)
 		return
 	}
 
@@ -157,7 +167,7 @@ func main() {
 		}
 	}
 
-	runInteractive(agentLoop, sessionMgr, cfg, providerErr, pluginMgr, authStore, authResolver, restoredSessionID, restoredMsgs)
+	runInteractive(agentLoop, sessionMgr, cfg, providerErr, pluginMgr, authStore, authResolver, restoredSessionID, restoredMsgs, initialPrompt)
 }
 
 // setupAuth creates the auth store and resolver with registered OAuth providers.
@@ -337,7 +347,7 @@ func makeAgentLoop(provider ai.Provider, registry *tools.Registry, cfg *config.C
 	)
 }
 
-func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg *config.Config, providerErr error, pluginMgr *plugin.Manager, authStore *auth.Store, authResolver *auth.Resolver, restoredSessionID string, restoredMsgs []ai.Message) {
+func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg *config.Config, providerErr error, pluginMgr *plugin.Manager, authStore *auth.Store, authResolver *auth.Resolver, restoredSessionID string, restoredMsgs []ai.Message, initialPrompt string) {
 	// Create the application lifecycle context. This is cancelled when
 	// runInteractive returns, ensuring all background operations (such as
 	// compaction) are stopped when the user quits.
@@ -383,6 +393,11 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 	// Replay restored session messages into the chat view.
 	if restoredSessionID != "" && len(restoredMsgs) > 0 {
 		app.RestoreSession(restoredSessionID, restoredMsgs)
+	}
+
+	// Auto-submit initial prompt from CLI args (e.g. @filepath).
+	if initialPrompt != "" {
+		app.SetInitialPrompt(initialPrompt)
 	}
 
 	// Show setup message if no provider is configured
@@ -466,4 +481,43 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// processFileArgs processes CLI positional arguments, expanding @filepath
+// references into file contents. Arguments starting with @ are treated as file
+// paths whose contents are included in the prompt. Other arguments are joined
+// as plain text. Returns the combined initial prompt, or "" if no args given.
+func processFileArgs(args []string) (string, error) {
+	if len(args) == 0 {
+		return "", nil
+	}
+
+	var files []string
+	var text []string
+
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "@") {
+			path := arg[1:]
+			if path == "" {
+				continue
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return "", fmt.Errorf("cannot read %s: %w", path, err)
+			}
+			files = append(files, fmt.Sprintf("<file path=%q>\n%s\n</file>", path, strings.TrimRight(string(data), "\n")))
+		} else {
+			text = append(text, arg)
+		}
+	}
+
+	var parts []string
+	if len(files) > 0 {
+		parts = append(parts, strings.Join(files, "\n\n"))
+	}
+	if len(text) > 0 {
+		parts = append(parts, strings.Join(text, " "))
+	}
+
+	return strings.Join(parts, "\n\n"), nil
 }

@@ -48,6 +48,9 @@ type App struct {
 	onModelChange  func(provider, model string)
 	onLoginSuccess func(provider string)
 
+	// initialPrompt, if set, is auto-submitted after the first window resize.
+	initialPrompt string
+
 	// quitting tracks whether we are in the process of exiting.
 	quitting bool
 
@@ -124,6 +127,12 @@ func (a *App) RegisterCommand(cmd *SlashCommand) {
 	a.commands.Register(cmd)
 }
 
+// SetInitialPrompt sets a prompt that will be auto-submitted after the TUI
+// initialises. Use this for CLI-provided initial messages (e.g. @filepath args).
+func (a *App) SetInitialPrompt(prompt string) {
+	a.initialPrompt = prompt
+}
+
 // ShowWelcome adds an initial system message to the chat view. Use this to
 // display setup instructions or welcome text before the user interacts.
 func (a *App) ShowWelcome(text string) {
@@ -181,6 +190,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !a.initialized {
 			a.initialized = true
 			a.editor.Focus()
+			if a.initialPrompt != "" {
+				prompt := a.initialPrompt
+				a.initialPrompt = ""
+				return a, func() tea.Msg { return editorSubmitMsg{text: prompt} }
+			}
 			return a, textarea.Blink
 		}
 		return a, nil
