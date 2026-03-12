@@ -228,7 +228,9 @@ func (m *Manager) AppendEntry(entry Entry) error {
 }
 
 // GetMessages reconstructs the conversation messages from the current session's
-// message entries, in order. Non-message entries are skipped.
+// message entries, in order. Non-message entries are skipped. Any orphaned
+// tool_use blocks (without matching tool_result) are repaired with synthetic
+// error results so the conversation is valid for the API.
 func (m *Manager) GetMessages() []ai.Message {
 	m.mu.RLock()
 	entries := make([]Entry, len(m.entries))
@@ -245,7 +247,93 @@ func (m *Manager) GetMessages() []ai.Message {
 			msgs = append(msgs, msg)
 		}
 	}
-	return msgs
+	return RepairOrphanedToolUse(msgs)
+}
+
+// RepairOrphanedToolUse scans messages for assistant tool_use blocks that lack
+// corresponding tool_result responses. For each orphan, a synthetic error
+// tool_result is injected so the conversation is valid for the API.
+// Clean conversations (no orphans) are returned unmodified.
+func RepairOrphanedToolUse(msgs []ai.Message) []ai.Message {
+	if len(msgs) == 0 {
+		return msgs
+	}
+
+	// First pass: find orphaned tool_use IDs and where to insert synthetic results.
+	type orphanGroup struct {
+		afterIndex int      // insert synthetic results after this message index
+		toolUseIDs []string // IDs needing synthetic results, in original order
+	}
+	var orphans []orphanGroup
+
+	for i, msg := range msgs {
+		if msg.Role != ai.RoleAssistant {
+			continue
+		}
+		toolCalls := msg.GetToolCalls()
+		if len(toolCalls) == 0 {
+			continue
+		}
+
+		// Collect tool_use IDs from this assistant message.
+		needed := make(map[string]bool, len(toolCalls))
+		for _, tc := range toolCalls {
+			needed[tc.ToolUseID] = true
+		}
+
+		// Scan subsequent non-assistant messages for matching tool_results.
+		lastIdx := i
+		for j := i + 1; j < len(msgs); j++ {
+			if msgs[j].Role == ai.RoleAssistant {
+				break
+			}
+			lastIdx = j
+			for _, cb := range msgs[j].Content {
+				if cb.Type == ai.ContentTypeToolResult {
+					delete(needed, cb.ToolResultID)
+				}
+			}
+		}
+
+		if len(needed) == 0 {
+			continue
+		}
+
+		// Collect orphan IDs in original tool_use order.
+		var ids []string
+		for _, tc := range toolCalls {
+			if needed[tc.ToolUseID] {
+				ids = append(ids, tc.ToolUseID)
+			}
+		}
+		orphans = append(orphans, orphanGroup{afterIndex: lastIdx, toolUseIDs: ids})
+	}
+
+	if len(orphans) == 0 {
+		return msgs
+	}
+
+	// Second pass: build result with synthetic tool_results inserted.
+	insertAfter := make(map[int][]string, len(orphans))
+	for _, og := range orphans {
+		insertAfter[og.afterIndex] = og.toolUseIDs
+	}
+
+	result := make([]ai.Message, 0, len(msgs)+len(orphans)*2)
+	for i, msg := range msgs {
+		result = append(result, msg)
+		if ids, ok := insertAfter[i]; ok {
+			for _, id := range ids {
+				result = append(result, ai.NewToolResultMessage(
+					id,
+					"Tool execution interrupted — session was resumed",
+					true,
+				))
+			}
+		}
+	}
+
+	return result
 }
 
 // SaveMessage is a convenience method that wraps an ai.Message as an Entry

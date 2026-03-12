@@ -614,6 +614,163 @@ func TestConcurrentCurrentID(t *testing.T) {
 	wg.Wait()
 }
 
+// --- Orphaned tool_use repair tests -----------------------------------------
+
+func TestRepairOrphanedToolUse_NoToolUse(t *testing.T) {
+	msgs := []ai.Message{
+		ai.NewTextMessage(ai.RoleUser, "hello"),
+		ai.NewTextMessage(ai.RoleAssistant, "hi"),
+	}
+	repaired := RepairOrphanedToolUse(msgs)
+	if len(repaired) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(repaired))
+	}
+}
+
+func TestRepairOrphanedToolUse_CompleteToolUse(t *testing.T) {
+	// Assistant has tool_use, followed by matching tool_result — no repair needed.
+	msgs := []ai.Message{
+		ai.NewTextMessage(ai.RoleUser, "do something"),
+		{
+			Role: ai.RoleAssistant,
+			Content: []ai.ContentBlock{
+				{Type: ai.ContentTypeToolUse, ToolUseID: "tu-1", ToolName: "bash", Input: map[string]any{"cmd": "ls"}},
+			},
+		},
+		ai.NewToolResultMessage("tu-1", "file1 file2", false),
+		ai.NewTextMessage(ai.RoleAssistant, "done"),
+	}
+	repaired := RepairOrphanedToolUse(msgs)
+	if len(repaired) != 4 {
+		t.Fatalf("expected 4 messages (no repair), got %d", len(repaired))
+	}
+}
+
+func TestRepairOrphanedToolUse_OrphanedAtEnd(t *testing.T) {
+	// Assistant has tool_use as last message — no tool_result follows.
+	msgs := []ai.Message{
+		ai.NewTextMessage(ai.RoleUser, "do something"),
+		{
+			Role: ai.RoleAssistant,
+			Content: []ai.ContentBlock{
+				{Type: ai.ContentTypeText, Text: "let me run that"},
+				{Type: ai.ContentTypeToolUse, ToolUseID: "tu-1", ToolName: "bash", Input: map[string]any{"cmd": "ls"}},
+				{Type: ai.ContentTypeToolUse, ToolUseID: "tu-2", ToolName: "read", Input: map[string]any{"path": "/tmp"}},
+			},
+		},
+	}
+	repaired := RepairOrphanedToolUse(msgs)
+	if len(repaired) != 4 {
+		t.Fatalf("expected 4 messages (2 original + 2 synthetic), got %d", len(repaired))
+	}
+	// Synthetic results should be user messages with tool_result type.
+	for _, idx := range []int{2, 3} {
+		msg := repaired[idx]
+		if msg.Role != ai.RoleUser {
+			t.Errorf("repaired[%d]: expected role user, got %s", idx, msg.Role)
+		}
+		if len(msg.Content) != 1 || msg.Content[0].Type != ai.ContentTypeToolResult {
+			t.Errorf("repaired[%d]: expected tool_result content", idx)
+		}
+		if !msg.Content[0].IsError {
+			t.Errorf("repaired[%d]: expected is_error=true", idx)
+		}
+	}
+	if repaired[2].Content[0].ToolResultID != "tu-1" {
+		t.Errorf("expected tu-1, got %s", repaired[2].Content[0].ToolResultID)
+	}
+	if repaired[3].Content[0].ToolResultID != "tu-2" {
+		t.Errorf("expected tu-2, got %s", repaired[3].Content[0].ToolResultID)
+	}
+}
+
+func TestRepairOrphanedToolUse_PartialResults(t *testing.T) {
+	// Assistant has 3 tool_use blocks, only the first has a result.
+	msgs := []ai.Message{
+		ai.NewTextMessage(ai.RoleUser, "do three things"),
+		{
+			Role: ai.RoleAssistant,
+			Content: []ai.ContentBlock{
+				{Type: ai.ContentTypeToolUse, ToolUseID: "tu-1", ToolName: "bash", Input: nil},
+				{Type: ai.ContentTypeToolUse, ToolUseID: "tu-2", ToolName: "read", Input: nil},
+				{Type: ai.ContentTypeToolUse, ToolUseID: "tu-3", ToolName: "write", Input: nil},
+			},
+		},
+		ai.NewToolResultMessage("tu-1", "ok", false),
+	}
+	repaired := RepairOrphanedToolUse(msgs)
+	// Original: user, assistant, tool_result(tu-1). Synthetic: tool_result(tu-2), tool_result(tu-3).
+	if len(repaired) != 5 {
+		t.Fatalf("expected 5 messages, got %d", len(repaired))
+	}
+	// Synthetic results should be after the existing tool_result.
+	if repaired[3].Content[0].ToolResultID != "tu-2" {
+		t.Errorf("expected tu-2, got %s", repaired[3].Content[0].ToolResultID)
+	}
+	if repaired[4].Content[0].ToolResultID != "tu-3" {
+		t.Errorf("expected tu-3, got %s", repaired[4].Content[0].ToolResultID)
+	}
+}
+
+func TestRepairOrphanedToolUse_Empty(t *testing.T) {
+	repaired := RepairOrphanedToolUse(nil)
+	if repaired != nil {
+		t.Errorf("expected nil for nil input, got %v", repaired)
+	}
+
+	repaired = RepairOrphanedToolUse([]ai.Message{})
+	if len(repaired) != 0 {
+		t.Errorf("expected empty for empty input, got %d", len(repaired))
+	}
+}
+
+func TestRepairOrphanedToolUse_ViaGetMessages(t *testing.T) {
+	// End-to-end: save messages with orphaned tool_use, reload, verify repair.
+	dir := t.TempDir()
+	m := NewManager(dir)
+	id := m.NewSession()
+
+	// Save user message.
+	if err := m.SaveMessage(ai.NewTextMessage(ai.RoleUser, "run this")); err != nil {
+		t.Fatalf("SaveMessage: %v", err)
+	}
+	// Save assistant message with tool_use.
+	assistantMsg := ai.Message{
+		Role: ai.RoleAssistant,
+		Content: []ai.ContentBlock{
+			{Type: ai.ContentTypeToolUse, ToolUseID: "tu-orphan", ToolName: "bash", Input: map[string]any{"cmd": "ls"}},
+		},
+	}
+	if err := m.SaveMessage(assistantMsg); err != nil {
+		t.Fatalf("SaveMessage: %v", err)
+	}
+	// No tool_result saved — simulates user quit mid-execution.
+
+	// Reload in a fresh manager.
+	m2 := NewManager(dir)
+	if err := m2.LoadSession(id); err != nil {
+		t.Fatalf("LoadSession: %v", err)
+	}
+
+	msgs := m2.GetMessages()
+	if len(msgs) != 3 {
+		t.Fatalf("expected 3 messages (2 original + 1 synthetic), got %d", len(msgs))
+	}
+	synth := msgs[2]
+	if synth.Role != ai.RoleUser {
+		t.Errorf("synthetic message: expected role user, got %s", synth.Role)
+	}
+	if synth.Content[0].ToolResultID != "tu-orphan" {
+		t.Errorf("synthetic message: expected tool_use_id tu-orphan, got %s", synth.Content[0].ToolResultID)
+	}
+	if !synth.Content[0].IsError {
+		t.Error("synthetic message: expected is_error=true")
+	}
+	if !strings.Contains(synth.Content[0].Content, "interrupted") {
+		t.Errorf("synthetic message: expected 'interrupted' in content, got %q", synth.Content[0].Content)
+	}
+}
+
 // countJSONLLines counts non-empty lines in a JSONL file.
 func countJSONLLines(t *testing.T, path string) int {
 	t.Helper()
