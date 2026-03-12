@@ -48,7 +48,7 @@ type authOAuthMsg struct {
 func NewLoginCommand(store *auth.Store, resolver *auth.Resolver) *SlashCommand {
 	return &SlashCommand{
 		Name:        "login",
-		Description: "Log in to a provider via OAuth (e.g. /login anthropic)",
+		Description: "Log in via OAuth (e.g. /login anthropic, /login openai)",
 		Execute: func(args string) tea.Cmd {
 			provider := strings.TrimSpace(args)
 			if provider == "" {
