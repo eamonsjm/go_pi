@@ -1,7 +1,10 @@
 package tools
 
 import (
+	"context"
 	"testing"
+
+	"github.com/ejm/go_pi/pkg/ai"
 )
 
 func TestRegistry_RegisterAndGet(t *testing.T) {
@@ -101,5 +104,63 @@ func TestRegistry_RegisterOverwrites(t *testing.T) {
 	all := r.All()
 	if len(all) != 1 {
 		t.Fatalf("expected 1 tool after duplicate register, got %d", len(all))
+	}
+}
+
+// testRichTool is a mock RichTool for testing.
+type testRichTool struct {
+	name string
+}
+
+func (t *testRichTool) Name() string        { return t.name }
+func (t *testRichTool) Description() string  { return "test rich tool" }
+func (t *testRichTool) Schema() any          { return nil }
+func (t *testRichTool) Execute(_ context.Context, _ map[string]any) (string, error) {
+	return "fallback", nil
+}
+func (t *testRichTool) ExecuteRich(_ context.Context, _ map[string]any) ([]ai.ContentBlock, error) {
+	return []ai.ContentBlock{
+		{Type: ai.ContentTypeText, Text: "hello"},
+	}, nil
+}
+
+func TestRegistry_RichToolRegistration(t *testing.T) {
+	r := NewRegistry()
+	rt := &testRichTool{name: "rich"}
+	r.Register(rt)
+
+	got, ok := r.Get("rich")
+	if !ok {
+		t.Fatal("expected tool 'rich' to be found")
+	}
+	if got.Name() != "rich" {
+		t.Fatalf("expected name 'rich', got %q", got.Name())
+	}
+
+	// Should be assertable to RichTool.
+	richTool, ok := got.(RichTool)
+	if !ok {
+		t.Fatal("expected tool to implement RichTool interface")
+	}
+
+	blocks, err := richTool.ExecuteRich(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("ExecuteRich returned error: %v", err)
+	}
+	if len(blocks) != 1 {
+		t.Fatalf("expected 1 block, got %d", len(blocks))
+	}
+	if blocks[0].Text != "hello" {
+		t.Errorf("expected text 'hello', got %q", blocks[0].Text)
+	}
+}
+
+func TestRegistry_NonRichToolNotAssertable(t *testing.T) {
+	r := NewRegistry()
+	r.Register(&ReadTool{})
+
+	got, _ := r.Get("read")
+	if _, ok := got.(RichTool); ok {
+		t.Error("ReadTool should not implement RichTool")
 	}
 }

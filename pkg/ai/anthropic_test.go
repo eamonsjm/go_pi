@@ -1251,6 +1251,91 @@ func TestAnthropicStream_LargeToolInputPayload(t *testing.T) {
 	}
 }
 
+func TestBuildRequestBody_RichToolResult(t *testing.T) {
+	p := &AnthropicProvider{apiKey: "test"}
+
+	req := StreamRequest{
+		Model: "test-model",
+		Messages: []Message{
+			NewTextMessage(RoleUser, "read the image"),
+			{
+				Role: RoleAssistant,
+				Content: []ContentBlock{
+					{Type: ContentTypeToolUse, ToolUseID: "tc-1", ToolName: "read", Input: map[string]any{"path": "/img.png"}},
+				},
+			},
+			NewRichToolResultMessage("tc-1", []ContentBlock{
+				{Type: ContentTypeText, Text: "File contents:"},
+				{Type: ContentTypeImage, MediaType: "image/png", ImageData: "iVBOR"},
+			}, false),
+		},
+	}
+
+	data, err := p.buildRequestBody(req)
+	if err != nil {
+		t.Fatalf("buildRequestBody failed: %v", err)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(data, &body); err != nil {
+		t.Fatalf("failed to parse JSON: %v", err)
+	}
+
+	msgs := body["messages"].([]any)
+	if len(msgs) != 3 {
+		t.Fatalf("expected 3 messages, got %d", len(msgs))
+	}
+
+	// Third message is the rich tool result.
+	toolResultMsg := msgs[2].(map[string]any)
+	content := toolResultMsg["content"].([]any)
+	if len(content) != 1 {
+		t.Fatalf("expected 1 content block in tool result message, got %d", len(content))
+	}
+
+	toolResult := content[0].(map[string]any)
+	if toolResult["type"] != "tool_result" {
+		t.Errorf("expected type 'tool_result', got %v", toolResult["type"])
+	}
+	if toolResult["tool_use_id"] != "tc-1" {
+		t.Errorf("expected tool_use_id 'tc-1', got %v", toolResult["tool_use_id"])
+	}
+
+	// The content field should be an array of sub-blocks.
+	subContent, ok := toolResult["content"].([]any)
+	if !ok {
+		t.Fatalf("expected content to be array, got %T: %v", toolResult["content"], toolResult["content"])
+	}
+	if len(subContent) != 2 {
+		t.Fatalf("expected 2 sub-blocks, got %d", len(subContent))
+	}
+
+	// First sub-block: text.
+	textBlock := subContent[0].(map[string]any)
+	if textBlock["type"] != "text" {
+		t.Errorf("expected first sub-block type 'text', got %v", textBlock["type"])
+	}
+	if textBlock["text"] != "File contents:" {
+		t.Errorf("expected text 'File contents:', got %v", textBlock["text"])
+	}
+
+	// Second sub-block: image.
+	imgBlock := subContent[1].(map[string]any)
+	if imgBlock["type"] != "image" {
+		t.Errorf("expected second sub-block type 'image', got %v", imgBlock["type"])
+	}
+	source := imgBlock["source"].(map[string]any)
+	if source["type"] != "base64" {
+		t.Errorf("expected source type 'base64', got %v", source["type"])
+	}
+	if source["media_type"] != "image/png" {
+		t.Errorf("expected media_type 'image/png', got %v", source["media_type"])
+	}
+	if source["data"] != "iVBOR" {
+		t.Errorf("expected data 'iVBOR', got %v", source["data"])
+	}
+}
+
 func TestAnthropicStream_ScannerBufferOverflow(t *testing.T) {
 	// Create a data line that exceeds the 1MB scanner buffer limit.
 	longPayload := strings.Repeat("x", 1024*1024)

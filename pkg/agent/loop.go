@@ -242,12 +242,12 @@ func (a *AgentLoop) run(ctx context.Context) error {
 				break
 			}
 
-			result, toolErr := a.executeTool(ctx, tc)
+			toolResult := a.executeTool(ctx, tc)
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
 
-			a.appendMessage(ai.NewToolResultMessage(tc.ToolUseID, result, toolErr))
+			a.appendMessage(toolResult)
 
 			// Check for steering after execution too.
 			select {
@@ -363,7 +363,8 @@ func (a *AgentLoop) doTurn(ctx context.Context) (*ai.Message, error) {
 }
 
 // executeTool runs a single tool call and emits the corresponding events.
-func (a *AgentLoop) executeTool(ctx context.Context, tc ai.ContentBlock) (string, bool) {
+// It returns a tool_result message ready to be appended to the conversation.
+func (a *AgentLoop) executeTool(ctx context.Context, tc ai.ContentBlock) ai.Message {
 	params := toParamsMap(tc.Input)
 
 	a.emit(AgentEvent{
@@ -383,7 +384,34 @@ func (a *AgentLoop) executeTool(ctx context.Context, tc ai.ContentBlock) (string
 			ToolResult: errMsg,
 			ToolError:  true,
 		})
-		return errMsg, true
+		return ai.NewToolResultMessage(tc.ToolUseID, errMsg, true)
+	}
+
+	// Check if tool supports rich (multi-block) results.
+	if richTool, ok := tool.(tools.RichTool); ok {
+		blocks, err := richTool.ExecuteRich(ctx, params)
+		isError := err != nil
+		var resultText string
+		if isError {
+			resultText = err.Error()
+		} else {
+			for _, b := range blocks {
+				if b.Type == ai.ContentTypeText {
+					resultText += b.Text
+				}
+			}
+		}
+		a.emit(AgentEvent{
+			Type:       EventToolExecEnd,
+			ToolCallID: tc.ToolUseID,
+			ToolName:   tc.ToolName,
+			ToolResult: resultText,
+			ToolError:  isError,
+		})
+		if isError {
+			return ai.NewToolResultMessage(tc.ToolUseID, resultText, true)
+		}
+		return ai.NewRichToolResultMessage(tc.ToolUseID, blocks, false)
 	}
 
 	result, err := tool.Execute(ctx, params)
@@ -399,7 +427,7 @@ func (a *AgentLoop) executeTool(ctx context.Context, tc ai.ContentBlock) (string
 		ToolResult: result,
 		ToolError:  isError,
 	})
-	return result, isError
+	return ai.NewToolResultMessage(tc.ToolUseID, result, isError)
 }
 
 // addSteeringSkipResults adds error tool results for any tool calls that were

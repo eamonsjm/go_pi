@@ -144,3 +144,52 @@ func TestMessage_GetThinking_Empty(t *testing.T) {
 		t.Errorf("GetThinking() = %q, want empty string", got)
 	}
 }
+
+func TestNewRichToolResultMessage(t *testing.T) {
+	blocks := []ContentBlock{
+		{Type: ContentTypeText, Text: "File contents:"},
+		{Type: ContentTypeImage, MediaType: "image/png", ImageData: "base64data"},
+	}
+	msg := NewRichToolResultMessage("tool_789", blocks, false)
+
+	if msg.Role != RoleUser {
+		t.Errorf("expected role %q, got %q", RoleUser, msg.Role)
+	}
+	if len(msg.Content) != 1 {
+		t.Fatalf("expected 1 content block, got %d", len(msg.Content))
+	}
+	cb := msg.Content[0]
+	if cb.Type != ContentTypeToolResult {
+		t.Errorf("expected type %q, got %q", ContentTypeToolResult, cb.Type)
+	}
+	if cb.ToolResultID != "tool_789" {
+		t.Errorf("expected tool_use_id %q, got %q", "tool_789", cb.ToolResultID)
+	}
+	if cb.IsError {
+		t.Error("expected IsError to be false")
+	}
+	if len(cb.ContentBlocks) != 2 {
+		t.Fatalf("expected 2 content blocks, got %d", len(cb.ContentBlocks))
+	}
+	if cb.ContentBlocks[0].Type != ContentTypeText || cb.ContentBlocks[0].Text != "File contents:" {
+		t.Errorf("unexpected first content block: %+v", cb.ContentBlocks[0])
+	}
+	if cb.ContentBlocks[1].Type != ContentTypeImage || cb.ContentBlocks[1].MediaType != "image/png" {
+		t.Errorf("unexpected second content block: %+v", cb.ContentBlocks[1])
+	}
+}
+
+func TestNewRichToolResultMessage_WithError(t *testing.T) {
+	blocks := []ContentBlock{
+		{Type: ContentTypeText, Text: "error occurred"},
+	}
+	msg := NewRichToolResultMessage("tool_err", blocks, true)
+
+	cb := msg.Content[0]
+	if !cb.IsError {
+		t.Error("expected IsError to be true")
+	}
+	if len(cb.ContentBlocks) != 1 {
+		t.Fatalf("expected 1 content block, got %d", len(cb.ContentBlocks))
+	}
+}

@@ -45,6 +45,9 @@ type ContentBlock struct {
 	// Image
 	MediaType string `json:"media_type,omitempty"`
 	ImageData string `json:"data,omitempty"`
+
+	// Rich tool results: multiple content blocks (text + image) in a single tool result.
+	ContentBlocks []ContentBlock `json:"content_blocks,omitempty"`
 }
 
 // Message represents a conversation message.
@@ -73,6 +76,21 @@ func NewToolResultMessage(toolUseID, content string, isError bool) Message {
 				ToolResultID: toolUseID,
 				Content:      content,
 				IsError:      isError,
+			},
+		},
+	}
+}
+
+// NewRichToolResultMessage creates a tool result message with multiple content blocks.
+func NewRichToolResultMessage(toolUseID string, blocks []ContentBlock, isError bool) Message {
+	return Message{
+		Role: RoleUser,
+		Content: []ContentBlock{
+			{
+				Type:          ContentTypeToolResult,
+				ToolResultID:  toolUseID,
+				ContentBlocks: blocks,
+				IsError:       isError,
 			},
 		},
 	}

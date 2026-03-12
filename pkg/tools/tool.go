@@ -19,6 +19,15 @@ type Tool interface {
 	Execute(ctx context.Context, params map[string]any) (string, error)
 }
 
+// RichTool extends Tool with the ability to return multi-block results.
+// Tools that implement RichTool can return content blocks directly
+// (e.g., text + image). The agent loop checks for this interface and
+// falls back to Tool.Execute if not implemented.
+type RichTool interface {
+	Tool
+	ExecuteRich(ctx context.Context, params map[string]any) ([]ai.ContentBlock, error)
+}
+
 // Registry holds a collection of tools indexed by name.
 type Registry struct {
 	tools map[string]Tool

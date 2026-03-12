@@ -901,3 +901,137 @@ func TestSettersAndMessages(t *testing.T) {
 		t.Error("SetMessages/Messages round-trip failed")
 	}
 }
+
+// --- RichTool tests ---------------------------------------------------------
+
+// mockRichTool implements tools.RichTool for testing.
+type mockRichTool struct {
+	name   string
+	blocks []ai.ContentBlock
+	err    error
+}
+
+func (t *mockRichTool) Name() string        { return t.name }
+func (t *mockRichTool) Description() string  { return "mock rich tool" }
+func (t *mockRichTool) Schema() any          { return nil }
+func (t *mockRichTool) Execute(_ context.Context, _ map[string]any) (string, error) {
+	return "fallback", nil
+}
+func (t *mockRichTool) ExecuteRich(_ context.Context, _ map[string]any) ([]ai.ContentBlock, error) {
+	if t.err != nil {
+		return nil, t.err
+	}
+	return t.blocks, nil
+}
+
+func TestRichToolCallFlow(t *testing.T) {
+	provider := &mockProvider{
+		streamFn: toolThenText("rich_read", "tc-1", `{"path":"/img.png"}`, "Done!"),
+	}
+	reg := tools.NewRegistry()
+	reg.Register(&mockRichTool{
+		name: "rich_read",
+		blocks: []ai.ContentBlock{
+			{Type: ai.ContentTypeText, Text: "File contents:"},
+			{Type: ai.ContentTypeImage, MediaType: "image/png", ImageData: "iVBOR"},
+		},
+	})
+	a := NewAgentLoop(provider, reg)
+
+	ch := a.Events()
+	go func() {
+		if err := a.Prompt(context.Background(), "read image"); err != nil {
+			t.Errorf("Prompt returned error: %v", err)
+		}
+	}()
+
+	events := drainEvents(ch, 2*time.Second)
+
+	// Verify tool exec events.
+	if !hasEventType(events, EventToolExecStart) {
+		t.Error("expected EventToolExecStart")
+	}
+	if !hasEventType(events, EventToolExecEnd) {
+		t.Error("expected EventToolExecEnd")
+	}
+
+	// The event's ToolResult should be the text summary.
+	for _, ev := range events {
+		if ev.Type == EventToolExecEnd {
+			if ev.ToolResult != "File contents:" {
+				t.Errorf("expected tool result text 'File contents:', got %q", ev.ToolResult)
+			}
+			if ev.ToolError {
+				t.Error("expected ToolError=false")
+			}
+		}
+	}
+
+	// Messages should be: user, assistant (tool_use), tool_result (rich), assistant (text).
+	msgs := a.Messages()
+	if len(msgs) != 4 {
+		t.Fatalf("expected 4 messages, got %d", len(msgs))
+	}
+
+	// The tool result message should have ContentBlocks.
+	toolResultMsg := msgs[2]
+	if len(toolResultMsg.Content) != 1 {
+		t.Fatalf("expected 1 content block in tool result message, got %d", len(toolResultMsg.Content))
+	}
+	cb := toolResultMsg.Content[0]
+	if cb.Type != ai.ContentTypeToolResult {
+		t.Errorf("expected tool_result type, got %s", cb.Type)
+	}
+	if len(cb.ContentBlocks) != 2 {
+		t.Fatalf("expected 2 content blocks in rich result, got %d", len(cb.ContentBlocks))
+	}
+	if cb.ContentBlocks[0].Type != ai.ContentTypeText {
+		t.Errorf("expected first sub-block to be text, got %s", cb.ContentBlocks[0].Type)
+	}
+	if cb.ContentBlocks[1].Type != ai.ContentTypeImage {
+		t.Errorf("expected second sub-block to be image, got %s", cb.ContentBlocks[1].Type)
+	}
+}
+
+func TestRichToolCallWithError(t *testing.T) {
+	provider := &mockProvider{
+		streamFn: toolThenText("rich_fail", "tc-1", `{}`, "handled"),
+	}
+	reg := tools.NewRegistry()
+	reg.Register(&mockRichTool{
+		name: "rich_fail",
+		err:  fmt.Errorf("read failed: permission denied"),
+	})
+	a := NewAgentLoop(provider, reg)
+
+	ch := a.Events()
+	go func() {
+		if err := a.Prompt(context.Background(), "read protected file"); err != nil {
+			t.Errorf("Prompt returned error: %v", err)
+		}
+	}()
+
+	events := drainEvents(ch, 2*time.Second)
+
+	for _, ev := range events {
+		if ev.Type == EventToolExecEnd {
+			if !ev.ToolError {
+				t.Error("expected ToolError=true")
+			}
+			if ev.ToolResult != "read failed: permission denied" {
+				t.Errorf("expected error message, got %q", ev.ToolResult)
+			}
+		}
+	}
+
+	// Error result should be a simple text tool result (not rich).
+	msgs := a.Messages()
+	toolResultMsg := msgs[2]
+	cb := toolResultMsg.Content[0]
+	if len(cb.ContentBlocks) != 0 {
+		t.Errorf("error result should not have ContentBlocks, got %d", len(cb.ContentBlocks))
+	}
+	if cb.Content != "read failed: permission denied" {
+		t.Errorf("expected error content, got %q", cb.Content)
+	}
+}

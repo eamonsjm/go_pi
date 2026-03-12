@@ -294,8 +294,14 @@ func mapContentBlock(cb ContentBlock) anthContent {
 		return anthContent{Type: "tool_use", ID: cb.ToolUseID, Name: cb.ToolName, Input: cb.Input}
 	case ContentTypeToolResult:
 		ac := anthContent{Type: "tool_result", ToolUseID: cb.ToolResultID, IsError: cb.IsError}
-		// Content is a string for simple results.
-		if cb.Content != "" {
+		if len(cb.ContentBlocks) > 0 {
+			// Rich tool result: serialize content as array of sub-blocks.
+			subBlocks := make([]anthContent, len(cb.ContentBlocks))
+			for i, sub := range cb.ContentBlocks {
+				subBlocks[i] = mapContentBlock(sub)
+			}
+			ac.Content = subBlocks
+		} else if cb.Content != "" {
 			ac.Content = cb.Content
 		}
 		return ac
