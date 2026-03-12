@@ -57,7 +57,7 @@ func (f *Footer) View() string {
 	dir := f.abbreviateCwd()
 
 	// Token usage.
-	tokens := fmt.Sprintf("tokens: %s/%s",
+	tokens := fmt.Sprintf("%s↑ %s↓",
 		formatTokens(f.usage.InputTokens),
 		formatTokens(f.usage.OutputTokens),
 	)
