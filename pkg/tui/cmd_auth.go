@@ -42,7 +42,7 @@ func NewLoginCommand(store *auth.Store, resolver *auth.Resolver) *SlashCommand {
 			if oauthProv == nil {
 				return func() tea.Msg {
 					return CommandResultMsg{
-						Text:    fmt.Sprintf("No OAuth support for %q. Set API key via env var or ~/.pi/auth.json instead.", provider),
+						Text:    fmt.Sprintf("No OAuth support for %q. Set API key via env var or ~/.gi/auth.json instead.", provider),
 						IsError: true,
 					}
 				}
