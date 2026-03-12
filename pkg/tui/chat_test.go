@@ -596,3 +596,97 @@ func TestChatView_TextThenTool(t *testing.T) {
 		t.Error("second block should be tool call")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Extreme terminal sizes (1x1)
+// ---------------------------------------------------------------------------
+
+func TestChatView_SetSize_1x1(t *testing.T) {
+	cv := NewChatView()
+	// Must not panic with extreme 1x1 dimensions.
+	cv.SetSize(1, 1)
+
+	if cv.width != 1 {
+		t.Errorf("expected width 1, got %d", cv.width)
+	}
+	if cv.height != 1 {
+		t.Errorf("expected height 1, got %d", cv.height)
+	}
+	if cv.renderer == nil {
+		t.Error("renderer should not be nil after 1x1 SetSize")
+	}
+	// Verify View doesn't panic.
+	_ = cv.View()
+}
+
+func TestChatView_SetSize_ZeroDimensions(t *testing.T) {
+	cv := NewChatView()
+	cv.SetSize(0, 0)
+	if cv.renderer == nil {
+		t.Error("renderer should not be nil after 0x0 SetSize")
+	}
+	_ = cv.View()
+}
+
+func TestChatView_SetSize_1x1_WithContent(t *testing.T) {
+	cv := NewChatView()
+	cv.AddUserMessage("hello world this is a long message")
+	cv.HandleEvent(agent.AgentEvent{
+		Type:  agent.EventAssistantText,
+		Delta: "Here is a response with some text",
+	})
+	cv.HandleEvent(agent.AgentEvent{
+		Type:       agent.EventToolExecStart,
+		ToolCallID: "tc-1",
+		ToolName:   "bash",
+		ToolArgs:   map[string]any{"command": "ls -la"},
+	})
+	cv.HandleEvent(agent.AgentEvent{
+		Type:       agent.EventToolExecEnd,
+		ToolCallID: "tc-1",
+		ToolResult: "file1\nfile2\nfile3",
+	})
+	cv.HandleEvent(agent.AgentEvent{
+		Type:  agent.EventAgentError,
+		Error: errors.New("something broke"),
+	})
+
+	// Resize to 1x1 after content is populated — must not panic.
+	cv.SetSize(1, 1)
+	_ = cv.View()
+}
+
+// ---------------------------------------------------------------------------
+// Rapid resize events
+// ---------------------------------------------------------------------------
+
+func TestChatView_RapidResize(t *testing.T) {
+	cv := NewChatView()
+	cv.AddUserMessage("hello")
+	cv.HandleEvent(agent.AgentEvent{
+		Type:  agent.EventAssistantText,
+		Delta: "world",
+	})
+
+	// Simulate rapid resize events in quick succession.
+	sizes := [][2]int{
+		{120, 40}, {80, 30}, {1, 1}, {200, 60}, {10, 5},
+		{1, 1}, {80, 24}, {300, 100}, {40, 10}, {120, 40},
+	}
+	for _, sz := range sizes {
+		cv.SetSize(sz[0], sz[1])
+	}
+
+	// Final state should reflect last resize.
+	if cv.width != 120 {
+		t.Errorf("expected width 120 after rapid resizes, got %d", cv.width)
+	}
+	if cv.height != 40 {
+		t.Errorf("expected height 40 after rapid resizes, got %d", cv.height)
+	}
+	// Content should still be intact.
+	if len(cv.blocks) != 2 {
+		t.Errorf("expected 2 blocks after rapid resizes, got %d", len(cv.blocks))
+	}
+	_ = cv.View()
+}

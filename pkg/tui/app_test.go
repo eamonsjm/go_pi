@@ -679,3 +679,149 @@ func TestApp_Update_ModelSelectorIntercepts(t *testing.T) {
 		t.Error("expected model selector hidden after Escape")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Extreme terminal sizes (1x1)
+// ---------------------------------------------------------------------------
+
+func TestApp_Update_WindowSizeMsg_1x1(t *testing.T) {
+	app := NewApp()
+	app.Update(tea.WindowSizeMsg{Width: 1, Height: 1})
+
+	if app.width != 1 || app.height != 1 {
+		t.Errorf("expected 1x1, got %dx%d", app.width, app.height)
+	}
+	if !app.initialized {
+		t.Error("expected initialized=true")
+	}
+	// Chat height should be clamped to minimum 3.
+	if app.chat.height < 3 {
+		t.Errorf("expected minimum chat height 3, got %d", app.chat.height)
+	}
+}
+
+func TestApp_View_1x1(t *testing.T) {
+	app := NewApp()
+	app.Update(tea.WindowSizeMsg{Width: 1, Height: 1})
+	// View should not panic at extreme sizes.
+	view := app.View()
+	if view == "" {
+		t.Error("expected non-empty view")
+	}
+	if view == "Initializing..." {
+		t.Error("should be initialized after WindowSizeMsg")
+	}
+}
+
+func TestApp_View_1x1_WithContent(t *testing.T) {
+	app := NewApp()
+	app.Update(tea.WindowSizeMsg{Width: 1, Height: 1})
+	app.ShowWelcome("Welcome to the app!")
+	app.Update(StreamEventMsg{
+		Event: agent.AgentEvent{
+			Type:  agent.EventAssistantText,
+			Delta: "Hello, world!",
+		},
+	})
+	// View with content at extreme size should not panic.
+	_ = app.View()
+}
+
+func TestApp_Layout_1x1(t *testing.T) {
+	app := NewApp()
+	app.width = 1
+	app.height = 1
+	app.layout()
+
+	// Chat height must be at least 3 (the minimum).
+	if app.chat.height < 3 {
+		t.Errorf("expected minimum chat height 3, got %d", app.chat.height)
+	}
+}
+
+func TestApp_View_ModelSelector_1x1(t *testing.T) {
+	app := NewApp()
+	app.Update(tea.WindowSizeMsg{Width: 1, Height: 1})
+	app.modelSelector.Show()
+	// Model selector overlay at extreme size should not panic.
+	view := app.View()
+	if view == "" {
+		t.Error("expected non-empty view with model selector")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Rapid resize events
+// ---------------------------------------------------------------------------
+
+func TestApp_RapidResize(t *testing.T) {
+	app := NewApp()
+	app.ShowWelcome("Welcome")
+
+	// Simulate rapid resize events.
+	sizes := [][2]int{
+		{120, 40}, {80, 30}, {1, 1}, {200, 60}, {10, 5},
+		{1, 1}, {80, 24}, {300, 100}, {40, 10}, {120, 40},
+	}
+	for _, sz := range sizes {
+		app.Update(tea.WindowSizeMsg{Width: sz[0], Height: sz[1]})
+	}
+
+	if app.width != 120 || app.height != 40 {
+		t.Errorf("expected final size 120x40, got %dx%d", app.width, app.height)
+	}
+	// Content should still be intact.
+	if len(app.chat.blocks) != 1 {
+		t.Errorf("expected 1 block after rapid resizes, got %d", len(app.chat.blocks))
+	}
+	// View should render without error.
+	view := app.View()
+	if view == "" || view == "Initializing..." {
+		t.Error("expected valid view after rapid resizes")
+	}
+}
+
+func TestApp_RapidResize_WithModelSelector(t *testing.T) {
+	app := NewApp()
+	app.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+	app.modelSelector.Show()
+
+	// Resize rapidly while model selector is visible.
+	for i := 1; i <= 20; i++ {
+		app.Update(tea.WindowSizeMsg{Width: i * 5, Height: i * 3})
+	}
+
+	if !app.modelSelector.Visible() {
+		t.Error("model selector should still be visible after resizes")
+	}
+	_ = app.View()
+}
+
+func TestApp_RapidResize_DuringAgentRun(t *testing.T) {
+	app := NewApp()
+	app.agentRunning = true
+	app.editor.SetState(editorRunning)
+
+	// Stream some content.
+	app.Update(StreamEventMsg{
+		Event: agent.AgentEvent{Type: agent.EventAssistantText, Delta: "Hello "},
+	})
+
+	// Resize rapidly during streaming.
+	for i := 0; i < 10; i++ {
+		w := 40 + (i * 20)
+		h := 20 + (i * 5)
+		app.Update(tea.WindowSizeMsg{Width: w, Height: h})
+	}
+
+	// Agent state and content should be preserved.
+	if !app.agentRunning {
+		t.Error("agentRunning should still be true")
+	}
+	if len(app.chat.blocks) == 0 {
+		t.Error("expected chat blocks to survive resizes")
+	}
+	if app.chat.blocks[0].text != "Hello " {
+		t.Errorf("expected text 'Hello ', got %q", app.chat.blocks[0].text)
+	}
+}

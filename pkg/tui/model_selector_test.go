@@ -344,3 +344,148 @@ func TestRegisterModelCommand_WithUnknownModel(t *testing.T) {
 		t.Errorf("expected empty provider for unknown model, got %q", sel.provider)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Malformed / unexpected input to model selector
+// ---------------------------------------------------------------------------
+
+func TestModelSelector_Enter_EmptyModelsList(t *testing.T) {
+	ms := &ModelSelector{
+		models:  nil,
+		visible: true,
+	}
+	ms.resetFilter()
+
+	// Enter with no models at all should return nil (no selection possible).
+	cmd := ms.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd != nil {
+		t.Error("Enter with zero models should return nil")
+	}
+}
+
+func TestModelSelector_Navigation_EmptyFiltered(t *testing.T) {
+	ms := NewModelSelector()
+	ms.Show()
+	ms.filter = "xyznonexistent"
+	ms.applyFilter()
+
+	// Up/down with empty filtered list should not panic.
+	ms.Update(tea.KeyMsg{Type: tea.KeyUp})
+	ms.Update(tea.KeyMsg{Type: tea.KeyDown})
+	if ms.cursor != 0 {
+		t.Errorf("expected cursor 0 with empty list, got %d", ms.cursor)
+	}
+}
+
+func TestModelSelector_VeryLongFilter(t *testing.T) {
+	ms := NewModelSelector()
+	ms.Show()
+
+	// Type a very long filter string.
+	long := make([]rune, 500)
+	for i := range long {
+		long[i] = 'a'
+	}
+	for _, r := range long {
+		ms.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	if len(ms.filter) != 500 {
+		t.Errorf("expected filter length 500, got %d", len(ms.filter))
+	}
+	if len(ms.filtered) != 0 {
+		t.Errorf("expected 0 matches for long gibberish filter, got %d", len(ms.filtered))
+	}
+
+	// View should not panic even with absurd filter.
+	ms.SetSize(80, 40)
+	_ = ms.View()
+}
+
+func TestModelSelector_SpecialCharsInFilter(t *testing.T) {
+	ms := NewModelSelector()
+	ms.Show()
+
+	// Type special characters that might cause issues in string matching.
+	for _, r := range "/*+?.[](){}^$\\" {
+		ms.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	// Should not panic; just produce no matches.
+	if len(ms.filtered) != 0 {
+		t.Errorf("expected 0 matches for special char filter, got %d", len(ms.filtered))
+	}
+}
+
+func TestModelSelector_View_1x1(t *testing.T) {
+	ms := NewModelSelector()
+	ms.Show()
+	ms.SetSize(1, 1)
+	// View with extreme size should not panic.
+	v := ms.View()
+	if v == "" {
+		t.Error("expected non-empty view when visible")
+	}
+}
+
+func TestModelSelector_View_ZeroSize(t *testing.T) {
+	ms := NewModelSelector()
+	ms.Show()
+	ms.SetSize(0, 0)
+	// View with zero dimensions should not panic.
+	_ = ms.View()
+}
+
+func TestModelSelector_BackspaceAfterFullClear(t *testing.T) {
+	ms := NewModelSelector()
+	ms.Show()
+
+	// Type one char then delete it, then backspace again on empty.
+	ms.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	ms.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	ms.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+
+	if ms.filter != "" {
+		t.Errorf("expected empty filter, got %q", ms.filter)
+	}
+	// All models should be shown after clearing filter.
+	if len(ms.filtered) != len(ms.models) {
+		t.Errorf("expected all models after clearing filter, got %d", len(ms.filtered))
+	}
+}
+
+func TestModelSelector_RapidShowHide(t *testing.T) {
+	ms := NewModelSelector()
+	for i := 0; i < 20; i++ {
+		ms.Show()
+		ms.Hide()
+	}
+	if ms.Visible() {
+		t.Error("expected not visible after final Hide()")
+	}
+}
+
+func TestRegisterModelCommand_WhitespaceOnly(t *testing.T) {
+	cmd := RegisterModelCommand()
+	result := cmd.Execute("   ")
+	if result == nil {
+		t.Fatal("expected command to return a tea.Cmd")
+	}
+	msg := result()
+	// Whitespace-only args should be treated as "show selector" after trimming.
+	if _, ok := msg.(showModelSelectorMsg); !ok {
+		t.Errorf("expected showModelSelectorMsg for whitespace args, got %T", msg)
+	}
+}
+
+func TestRegisterModelCommand_CaseInsensitiveMatch(t *testing.T) {
+	cmd := RegisterModelCommand()
+	// EqualFold should match regardless of case.
+	result := cmd.Execute("CLAUDE-SONNET-4-20250514")
+	msg := result()
+	sel, ok := msg.(modelSelectedMsg)
+	if !ok {
+		t.Fatalf("expected modelSelectedMsg, got %T", msg)
+	}
+	if sel.provider != "anthropic" {
+		t.Errorf("expected provider 'anthropic', got %q", sel.provider)
+	}
+}

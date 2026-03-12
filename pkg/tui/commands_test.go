@@ -1,6 +1,10 @@
 package tui
 
-import "testing"
+import (
+	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
+)
 
 func TestCommandRegistry_RegisterAndGet(t *testing.T) {
 	reg := NewCommandRegistry()
@@ -87,6 +91,130 @@ func TestCommandRegistry_Match(t *testing.T) {
 			if matches[i].Name != name {
 				t.Errorf("Match(%q)[%d]: expected %q, got %q", tt.prefix, i, name, matches[i].Name)
 			}
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Command registry edge cases
+// ---------------------------------------------------------------------------
+
+func TestCommandRegistry_EmptyName(t *testing.T) {
+	reg := NewCommandRegistry()
+	cmd := &SlashCommand{Name: "", Description: "empty name command"}
+	reg.Register(cmd)
+
+	got, ok := reg.Get("")
+	if !ok {
+		t.Fatal("expected empty-name command to be retrievable")
+	}
+	if got.Description != "empty name command" {
+		t.Errorf("expected description 'empty name command', got %q", got.Description)
+	}
+}
+
+func TestCommandRegistry_DuplicateRegisterPreservesLatest(t *testing.T) {
+	reg := NewCommandRegistry()
+	var callOrder []string
+	cmd1 := &SlashCommand{
+		Name: "dup",
+		Execute: func(args string) tea.Cmd {
+			callOrder = append(callOrder, "first")
+			return nil
+		},
+	}
+	cmd2 := &SlashCommand{
+		Name: "dup",
+		Execute: func(args string) tea.Cmd {
+			callOrder = append(callOrder, "second")
+			return nil
+		},
+	}
+	reg.Register(cmd1)
+	reg.Register(cmd2)
+
+	got, ok := reg.Get("dup")
+	if !ok {
+		t.Fatal("expected command to be found")
+	}
+	got.Execute("")
+	if len(callOrder) != 1 || callOrder[0] != "second" {
+		t.Errorf("expected second registration's Execute to be called, got %v", callOrder)
+	}
+
+	// All should return only one entry for the duplicate.
+	all := reg.All()
+	count := 0
+	for _, c := range all {
+		if c.Name == "dup" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("expected 1 'dup' command in All(), got %d", count)
+	}
+}
+
+func TestCommandRegistry_MatchEmptyRegistry(t *testing.T) {
+	reg := NewCommandRegistry()
+	matches := reg.Match("")
+	if len(matches) != 0 {
+		t.Errorf("expected 0 matches for empty registry, got %d", len(matches))
+	}
+	matches = reg.Match("anything")
+	if len(matches) != 0 {
+		t.Errorf("expected 0 matches for empty registry, got %d", len(matches))
+	}
+}
+
+func TestCommandRegistry_GetNonexistentFromPopulated(t *testing.T) {
+	reg := NewCommandRegistry()
+	reg.Register(&SlashCommand{Name: "alpha"})
+	reg.Register(&SlashCommand{Name: "beta"})
+	reg.Register(&SlashCommand{Name: "gamma"})
+
+	_, ok := reg.Get("delta")
+	if ok {
+		t.Error("expected false for nonexistent command in populated registry")
+	}
+}
+
+func TestCommandRegistry_MatchSortOrder(t *testing.T) {
+	reg := NewCommandRegistry()
+	// Register in reverse alphabetical order.
+	reg.Register(&SlashCommand{Name: "zoo"})
+	reg.Register(&SlashCommand{Name: "zap"})
+	reg.Register(&SlashCommand{Name: "zeal"})
+
+	matches := reg.Match("z")
+	if len(matches) != 3 {
+		t.Fatalf("expected 3 matches, got %d", len(matches))
+	}
+	// Should be sorted alphabetically.
+	if matches[0].Name != "zap" || matches[1].Name != "zeal" || matches[2].Name != "zoo" {
+		t.Errorf("expected alphabetical order [zap, zeal, zoo], got [%s, %s, %s]",
+			matches[0].Name, matches[1].Name, matches[2].Name)
+	}
+}
+
+func TestCommandRegistry_ManyCommands(t *testing.T) {
+	reg := NewCommandRegistry()
+	for i := 0; i < 100; i++ {
+		name := "cmd" + string(rune('a'+i%26)) + string(rune('0'+i/26))
+		reg.Register(&SlashCommand{Name: name})
+	}
+
+	all := reg.All()
+	// Map deduplication: 100 registrations, but some names may collide.
+	if len(all) == 0 {
+		t.Error("expected non-empty All()")
+	}
+
+	// Verify sorted.
+	for i := 1; i < len(all); i++ {
+		if all[i].Name < all[i-1].Name {
+			t.Errorf("All() not sorted: %q before %q", all[i-1].Name, all[i].Name)
+			break
 		}
 	}
 }
