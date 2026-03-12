@@ -299,6 +299,59 @@ func adjustCutForToolPairs(msgs []ai.Message, cutIdx int) int {
 	return cutIdx
 }
 
+// SummarizeBranch generates a short summary of the given messages using the
+// LLM. Unlike Compact, it does not modify the agent loop's state — it simply
+// returns the summary string. This is used for branch summarization when the
+// user switches branches via /fork or /tree.
+func (a *AgentLoop) SummarizeBranch(ctx context.Context, msgs []ai.Message) (string, error) {
+	if len(msgs) == 0 {
+		return "", fmt.Errorf("no messages to summarize")
+	}
+
+	a.mu.Lock()
+	model := a.model
+	systemPrompt := a.systemPrompt
+	a.mu.Unlock()
+
+	var transcript strings.Builder
+	for _, msg := range msgs {
+		text := msg.GetText()
+		if text != "" {
+			transcript.WriteString(fmt.Sprintf("[%s]: %s\n\n", msg.Role, text))
+		}
+	}
+
+	prompt := "Generate a one-line summary (max 80 characters) of this conversation branch. Focus on the main topic or outcome. Do not use quotes or prefixes.\n\n<conversation>\n" + transcript.String() + "</conversation>"
+
+	req := ai.StreamRequest{
+		Model:        model,
+		SystemPrompt: systemPrompt,
+		Messages:     []ai.Message{ai.NewTextMessage(ai.RoleUser, prompt)},
+		MaxTokens:    200,
+	}
+
+	stream, err := a.provider.Stream(ctx, req)
+	if err != nil {
+		return "", fmt.Errorf("branch summary stream: %w", err)
+	}
+
+	var summary strings.Builder
+	for event := range stream {
+		switch event.Type {
+		case ai.EventTextDelta:
+			summary.WriteString(event.Delta)
+		case ai.EventError:
+			return "", fmt.Errorf("branch summary error: %w", event.Error)
+		}
+	}
+
+	result := strings.TrimSpace(summary.String())
+	if result == "" {
+		return "", fmt.Errorf("branch summary produced empty result")
+	}
+	return result, nil
+}
+
 // estimateMessageChars returns a rough character count for a message.
 func estimateMessageChars(msg ai.Message) int {
 	total := 0

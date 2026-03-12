@@ -38,15 +38,32 @@ type SessionInfo struct {
 	UpdatedAt time.Time `json:"updated_at"`
 	Entries   int       `json:"entries"`
 	Preview   string    `json:"preview,omitempty"` // first line of last user message
+	Branches  int       `json:"branches,omitempty"`
+}
+
+// BranchInfo describes a single branch in a session tree.
+type BranchInfo struct {
+	LeafID    string    // ID of the leaf entry on this branch
+	Depth     int       // Number of entries from root to leaf
+	Preview   string    // Preview of the last user message on this branch
+	UpdatedAt time.Time // Timestamp of the leaf entry
+	IsActive  bool      // Whether this is the current active branch
+}
+
+// BranchSummaryData is the Data payload for entries of type "branch_summary".
+type BranchSummaryData struct {
+	BranchLeafID string `json:"branch_leaf_id"`
+	Summary      string `json:"summary"`
 }
 
 // Manager handles session persistence using JSONL files.
 // All exported methods are safe for concurrent use.
 type Manager struct {
-	mu      sync.RWMutex
-	dir     string // root directory, e.g. ~/.gi/sessions/
-	current string // active session ID
-	entries []Entry
+	mu           sync.RWMutex
+	dir          string // root directory, e.g. ~/.gi/sessions/
+	current      string // active session ID
+	entries      []Entry
+	activeBranch string // leaf entry ID of the current branch
 }
 
 // NewManager creates a new session manager rooted at the given directory.
@@ -63,6 +80,7 @@ func (m *Manager) NewSession() string {
 	m.mu.Lock()
 	m.current = id
 	m.entries = nil
+	m.activeBranch = ""
 	m.mu.Unlock()
 	return id
 }
@@ -106,9 +124,17 @@ func (m *Manager) LoadSession(id string) (retErr error) {
 		return fmt.Errorf("read session %s: %w", id, err)
 	}
 
+	normalizeParentIDs(entries)
+
+	var branch string
+	if len(entries) > 0 {
+		branch = entries[len(entries)-1].ID
+	}
+
 	m.mu.Lock()
 	m.current = id
 	m.entries = entries
+	m.activeBranch = branch
 	m.mu.Unlock()
 	return nil
 }
@@ -134,11 +160,12 @@ func (m *Manager) ListSessions() []SessionInfo {
 			ID:        id,
 			UpdatedAt: info.ModTime(),
 		}
-		// Read entries for creation time, count, and preview.
+		// Read entries for creation time, count, preview, and branch count.
 		if f, err := os.Open(path); err == nil {
 			scanner := bufio.NewScanner(f)
 			scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 			count := 0
+			var allEntries []Entry
 			for scanner.Scan() {
 				line := strings.TrimSpace(scanner.Text())
 				if line == "" {
@@ -149,6 +176,7 @@ func (m *Manager) ListSessions() []SessionInfo {
 				if err := json.Unmarshal([]byte(line), &e); err != nil {
 					continue
 				}
+				allEntries = append(allEntries, e)
 				if count == 1 {
 					si.CreatedAt = e.Timestamp
 				}
@@ -168,6 +196,8 @@ func (m *Manager) ListSessions() []SessionInfo {
 				}
 			}
 			si.Entries = count
+			normalizeParentIDs(allEntries)
+			si.Branches = len(findLeafEntries(allEntries))
 			f.Close()
 		}
 		sessions = append(sessions, si)
@@ -190,13 +220,19 @@ func (m *Manager) LatestSessionID() string {
 }
 
 // AppendEntry appends a single entry to the current session's JSONL file
-// and the in-memory entry list.
+// and the in-memory entry list. The entry's ParentID is automatically set
+// to the current active branch leaf if not already specified.
 func (m *Manager) AppendEntry(entry Entry) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	if m.current == "" {
 		return fmt.Errorf("no active session")
+	}
+
+	// Link to active branch if no explicit parent.
+	if entry.ParentID == "" && m.activeBranch != "" {
+		entry.ParentID = m.activeBranch
 	}
 
 	if err := os.MkdirAll(m.dir, 0o700); err != nil {
@@ -224,21 +260,26 @@ func (m *Manager) AppendEntry(entry Entry) error {
 	}
 
 	m.entries = append(m.entries, entry)
+	m.activeBranch = entry.ID
 	return nil
 }
 
-// GetMessages reconstructs the conversation messages from the current session's
-// message entries, in order. Non-message entries are skipped. Any orphaned
-// tool_use blocks (without matching tool_result) are repaired with synthetic
-// error results so the conversation is valid for the API.
+// GetMessages reconstructs the conversation messages for the active branch
+// from the current session's entries. In a tree-structured session, only
+// entries on the path from root to the active branch leaf are included.
+// Non-message entries are skipped. Any orphaned tool_use blocks (without
+// matching tool_result) are repaired with synthetic error results.
 func (m *Manager) GetMessages() []ai.Message {
 	m.mu.RLock()
 	entries := make([]Entry, len(m.entries))
 	copy(entries, m.entries)
+	branch := m.activeBranch
 	m.mu.RUnlock()
 
+	branchEntries := getEntriesOnBranch(entries, branch)
+
 	var msgs []ai.Message
-	for _, e := range entries {
+	for _, e := range branchEntries {
 		if e.Type != "message" {
 			continue
 		}
@@ -351,6 +392,243 @@ func (m *Manager) SaveMessage(msg ai.Message) error {
 	return m.AppendEntry(entry)
 }
 
+// ActiveBranch returns the leaf entry ID of the current branch.
+func (m *Manager) ActiveBranch() string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.activeBranch
+}
+
+// ForkAt sets the active branch to the given entry ID, so that subsequent
+// appends create a new branch from that point. Returns an error if the
+// entry ID is not found in the current session.
+func (m *Manager) ForkAt(entryID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for _, e := range m.entries {
+		if e.ID == entryID {
+			m.activeBranch = entryID
+			return nil
+		}
+	}
+	return fmt.Errorf("entry %s not found in session", entryID)
+}
+
+// SwitchBranch changes the active branch to the one identified by the given
+// leaf entry ID.
+func (m *Manager) SwitchBranch(leafID string) error {
+	return m.ForkAt(leafID)
+}
+
+// GetBranches returns information about all branches in the current session.
+// A branch is identified by its leaf entry (an entry that is not any other
+// entry's parent).
+func (m *Manager) GetBranches() []BranchInfo {
+	m.mu.RLock()
+	entries := make([]Entry, len(m.entries))
+	copy(entries, m.entries)
+	branch := m.activeBranch
+	m.mu.RUnlock()
+
+	leaves := findLeafEntries(entries)
+	byID := buildEntryIndex(entries)
+
+	var branches []BranchInfo
+	for _, leaf := range leaves {
+		bi := BranchInfo{
+			LeafID:    leaf.ID,
+			UpdatedAt: leaf.Timestamp,
+			IsActive:  leaf.ID == branch,
+		}
+
+		// Walk back to count depth and find preview.
+		depth := 0
+		currentID := leaf.ID
+		visited := make(map[string]bool)
+		for currentID != "" && !visited[currentID] {
+			visited[currentID] = true
+			e, ok := byID[currentID]
+			if !ok {
+				break
+			}
+			depth++
+			if bi.Preview == "" && e.Type == "message" {
+				if msg, ok := entryToMessage(e); ok && msg.Role == ai.RoleUser {
+					text := msg.GetText()
+					if first, _, ok := strings.Cut(text, "\n"); ok {
+						bi.Preview = first
+					} else {
+						bi.Preview = text
+					}
+					if len(bi.Preview) > 60 {
+						bi.Preview = bi.Preview[:57] + "..."
+					}
+				}
+			}
+			currentID = e.ParentID
+		}
+		bi.Depth = depth
+		branches = append(branches, bi)
+	}
+
+	// Sort: active branch first, then by most recently updated.
+	sort.Slice(branches, func(i, j int) bool {
+		if branches[i].IsActive != branches[j].IsActive {
+			return branches[i].IsActive
+		}
+		return branches[i].UpdatedAt.After(branches[j].UpdatedAt)
+	})
+
+	return branches
+}
+
+// HasBranches returns true if the session has more than one branch.
+func (m *Manager) HasBranches() bool {
+	m.mu.RLock()
+	entries := make([]Entry, len(m.entries))
+	copy(entries, m.entries)
+	m.mu.RUnlock()
+
+	return len(findLeafEntries(entries)) > 1
+}
+
+// GetEntries returns a copy of all entries in the current session.
+func (m *Manager) GetEntries() []Entry {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	cp := make([]Entry, len(m.entries))
+	copy(cp, m.entries)
+	return cp
+}
+
+// GetBranchMessages returns the messages for a specific branch identified
+// by its leaf entry ID.
+func (m *Manager) GetBranchMessages(leafID string) []ai.Message {
+	m.mu.RLock()
+	entries := make([]Entry, len(m.entries))
+	copy(entries, m.entries)
+	m.mu.RUnlock()
+
+	branchEntries := getEntriesOnBranch(entries, leafID)
+
+	var msgs []ai.Message
+	for _, e := range branchEntries {
+		if e.Type != "message" {
+			continue
+		}
+		msg, ok := entryToMessage(e)
+		if ok {
+			msgs = append(msgs, msg)
+		}
+	}
+	return RepairOrphanedToolUse(msgs)
+}
+
+// FormatTree returns a text representation of the session's branch structure.
+func (m *Manager) FormatTree() string {
+	m.mu.RLock()
+	entries := make([]Entry, len(m.entries))
+	copy(entries, m.entries)
+	branch := m.activeBranch
+	m.mu.RUnlock()
+
+	if len(entries) == 0 {
+		return "No entries in session."
+	}
+
+	leaves := findLeafEntries(entries)
+	if len(leaves) <= 1 {
+		return "Session is linear (no branches)."
+	}
+
+	byID := buildEntryIndex(entries)
+
+	// Sort: active first, then by timestamp.
+	sort.Slice(leaves, func(i, j int) bool {
+		iActive := leaves[i].ID == branch
+		jActive := leaves[j].ID == branch
+		if iActive != jActive {
+			return iActive
+		}
+		return leaves[i].Timestamp.After(leaves[j].Timestamp)
+	})
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Session branches (%d):\n", len(leaves)))
+	for i, leaf := range leaves {
+		// Count messages on this branch.
+		chain := getEntriesOnBranch(entries, leaf.ID)
+		msgCount := 0
+		var lastUserMsg string
+		for _, e := range chain {
+			if e.Type == "message" {
+				msgCount++
+				if msg, ok := entryToMessage(e); ok && msg.Role == ai.RoleUser {
+					text := msg.GetText()
+					if first, _, ok := strings.Cut(text, "\n"); ok {
+						lastUserMsg = first
+					} else {
+						lastUserMsg = text
+					}
+				}
+			}
+		}
+		if len(lastUserMsg) > 50 {
+			lastUserMsg = lastUserMsg[:47] + "..."
+		}
+
+		// Find fork point (first entry on this branch that differs from other branches).
+		forkDepth := findForkDepth(entries, byID, leaf.ID, leaves)
+
+		prefix := "├──"
+		if i == len(leaves)-1 {
+			prefix = "└──"
+		}
+
+		active := ""
+		if leaf.ID == branch {
+			active = " ← active"
+		}
+
+		line := fmt.Sprintf("  %s [%d] %d msgs", prefix, i+1, msgCount)
+		if forkDepth > 0 {
+			line += fmt.Sprintf(" (forked at depth %d)", forkDepth)
+		}
+		if lastUserMsg != "" {
+			line += fmt.Sprintf("  %q", lastUserMsg)
+		}
+		line += active
+		sb.WriteString(line + "\n")
+	}
+	sb.WriteString("\nUse /tree <number> to switch branches.")
+	return sb.String()
+}
+
+// GetUserEntries returns message entries with role "user" on the active branch,
+// ordered from root to leaf. This is useful for the /fork command to let users
+// select a fork point by user message index.
+func (m *Manager) GetUserEntries() []Entry {
+	m.mu.RLock()
+	entries := make([]Entry, len(m.entries))
+	copy(entries, m.entries)
+	branch := m.activeBranch
+	m.mu.RUnlock()
+
+	branchEntries := getEntriesOnBranch(entries, branch)
+
+	var userEntries []Entry
+	for _, e := range branchEntries {
+		if e.Type != "message" {
+			continue
+		}
+		if msg, ok := entryToMessage(e); ok && msg.Role == ai.RoleUser {
+			userEntries = append(userEntries, e)
+		}
+	}
+	return userEntries
+}
+
 // --- internal ---------------------------------------------------------------
 
 func (m *Manager) sessionPath(id string) string {
@@ -386,4 +664,146 @@ func generateID() string {
 		return fmt.Sprintf("%x", time.Now().UnixNano())
 	}
 	return hex.EncodeToString(b)
+}
+
+// normalizeParentIDs fills in missing ParentIDs for legacy sessions that
+// were created before tree support. Entries that already have a ParentID
+// are left unchanged. Entries without one are linked sequentially to the
+// preceding entry.
+func normalizeParentIDs(entries []Entry) {
+	for i := 1; i < len(entries); i++ {
+		if entries[i].ParentID == "" {
+			entries[i].ParentID = entries[i-1].ID
+		}
+	}
+}
+
+// getEntriesOnBranch returns entries on the path from the root to the given
+// leaf entry, in chronological order. If leafID is empty, all entries are
+// returned in their original order (legacy linear behavior).
+func getEntriesOnBranch(entries []Entry, leafID string) []Entry {
+	if len(entries) == 0 {
+		return nil
+	}
+	if leafID == "" {
+		return entries
+	}
+
+	byID := buildEntryIndex(entries)
+
+	// Walk from leaf back to root.
+	var chain []Entry
+	currentID := leafID
+	visited := make(map[string]bool)
+	for currentID != "" && !visited[currentID] {
+		visited[currentID] = true
+		e, ok := byID[currentID]
+		if !ok {
+			break
+		}
+		chain = append(chain, e)
+		currentID = e.ParentID
+	}
+
+	// Reverse to get chronological order.
+	for i, j := 0, len(chain)-1; i < j; i, j = i+1, j-1 {
+		chain[i], chain[j] = chain[j], chain[i]
+	}
+	return chain
+}
+
+// findLeafEntries returns entries that are not referenced as any other
+// entry's parent — i.e., the tips of branches.
+func findLeafEntries(entries []Entry) []Entry {
+	hasChildren := make(map[string]bool, len(entries))
+	for _, e := range entries {
+		if e.ParentID != "" {
+			hasChildren[e.ParentID] = true
+		}
+	}
+	var leaves []Entry
+	for _, e := range entries {
+		if !hasChildren[e.ID] {
+			leaves = append(leaves, e)
+		}
+	}
+	return leaves
+}
+
+// buildEntryIndex creates a map from entry ID to entry for fast lookups.
+func buildEntryIndex(entries []Entry) map[string]Entry {
+	idx := make(map[string]Entry, len(entries))
+	for _, e := range entries {
+		idx[e.ID] = e
+	}
+	return idx
+}
+
+// findForkDepth finds the depth at which a branch diverges from the other
+// branches. Returns 0 if the branch shares the root with all others.
+func findForkDepth(entries []Entry, byID map[string]Entry, leafID string, allLeaves []Entry) int {
+	if len(allLeaves) <= 1 {
+		return 0
+	}
+
+	// Build the ancestor set for this branch.
+	ancestors := make(map[string]bool)
+	currentID := leafID
+	for currentID != "" {
+		if ancestors[currentID] {
+			break
+		}
+		ancestors[currentID] = true
+		e, ok := byID[currentID]
+		if !ok {
+			break
+		}
+		currentID = e.ParentID
+	}
+
+	// Find the fork point: the deepest ancestor that is shared with at
+	// least one other branch. Walk each other branch and find the deepest
+	// shared entry.
+	var forkEntryID string
+	for _, other := range allLeaves {
+		if other.ID == leafID {
+			continue
+		}
+		cid := other.ID
+		visited := make(map[string]bool)
+		for cid != "" && !visited[cid] {
+			visited[cid] = true
+			if ancestors[cid] {
+				// This is a shared ancestor — is it deeper than what we found?
+				if forkEntryID == "" {
+					forkEntryID = cid
+				}
+				break
+			}
+			e, ok := byID[cid]
+			if !ok {
+				break
+			}
+			cid = e.ParentID
+		}
+	}
+
+	if forkEntryID == "" {
+		return 0
+	}
+
+	// Count depth of fork point from root.
+	depth := 0
+	cid := forkEntryID
+	visited := make(map[string]bool)
+	for cid != "" && !visited[cid] {
+		visited[cid] = true
+		depth++
+		e, ok := byID[cid]
+		if !ok {
+			break
+		}
+		cid = e.ParentID
+	}
+	return depth
 }

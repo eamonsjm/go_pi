@@ -129,6 +129,14 @@ func NewSessionInfoCommand(sessionMgr *session.Manager, chatView *ChatView) *Sla
 			if !createdAt.IsZero() {
 				sb.WriteString(fmt.Sprintf("  Created:  %s\n", createdAt.Format("2006-01-02 15:04:05")))
 			}
+			if sessionMgr.HasBranches() {
+				branches := sessionMgr.GetBranches()
+				sb.WriteString(fmt.Sprintf("  Branches: %d\n", len(branches)))
+				activeBranch := sessionMgr.ActiveBranch()
+				if activeBranch != "" {
+					sb.WriteString(fmt.Sprintf("  Branch:   %s\n", shortID(activeBranch)))
+				}
+			}
 
 			chatView.AddSystemMessage(sb.String())
 			return nil
@@ -167,6 +175,9 @@ func formatSessionList(sessions []session.SessionInfo) string {
 	for i, s := range sessions {
 		dateStr := s.UpdatedAt.Format("2006-01-02 15:04")
 		line := fmt.Sprintf("  [%d] %s  %s  (%d entries)", i+1, shortID(s.ID), dateStr, s.Entries)
+		if s.Branches > 1 {
+			line += fmt.Sprintf("  [%d branches]", s.Branches)
+		}
 		if s.Preview != "" {
 			line += fmt.Sprintf("  %q", s.Preview)
 		}

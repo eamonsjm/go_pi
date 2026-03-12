@@ -80,5 +80,11 @@ type sessionPickerSelectMsg struct {
 	id string
 }
 
+// branchSwitchedMsg is sent when the user switches to a different branch
+// via /fork or /tree.
+type branchSwitchedMsg struct {
+	leafID string
+}
+
 // WindowSizeMsg re-exports the Bubble Tea window-size message for convenience.
 type WindowSizeMsg = tea.WindowSizeMsg

@@ -158,6 +158,8 @@ func (a *App) RegisterBuiltinCommands(ctx context.Context, agentLoop *agent.Agen
 	a.RegisterCommand(NewResumeCommand(agentLoop, sessionMgr, a.chat, a.header))
 	a.RegisterCommand(NewSessionInfoCommand(sessionMgr, a.chat))
 	a.RegisterCommand(NewNameCommand(sessionMgr, a.header, a.chat))
+	a.RegisterCommand(NewForkCommand(ctx, agentLoop, sessionMgr, a.chat, a.header))
+	a.RegisterCommand(NewTreeCommand(agentLoop, sessionMgr, a.chat, a.header))
 
 	// Auth commands.
 	if authStore != nil && authResolver != nil {

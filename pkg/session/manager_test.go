@@ -771,6 +771,415 @@ func TestRepairOrphanedToolUse_ViaGetMessages(t *testing.T) {
 	}
 }
 
+// --- Tree/branching tests ---------------------------------------------------
+
+func TestNormalizeParentIDs(t *testing.T) {
+	entries := []Entry{
+		{ID: "a"},
+		{ID: "b"},
+		{ID: "c"},
+	}
+	normalizeParentIDs(entries)
+	if entries[0].ParentID != "" {
+		t.Errorf("root entry should have no parent, got %q", entries[0].ParentID)
+	}
+	if entries[1].ParentID != "a" {
+		t.Errorf("expected parent 'a', got %q", entries[1].ParentID)
+	}
+	if entries[2].ParentID != "b" {
+		t.Errorf("expected parent 'b', got %q", entries[2].ParentID)
+	}
+}
+
+func TestNormalizeParentIDs_PreservesExisting(t *testing.T) {
+	entries := []Entry{
+		{ID: "a"},
+		{ID: "b", ParentID: "a"},
+		{ID: "c", ParentID: "a"}, // fork from a
+	}
+	normalizeParentIDs(entries)
+	if entries[1].ParentID != "a" {
+		t.Errorf("expected existing parent 'a' preserved, got %q", entries[1].ParentID)
+	}
+	if entries[2].ParentID != "a" {
+		t.Errorf("expected existing parent 'a' preserved, got %q", entries[2].ParentID)
+	}
+}
+
+func TestGetEntriesOnBranch(t *testing.T) {
+	// Tree:
+	//   a -> b -> c (branch 1)
+	//        b -> d -> e (branch 2)
+	entries := []Entry{
+		{ID: "a"},
+		{ID: "b", ParentID: "a"},
+		{ID: "c", ParentID: "b"},
+		{ID: "d", ParentID: "b"},
+		{ID: "e", ParentID: "d"},
+	}
+
+	// Branch 1: a -> b -> c
+	branch1 := getEntriesOnBranch(entries, "c")
+	if len(branch1) != 3 {
+		t.Fatalf("expected 3 entries on branch 1, got %d", len(branch1))
+	}
+	if branch1[0].ID != "a" || branch1[1].ID != "b" || branch1[2].ID != "c" {
+		t.Errorf("unexpected branch 1: %v", ids(branch1))
+	}
+
+	// Branch 2: a -> b -> d -> e
+	branch2 := getEntriesOnBranch(entries, "e")
+	if len(branch2) != 4 {
+		t.Fatalf("expected 4 entries on branch 2, got %d", len(branch2))
+	}
+	if branch2[0].ID != "a" || branch2[3].ID != "e" {
+		t.Errorf("unexpected branch 2: %v", ids(branch2))
+	}
+}
+
+func TestGetEntriesOnBranch_EmptyLeaf(t *testing.T) {
+	entries := []Entry{{ID: "a"}, {ID: "b"}}
+	result := getEntriesOnBranch(entries, "")
+	if len(result) != 2 {
+		t.Fatalf("expected all entries returned for empty leaf, got %d", len(result))
+	}
+}
+
+func TestFindLeafEntries(t *testing.T) {
+	entries := []Entry{
+		{ID: "a"},
+		{ID: "b", ParentID: "a"},
+		{ID: "c", ParentID: "b"},
+		{ID: "d", ParentID: "b"}, // fork: d is also a child of b
+	}
+	leaves := findLeafEntries(entries)
+	if len(leaves) != 2 {
+		t.Fatalf("expected 2 leaves, got %d", len(leaves))
+	}
+	leafIDs := make(map[string]bool)
+	for _, l := range leaves {
+		leafIDs[l.ID] = true
+	}
+	if !leafIDs["c"] || !leafIDs["d"] {
+		t.Errorf("expected leaves c and d, got %v", leafIDs)
+	}
+}
+
+func TestForkAt(t *testing.T) {
+	dir := t.TempDir()
+	m := NewManager(dir)
+	m.NewSession()
+
+	// Add linear entries.
+	for _, id := range []string{"e1", "e2", "e3"} {
+		err := m.AppendEntry(Entry{
+			ID:        id,
+			Timestamp: time.Now().UTC(),
+			Type:      "message",
+			Data:      MessageData{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: id}}},
+		})
+		if err != nil {
+			t.Fatalf("AppendEntry(%s): %v", id, err)
+		}
+	}
+
+	// Active branch should be e3.
+	if m.ActiveBranch() != "e3" {
+		t.Fatalf("expected active branch e3, got %s", m.ActiveBranch())
+	}
+
+	// Fork at e1.
+	if err := m.ForkAt("e1"); err != nil {
+		t.Fatalf("ForkAt: %v", err)
+	}
+	if m.ActiveBranch() != "e1" {
+		t.Errorf("expected active branch e1 after fork, got %s", m.ActiveBranch())
+	}
+
+	// New entry on forked branch.
+	err := m.AppendEntry(Entry{
+		ID:        "e4",
+		Timestamp: time.Now().UTC(),
+		Type:      "message",
+		Data:      MessageData{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "forked"}}},
+	})
+	if err != nil {
+		t.Fatalf("AppendEntry(e4): %v", err)
+	}
+	if m.ActiveBranch() != "e4" {
+		t.Errorf("expected active branch e4, got %s", m.ActiveBranch())
+	}
+
+	// GetMessages should return only the forked branch: e1 -> e4.
+	msgs := m.GetMessages()
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 messages on forked branch, got %d", len(msgs))
+	}
+	if msgs[0].GetText() != "e1" || msgs[1].GetText() != "forked" {
+		t.Errorf("unexpected messages: %q, %q", msgs[0].GetText(), msgs[1].GetText())
+	}
+}
+
+func TestGetBranches(t *testing.T) {
+	dir := t.TempDir()
+	m := NewManager(dir)
+	m.NewSession()
+
+	// Build a tree: e1 -> e2 -> e3 (main), e2 -> e4 (fork)
+	m.AppendEntry(Entry{ID: "e1", Timestamp: time.Now().UTC(), Type: "message",
+		Data: MessageData{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "start"}}}})
+	m.AppendEntry(Entry{ID: "e2", Timestamp: time.Now().UTC(), Type: "message",
+		Data: MessageData{Role: ai.RoleAssistant, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "response"}}}})
+	m.AppendEntry(Entry{ID: "e3", Timestamp: time.Now().UTC(), Type: "message",
+		Data: MessageData{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "continue main"}}}})
+
+	// Fork at e2.
+	m.ForkAt("e2")
+	m.AppendEntry(Entry{ID: "e4", Timestamp: time.Now().UTC(), Type: "message",
+		Data: MessageData{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "fork path"}}}})
+
+	branches := m.GetBranches()
+	if len(branches) != 2 {
+		t.Fatalf("expected 2 branches, got %d", len(branches))
+	}
+
+	// Active branch (e4) should be first.
+	if branches[0].LeafID != "e4" {
+		t.Errorf("expected active branch e4 first, got %s", branches[0].LeafID)
+	}
+	if !branches[0].IsActive {
+		t.Error("expected first branch to be active")
+	}
+	if branches[1].LeafID != "e3" {
+		t.Errorf("expected branch e3 second, got %s", branches[1].LeafID)
+	}
+}
+
+func TestSwitchBranch(t *testing.T) {
+	dir := t.TempDir()
+	m := NewManager(dir)
+	m.NewSession()
+
+	m.AppendEntry(Entry{ID: "e1", Timestamp: time.Now().UTC(), Type: "message",
+		Data: MessageData{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "root"}}}})
+	m.AppendEntry(Entry{ID: "e2", Timestamp: time.Now().UTC(), Type: "message",
+		Data: MessageData{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "main"}}}})
+
+	// Fork from e1.
+	m.ForkAt("e1")
+	m.AppendEntry(Entry{ID: "e3", Timestamp: time.Now().UTC(), Type: "message",
+		Data: MessageData{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "alt"}}}})
+
+	// We're on e3 branch now. Switch to e2 branch.
+	m.SwitchBranch("e2")
+	msgs := m.GetMessages()
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 messages after switch, got %d", len(msgs))
+	}
+	if msgs[1].GetText() != "main" {
+		t.Errorf("expected 'main', got %q", msgs[1].GetText())
+	}
+
+	// Switch back to e3 branch.
+	m.SwitchBranch("e3")
+	msgs = m.GetMessages()
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 messages after second switch, got %d", len(msgs))
+	}
+	if msgs[1].GetText() != "alt" {
+		t.Errorf("expected 'alt', got %q", msgs[1].GetText())
+	}
+}
+
+func TestHasBranches(t *testing.T) {
+	dir := t.TempDir()
+	m := NewManager(dir)
+	m.NewSession()
+
+	m.AppendEntry(Entry{ID: "e1", Timestamp: time.Now().UTC(), Type: "message",
+		Data: MessageData{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "a"}}}})
+
+	if m.HasBranches() {
+		t.Error("linear session should not have branches")
+	}
+
+	m.AppendEntry(Entry{ID: "e2", Timestamp: time.Now().UTC(), Type: "message",
+		Data: MessageData{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "b"}}}})
+
+	m.ForkAt("e1")
+	m.AppendEntry(Entry{ID: "e3", Timestamp: time.Now().UTC(), Type: "message",
+		Data: MessageData{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "c"}}}})
+
+	if !m.HasBranches() {
+		t.Error("forked session should have branches")
+	}
+}
+
+func TestLoadSessionPreservesTree(t *testing.T) {
+	dir := t.TempDir()
+	m := NewManager(dir)
+	id := m.NewSession()
+
+	// Build tree and reload.
+	m.AppendEntry(Entry{ID: "e1", Timestamp: time.Now().UTC(), Type: "message",
+		Data: MessageData{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "root"}}}})
+	m.AppendEntry(Entry{ID: "e2", Timestamp: time.Now().UTC(), Type: "message",
+		Data: MessageData{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "main"}}}})
+	m.ForkAt("e1")
+	m.AppendEntry(Entry{ID: "e3", Timestamp: time.Now().UTC(), Type: "message",
+		Data: MessageData{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "fork"}}}})
+
+	// Reload in fresh manager — last entry is e3 so active branch should be e3.
+	m2 := NewManager(dir)
+	if err := m2.LoadSession(id); err != nil {
+		t.Fatalf("LoadSession: %v", err)
+	}
+
+	msgs := m2.GetMessages()
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 messages (e1 -> e3), got %d", len(msgs))
+	}
+	if msgs[1].GetText() != "fork" {
+		t.Errorf("expected fork branch loaded, got %q", msgs[1].GetText())
+	}
+
+	// Should detect branches.
+	if !m2.HasBranches() {
+		t.Error("reloaded session should have branches")
+	}
+}
+
+func TestGetBranchMessages(t *testing.T) {
+	dir := t.TempDir()
+	m := NewManager(dir)
+	m.NewSession()
+
+	m.AppendEntry(Entry{ID: "e1", Timestamp: time.Now().UTC(), Type: "message",
+		Data: MessageData{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "root"}}}})
+	m.AppendEntry(Entry{ID: "e2", Timestamp: time.Now().UTC(), Type: "message",
+		Data: MessageData{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "main"}}}})
+
+	m.ForkAt("e1")
+	m.AppendEntry(Entry{ID: "e3", Timestamp: time.Now().UTC(), Type: "message",
+		Data: MessageData{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "alt"}}}})
+
+	// Get main branch messages.
+	mainMsgs := m.GetBranchMessages("e2")
+	if len(mainMsgs) != 2 {
+		t.Fatalf("expected 2 messages on main branch, got %d", len(mainMsgs))
+	}
+	if mainMsgs[1].GetText() != "main" {
+		t.Errorf("expected 'main', got %q", mainMsgs[1].GetText())
+	}
+
+	// Get fork branch messages.
+	forkMsgs := m.GetBranchMessages("e3")
+	if len(forkMsgs) != 2 {
+		t.Fatalf("expected 2 messages on fork branch, got %d", len(forkMsgs))
+	}
+	if forkMsgs[1].GetText() != "alt" {
+		t.Errorf("expected 'alt', got %q", forkMsgs[1].GetText())
+	}
+}
+
+func TestFormatTree(t *testing.T) {
+	dir := t.TempDir()
+	m := NewManager(dir)
+	m.NewSession()
+
+	// Linear session — no tree.
+	m.AppendEntry(Entry{ID: "e1", Timestamp: time.Now().UTC(), Type: "message",
+		Data: MessageData{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "hello"}}}})
+	tree := m.FormatTree()
+	if !strings.Contains(tree, "linear") {
+		t.Errorf("expected 'linear' in tree output for non-branched session, got %q", tree)
+	}
+
+	// Add a branch.
+	m.AppendEntry(Entry{ID: "e2", Timestamp: time.Now().UTC(), Type: "message",
+		Data: MessageData{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "main path"}}}})
+	m.ForkAt("e1")
+	m.AppendEntry(Entry{ID: "e3", Timestamp: time.Now().UTC(), Type: "message",
+		Data: MessageData{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "fork path"}}}})
+
+	tree = m.FormatTree()
+	if !strings.Contains(tree, "2") {
+		t.Errorf("expected branch count in tree, got %q", tree)
+	}
+	if !strings.Contains(tree, "active") {
+		t.Errorf("expected 'active' marker in tree, got %q", tree)
+	}
+}
+
+func TestGetUserEntries(t *testing.T) {
+	dir := t.TempDir()
+	m := NewManager(dir)
+	m.NewSession()
+
+	m.AppendEntry(Entry{ID: "e1", Timestamp: time.Now().UTC(), Type: "message",
+		Data: MessageData{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "q1"}}}})
+	m.AppendEntry(Entry{ID: "e2", Timestamp: time.Now().UTC(), Type: "message",
+		Data: MessageData{Role: ai.RoleAssistant, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "a1"}}}})
+	m.AppendEntry(Entry{ID: "e3", Timestamp: time.Now().UTC(), Type: "message",
+		Data: MessageData{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "q2"}}}})
+
+	userEntries := m.GetUserEntries()
+	if len(userEntries) != 2 {
+		t.Fatalf("expected 2 user entries, got %d", len(userEntries))
+	}
+	if userEntries[0].ID != "e1" || userEntries[1].ID != "e3" {
+		t.Errorf("unexpected user entries: %s, %s", userEntries[0].ID, userEntries[1].ID)
+	}
+}
+
+func TestAppendEntryAutoSetsParentID(t *testing.T) {
+	dir := t.TempDir()
+	m := NewManager(dir)
+	m.NewSession()
+
+	m.AppendEntry(Entry{ID: "e1", Timestamp: time.Now().UTC(), Type: "info"})
+	m.AppendEntry(Entry{ID: "e2", Timestamp: time.Now().UTC(), Type: "info"})
+
+	entries := m.GetEntries()
+	if entries[0].ParentID != "" {
+		t.Errorf("first entry should have no parent, got %q", entries[0].ParentID)
+	}
+	if entries[1].ParentID != "e1" {
+		t.Errorf("second entry should have parent e1, got %q", entries[1].ParentID)
+	}
+}
+
+func TestListSessionsShowsBranches(t *testing.T) {
+	dir := t.TempDir()
+	m := NewManager(dir)
+	m.NewSession()
+
+	m.AppendEntry(Entry{ID: "e1", Timestamp: time.Now().UTC(), Type: "message",
+		Data: MessageData{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "a"}}}})
+	m.AppendEntry(Entry{ID: "e2", Timestamp: time.Now().UTC(), Type: "message",
+		Data: MessageData{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "b"}}}})
+	m.ForkAt("e1")
+	m.AppendEntry(Entry{ID: "e3", Timestamp: time.Now().UTC(), Type: "message",
+		Data: MessageData{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "c"}}}})
+
+	sessions := m.ListSessions()
+	if len(sessions) != 1 {
+		t.Fatalf("expected 1 session, got %d", len(sessions))
+	}
+	if sessions[0].Branches != 2 {
+		t.Errorf("expected 2 branches, got %d", sessions[0].Branches)
+	}
+}
+
+// ids is a test helper that extracts entry IDs for debugging.
+func ids(entries []Entry) []string {
+	result := make([]string, len(entries))
+	for i, e := range entries {
+		result[i] = e.ID
+	}
+	return result
+}
+
 // countJSONLLines counts non-empty lines in a JSONL file.
 func countJSONLLines(t *testing.T, path string) int {
 	t.Helper()
