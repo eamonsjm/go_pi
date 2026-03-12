@@ -3,6 +3,7 @@ package tui
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/viewport"
@@ -65,10 +66,13 @@ func NewChatView() *ChatView {
 	vp.SetContent("")
 	vp.YPosition = 0
 
-	r, _ := glamour.NewTermRenderer(
+	r, err := glamour.NewTermRenderer(
 		glamour.WithStandardStyle("dark"),
 		glamour.WithWordWrap(78),
 	)
+	if err != nil {
+		log.Printf("tui: failed to create markdown renderer: %v", err)
+	}
 
 	return &ChatView{
 		viewport: vp,
@@ -92,7 +96,9 @@ func (c *ChatView) SetSize(w, h int) {
 		glamour.WithStandardStyle("dark"),
 		glamour.WithWordWrap(wrap),
 	)
-	if err == nil {
+	if err != nil {
+		log.Printf("tui: failed to recreate markdown renderer on resize (width=%d): %v", w, err)
+	} else {
 		c.renderer = r
 	}
 
