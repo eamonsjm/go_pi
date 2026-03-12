@@ -629,30 +629,18 @@ func (a *App) handleStateTransition(ev agent.AgentEvent) {
 }
 
 // thinkingFromString converts a string to the ai.ThinkingLevel type.
-func thinkingFromString(s string) thinkingLevel {
+func thinkingFromString(s string) ai.ThinkingLevel {
 	switch s {
 	case "low":
-		return thinkingLevelLow
+		return ai.ThinkingLow
 	case "medium":
-		return thinkingLevelMedium
+		return ai.ThinkingMedium
 	case "high":
-		return thinkingLevelHigh
+		return ai.ThinkingHigh
 	default:
-		return thinkingLevelOff
+		return ai.ThinkingOff
 	}
 }
-
-// Re-declare local constants that map to ai.ThinkingLevel values so we don't
-// have a circular import if ai imports tui in the future.  The Header actually
-// uses the ai package directly, so these are only used by thinkingFromString.
-type thinkingLevel = ai.ThinkingLevel
-
-const (
-	thinkingLevelOff    thinkingLevel = ai.ThinkingOff
-	thinkingLevelLow    thinkingLevel = ai.ThinkingLow
-	thinkingLevelMedium thinkingLevel = ai.ThinkingMedium
-	thinkingLevelHigh   thinkingLevel = ai.ThinkingHigh
-)
 
 // wrapLongString inserts newlines into a string that has no natural break
 // points (like URLs) so it fits within the given width.
