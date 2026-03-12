@@ -35,9 +35,18 @@ type Editor struct {
 	// commands is the registry used for slash command dispatch and autocomplete.
 	commands *CommandRegistry
 
-	// lastMsg stores the previously submitted text so the user can recall it
-	// with the up-arrow key when the textarea is empty.
-	lastMsg string
+	// history stores previously submitted messages for up/down-arrow recall.
+	// Index 0 is the oldest entry; len-1 is the most recent.
+	history []string
+
+	// historyIdx is the current position in the history ring.
+	// When equal to len(history), the user is at the "empty" position
+	// (i.e. composing a new message, not recalling an old one).
+	historyIdx int
+
+	// draft holds the in-progress text the user was typing before they
+	// started scrolling through history, so it can be restored on down-arrow.
+	draft string
 
 	// ctrlCCount tracks consecutive Ctrl-C presses while idle so the user
 	// must press it twice to quit.
@@ -173,7 +182,12 @@ func (e *Editor) Update(msg tea.Msg) tea.Cmd {
 			if text == "" {
 				return nil
 			}
-			e.lastMsg = text
+			// Append to history (skip duplicates of the most recent entry).
+			if len(e.history) == 0 || e.history[len(e.history)-1] != text {
+				e.history = append(e.history, text)
+			}
+			e.historyIdx = len(e.history)
+			e.draft = ""
 			e.textarea.Reset()
 			e.ctrlCCount = 0
 
@@ -190,13 +204,47 @@ func (e *Editor) Update(msg tea.Msg) tea.Cmd {
 			return func() tea.Msg { return editorSteerMsg{text: text} }
 
 		case tea.KeyUp:
-			// Recall previous message if textarea is empty.
-			if e.textarea.Value() == "" && e.lastMsg != "" {
-				e.textarea.SetValue(e.lastMsg)
-				// Move cursor to end.
+			if len(e.history) == 0 {
+				break
+			}
+			// Only enter history mode when textarea is on a single line
+			// (avoid hijacking multi-line cursor movement).
+			if strings.Contains(e.textarea.Value(), "\n") {
+				break
+			}
+			// Save the current text as draft when first entering history.
+			if e.historyIdx == len(e.history) {
+				e.draft = e.textarea.Value()
+			}
+			if e.historyIdx > 0 {
+				e.historyIdx--
+				e.textarea.SetValue(e.history[e.historyIdx])
 				e.textarea.CursorEnd()
 				return nil
 			}
+			return nil // already at oldest entry
+
+		case tea.KeyDown:
+			if len(e.history) == 0 {
+				break
+			}
+			// Only handle history navigation on single-line content.
+			if strings.Contains(e.textarea.Value(), "\n") {
+				break
+			}
+			// Not in history mode — let the textarea handle it.
+			if e.historyIdx >= len(e.history) {
+				break
+			}
+			e.historyIdx++
+			if e.historyIdx == len(e.history) {
+				// Past the newest entry — restore draft (or empty).
+				e.textarea.SetValue(e.draft)
+			} else {
+				e.textarea.SetValue(e.history[e.historyIdx])
+			}
+			e.textarea.CursorEnd()
+			return nil
 		}
 
 		// Reset Ctrl-C counter on any non-Ctrl-C keypress.

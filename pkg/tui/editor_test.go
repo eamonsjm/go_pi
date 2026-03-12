@@ -304,3 +304,124 @@ func TestEditor_CommandHint_Multiline(t *testing.T) {
 		t.Errorf("expected empty hint for multiline input, got %q", hint)
 	}
 }
+
+// submitText simulates typing text and pressing Enter.
+func submitText(e *Editor, text string) {
+	e.textarea.SetValue(text)
+	e.Update(tea.KeyMsg{Type: tea.KeyEnter})
+}
+
+func TestEditor_History_UpRecallsLast(t *testing.T) {
+	e := NewEditor()
+	submitText(e, "hello")
+
+	// Up-arrow should recall "hello".
+	e.Update(tea.KeyMsg{Type: tea.KeyUp})
+	if got := e.Value(); got != "hello" {
+		t.Errorf("expected 'hello', got %q", got)
+	}
+}
+
+func TestEditor_History_DownReturnsToEmpty(t *testing.T) {
+	e := NewEditor()
+	submitText(e, "hello")
+
+	e.Update(tea.KeyMsg{Type: tea.KeyUp})   // recall "hello"
+	e.Update(tea.KeyMsg{Type: tea.KeyDown}) // back to empty
+	if got := e.Value(); got != "" {
+		t.Errorf("expected empty after down-arrow past newest, got %q", got)
+	}
+}
+
+func TestEditor_History_MultipleEntries(t *testing.T) {
+	e := NewEditor()
+	submitText(e, "first")
+	submitText(e, "second")
+	submitText(e, "third")
+
+	// Up x3 should walk back through history.
+	e.Update(tea.KeyMsg{Type: tea.KeyUp})
+	if got := e.Value(); got != "third" {
+		t.Errorf("expected 'third', got %q", got)
+	}
+	e.Update(tea.KeyMsg{Type: tea.KeyUp})
+	if got := e.Value(); got != "second" {
+		t.Errorf("expected 'second', got %q", got)
+	}
+	e.Update(tea.KeyMsg{Type: tea.KeyUp})
+	if got := e.Value(); got != "first" {
+		t.Errorf("expected 'first', got %q", got)
+	}
+
+	// Can't go further back.
+	e.Update(tea.KeyMsg{Type: tea.KeyUp})
+	if got := e.Value(); got != "first" {
+		t.Errorf("expected 'first' (oldest), got %q", got)
+	}
+
+	// Down walks forward.
+	e.Update(tea.KeyMsg{Type: tea.KeyDown})
+	if got := e.Value(); got != "second" {
+		t.Errorf("expected 'second', got %q", got)
+	}
+	e.Update(tea.KeyMsg{Type: tea.KeyDown})
+	if got := e.Value(); got != "third" {
+		t.Errorf("expected 'third', got %q", got)
+	}
+	e.Update(tea.KeyMsg{Type: tea.KeyDown})
+	if got := e.Value(); got != "" {
+		t.Errorf("expected empty after down past newest, got %q", got)
+	}
+}
+
+func TestEditor_History_SkipsDuplicates(t *testing.T) {
+	e := NewEditor()
+	submitText(e, "same")
+	submitText(e, "same")
+	submitText(e, "same")
+
+	if len(e.history) != 1 {
+		t.Errorf("expected 1 history entry (deduped), got %d", len(e.history))
+	}
+}
+
+func TestEditor_History_PreservesDraft(t *testing.T) {
+	e := NewEditor()
+	submitText(e, "old message")
+
+	// User starts typing a new message, then presses up.
+	e.textarea.SetValue("work in prog")
+	e.Update(tea.KeyMsg{Type: tea.KeyUp})
+	if got := e.Value(); got != "old message" {
+		t.Errorf("expected 'old message', got %q", got)
+	}
+
+	// Down should restore the draft.
+	e.Update(tea.KeyMsg{Type: tea.KeyDown})
+	if got := e.Value(); got != "work in prog" {
+		t.Errorf("expected draft 'work in prog', got %q", got)
+	}
+}
+
+func TestEditor_History_UpNoopWhenEmpty(t *testing.T) {
+	e := NewEditor()
+	// No history — up-arrow should be a no-op (falls through to textarea).
+	cmd := e.Update(tea.KeyMsg{Type: tea.KeyUp})
+	// Should not panic or change value.
+	if got := e.Value(); got != "" {
+		t.Errorf("expected empty, got %q", got)
+	}
+	_ = cmd
+}
+
+func TestEditor_History_DownNoopWhenNotInHistory(t *testing.T) {
+	e := NewEditor()
+	submitText(e, "hello")
+
+	// Without pressing up first, down-arrow should not alter the value.
+	e.textarea.SetValue("current")
+	e.Update(tea.KeyMsg{Type: tea.KeyDown})
+	if got := e.Value(); got != "current" {
+		t.Errorf("expected 'current' unchanged, got %q", got)
+	}
+}
