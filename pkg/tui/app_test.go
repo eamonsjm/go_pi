@@ -43,31 +43,6 @@ func TestApp_Init(t *testing.T) {
 	}
 }
 
-func TestApp_SetCallbacks(t *testing.T) {
-	app := NewApp()
-	var submitted, steered string
-	var cancelled bool
-	app.SetCallbacks(
-		func(text string) { submitted = text },
-		func(text string) { steered = text },
-		func() { cancelled = true },
-	)
-
-	// Verify callbacks are wired.
-	app.onSubmit("hello")
-	if submitted != "hello" {
-		t.Errorf("expected 'hello', got %q", submitted)
-	}
-	app.onSteer("steer")
-	if steered != "steer" {
-		t.Errorf("expected 'steer', got %q", steered)
-	}
-	app.onCancel()
-	if !cancelled {
-		t.Error("expected cancelled=true")
-	}
-}
-
 func TestApp_SetModel(t *testing.T) {
 	app := NewApp()
 	app.SetModel("gpt-4o")

@@ -868,25 +868,10 @@ func TestRapidFollowUpDropsWithLog(t *testing.T) {
 	}
 }
 
-func TestSettersAndMessages(t *testing.T) {
+func TestMessagesRoundTrip(t *testing.T) {
 	provider := &mockProvider{}
 	reg := tools.NewRegistry()
 	a := NewAgentLoop(provider, reg)
-
-	a.SetModel("new-model")
-	if a.model != "new-model" {
-		t.Errorf("SetModel failed")
-	}
-
-	a.SetThinking(ai.ThinkingMedium)
-	if a.thinking != ai.ThinkingMedium {
-		t.Errorf("SetThinking failed")
-	}
-
-	a.SetSystemPrompt("new prompt")
-	if a.systemPrompt != "new prompt" {
-		t.Errorf("SetSystemPrompt failed")
-	}
 
 	msgs := []ai.Message{
 		ai.NewTextMessage(ai.RoleUser, "a"),

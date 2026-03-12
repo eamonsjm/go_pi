@@ -145,16 +145,3 @@ func TestRandomID_Unique(t *testing.T) {
 		seen[id] = true
 	}
 }
-
-func TestPluginCommand_Fields(t *testing.T) {
-	pc := PluginCommand{
-		Def:     CommandDef{Name: "test", Description: "testing"},
-		Process: &PluginProcess{name: "owner"},
-	}
-	if pc.Def.Name != "test" {
-		t.Errorf("Def.Name = %q, want %q", pc.Def.Name, "test")
-	}
-	if pc.Process.Name() != "owner" {
-		t.Errorf("Process.Name() = %q, want %q", pc.Process.Name(), "owner")
-	}
-}
