@@ -54,7 +54,7 @@ func NewLoginCommand(store *auth.Store, resolver *auth.Resolver) *SlashCommand {
 			if provider == "" {
 				return func() tea.Msg {
 					return CommandResultMsg{
-						Text:    "Usage: /login <provider>\nAvailable: anthropic",
+						Text:    "Usage: /login <provider>\nAvailable: anthropic, openai",
 						IsError: true,
 					}
 				}
@@ -73,8 +73,12 @@ func NewLoginCommand(store *auth.Store, resolver *auth.Resolver) *SlashCommand {
 			return func() tea.Msg {
 				anthProv, ok := oauthProv.(*auth.AnthropicOAuth)
 				if !ok {
-					// Non-Anthropic provider: run full Login flow in one shot.
-					cred, err := oauthProv.Login(auth.OAuthCallbacks{})
+					// Non-Anthropic provider: run full Login flow with browser.
+					cred, err := oauthProv.Login(auth.OAuthCallbacks{
+						OnAuth: func(url, instructions string) {
+							openBrowser(url)
+						},
+					})
 					if err != nil {
 						return CommandResultMsg{
 							Text:    fmt.Sprintf("Login failed: %v", err),

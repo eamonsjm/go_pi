@@ -172,6 +172,7 @@ func setupAuth() (*auth.Store, *auth.Resolver, error) {
 
 	resolver := auth.NewResolver(store)
 	resolver.RegisterProvider(auth.NewAnthropicOAuth())
+	resolver.RegisterProvider(auth.NewOpenAIOAuth())
 
 	return store, resolver, nil
 }
@@ -389,6 +390,7 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 		app.ShowWelcome(fmt.Sprintf(
 			"No API key configured. To get started:\n\n"+
 				"  /login anthropic          — OAuth login (Claude Pro/Max)\n"+
+				"  /login openai             — OAuth login (ChatGPT Plus/Pro)\n"+
 				"  export ANTHROPIC_API_KEY=sk-...  — API key\n"+
 				"  export OPENAI_API_KEY=sk-...     — OpenAI key\n\n"+
 				"Or save to ~/.gi/auth.json.\n"+
