@@ -6,4 +6,5 @@ var ProviderEnvVars = map[string]string{
 	"openrouter": "OPENROUTER_API_KEY",
 	"openai":     "OPENAI_API_KEY",
 	"gemini":     "GEMINI_API_KEY",
+	"azure":      "AZURE_OPENAI_API_KEY",
 }

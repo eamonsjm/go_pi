@@ -214,15 +214,19 @@ func resolveProvider(cfg *config.Config, resolver *auth.Resolver) (ai.Provider, 
 	providerName := cfg.DefaultProvider
 	if providerName == "" {
 		// Auto-detect based on available credentials.
-		for _, name := range []string{"anthropic", "openrouter", "openai", "gemini"} {
+		for _, name := range []string{"anthropic", "openrouter", "openai", "gemini", "azure"} {
 			key, _ := resolver.Resolve(name)
 			if key != "" {
 				providerName = name
 				break
 			}
 		}
+		// Bedrock uses AWS credential chain, not API keys.
+		if providerName == "" && os.Getenv("AWS_ACCESS_KEY_ID") != "" {
+			providerName = "bedrock"
+		}
 		if providerName == "" {
-			return nil, fmt.Errorf("no API key found. Set ANTHROPIC_API_KEY, OPENROUTER_API_KEY, OPENAI_API_KEY, or GEMINI_API_KEY, or use /login <provider>")
+			return nil, fmt.Errorf("no API key found. Set ANTHROPIC_API_KEY, OPENROUTER_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, AZURE_OPENAI_API_KEY, or AWS credentials, or use /login <provider>")
 		}
 	}
 
@@ -237,8 +241,17 @@ func resolveProvider(cfg *config.Config, resolver *auth.Resolver) (ai.Provider, 
 			model = "gpt-4o"
 		case "gemini":
 			model = "gemini-2.0-flash"
+		case "azure":
+			model = "gpt-4o" // Azure deployment determines actual model
+		case "bedrock":
+			model = "anthropic.claude-3-5-sonnet-20241022-v2:0"
 		}
 		cfg.DefaultModel = model
+	}
+
+	// Bedrock uses AWS credential chain, not API keys.
+	if providerName == "bedrock" {
+		return ai.NewBedrockProvider(os.Getenv("AWS_REGION"))
 	}
 
 	key, err := resolver.Resolve(providerName)
@@ -261,6 +274,8 @@ func resolveProvider(cfg *config.Config, resolver *auth.Resolver) (ai.Provider, 
 		return ai.NewOpenAIProvider(key)
 	case "gemini":
 		return ai.NewGeminiProvider(key)
+	case "azure":
+		return ai.NewAzureOpenAIProvider(key, "", "")
 	default:
 		return nil, fmt.Errorf("unknown provider: %s", providerName)
 	}
