@@ -13,9 +13,8 @@ import (
 type CredentialType string
 
 const (
-	CredentialAPIKey  CredentialType = "api_key"
-	CredentialOAuth   CredentialType = "oauth"
-	CredentialHeader  CredentialType = "header"
+	CredentialAPIKey CredentialType = "api_key"
+	CredentialOAuth  CredentialType = "oauth"
 )
 
 // Credential is the stored authentication data for a single provider.
@@ -23,7 +22,6 @@ const (
 type Credential struct {
 	Type         CredentialType `json:"type"`
 	Key          string         `json:"key,omitempty"`           // API key value (literal, env ref, or !command)
-	HeaderName   string         `json:"header_name,omitempty"`   // custom header name (for CredentialHeader)
 	RefreshToken string         `json:"refresh_token,omitempty"` // OAuth refresh token
 	AccessToken  string         `json:"access_token,omitempty"`  // OAuth access token
 	ExpiresAt    int64          `json:"expires_at,omitempty"`    // Unix ms when access token expires

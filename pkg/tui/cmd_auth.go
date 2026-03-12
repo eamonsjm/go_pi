@@ -196,8 +196,6 @@ func NewAuthStatusCommand(store *auth.Store, resolver *auth.Resolver) *SlashComm
 								}
 							case auth.CredentialAPIKey:
 								sb.WriteString(" (API key)")
-							case auth.CredentialHeader:
-								sb.WriteString(" (custom header)")
 							}
 						} else {
 							sb.WriteString(" (env var)")

@@ -80,7 +80,7 @@ func (r *Resolver) Resolve(provider string) (string, error) {
 // resolveCredential handles stored credential types.
 func (r *Resolver) resolveCredential(provider string, cred *Credential) (string, error) {
 	switch cred.Type {
-	case CredentialAPIKey, CredentialHeader:
+	case CredentialAPIKey:
 		return cred.ResolveKey()
 
 	case CredentialOAuth:
