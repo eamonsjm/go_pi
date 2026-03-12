@@ -31,9 +31,7 @@ func NewNewSessionCommand(agentLoop *agent.AgentLoop, sessionMgr *session.Manage
 			// Update the header with the short session ID.
 			header.SetSession(shortID(id))
 
-			return func() tea.Msg {
-				return sessionCreatedMsg{id: id}
-			}
+			return nil
 		},
 	}
 }
@@ -62,9 +60,7 @@ func NewResumeCommand(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, c
 				}
 				lastListed = sessions
 				chatView.AddSystemMessage(formatSessionList(sessions))
-				return func() tea.Msg {
-					return sessionPickerShowMsg{sessions: sessions}
-				}
+				return nil
 			}
 
 			// Argument provided: resolve to a session ID.
@@ -92,9 +88,7 @@ func NewResumeCommand(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, c
 			// Update header.
 			header.SetSession(shortID(targetID))
 
-			return func() tea.Msg {
-				return sessionLoadedMsg{id: targetID, messageCount: len(msgs)}
-			}
+			return nil
 		},
 	}
 }

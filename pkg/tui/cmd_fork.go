@@ -117,9 +117,7 @@ func NewForkCommand(ctx context.Context, agentLoop *agent.AgentLoop, sessionMgr 
 				"Forked at message %s — now on a new branch (%d total branches).\nType your message to continue on this branch.",
 				shortID(forkPointID), len(branches)))
 
-			return func() tea.Msg {
-				return branchSwitchedMsg{leafID: forkPointID}
-			}
+			return nil
 		},
 	}
 }

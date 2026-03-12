@@ -82,9 +82,7 @@ func NewTreeCommand(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cha
 
 			header.SetSession(shortID(sessionMgr.CurrentID()))
 
-			return func() tea.Msg {
-				return branchSwitchedMsg{leafID: target.LeafID}
-			}
+			return nil
 		},
 	}
 }
