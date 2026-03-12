@@ -7,9 +7,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 )
 
 const (
@@ -58,41 +61,89 @@ func NewAnthropicProviderWithToken(token string) (*AnthropicProvider, error) {
 
 func (p *AnthropicProvider) Name() string { return "anthropic" }
 
+const maxRetries = 2 // up to 3 attempts total
+
 // Stream sends a streaming request to the Anthropic Messages API and returns
-// a channel of StreamEvents.
+// a channel of StreamEvents. Retries automatically on rate limit (429) and
+// overloaded (529) errors.
 func (p *AnthropicProvider) Stream(ctx context.Context, req StreamRequest) (<-chan StreamEvent, error) {
 	body, err := p.buildRequestBody(req)
 	if err != nil {
 		return nil, fmt.Errorf("anthropic: failed to build request: %w", err)
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL, bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("anthropic: failed to create HTTP request: %w", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	if p.useBearer {
-		httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
-		httpReq.Header.Set("anthropic-beta", "oauth-2025-04-20")
-	} else {
-		httpReq.Header.Set("x-api-key", p.apiKey)
-	}
-	httpReq.Header.Set("anthropic-version", anthropicAPIVersion)
+	for attempt := 0; ; attempt++ {
+		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL, bytes.NewReader(body))
+		if err != nil {
+			return nil, fmt.Errorf("anthropic: failed to create HTTP request: %w", err)
+		}
+		httpReq.Header.Set("Content-Type", "application/json")
+		if p.useBearer {
+			httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
+			httpReq.Header.Set("anthropic-beta", "oauth-2025-04-20")
+		} else {
+			httpReq.Header.Set("x-api-key", p.apiKey)
+		}
+		httpReq.Header.Set("anthropic-version", anthropicAPIVersion)
 
-	resp, err := p.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("anthropic: request failed: %w", err)
-	}
+		resp, err := p.httpClient.Do(httpReq)
+		if err != nil {
+			return nil, fmt.Errorf("anthropic: request failed: %w", err)
+		}
 
-	if resp.StatusCode != http.StatusOK {
-		defer resp.Body.Close()
+		if resp.StatusCode == http.StatusOK {
+			ch := make(chan StreamEvent, 64)
+			go p.readSSEStream(ctx, resp.Body, ch)
+			return ch, nil
+		}
+
 		errBody, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("anthropic: API returned status %d: %s", resp.StatusCode, string(errBody))
+		resp.Body.Close()
+		apiErr := parseHTTPError(resp.StatusCode, resp.Header, errBody)
+		if apiErr.IsRetryable() && attempt < maxRetries {
+			wait := apiErr.RetryAfter
+			if wait == 0 {
+				wait = (attempt + 1) * 2 // 2s, 4s
+			}
+			log.Printf("anthropic: %s, retrying in %ds (attempt %d/%d)", apiErr.ErrorType, wait, attempt+1, maxRetries+1)
+			select {
+			case <-time.After(time.Duration(wait) * time.Second):
+				continue
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+		return nil, apiErr
+	}
+}
+
+// parseHTTPError parses a non-200 HTTP response into an APIError.
+func parseHTTPError(statusCode int, header http.Header, body []byte) *APIError {
+	apiErr := &APIError{StatusCode: statusCode}
+
+	// Try to parse retry-after header.
+	if ra := header.Get("Retry-After"); ra != "" {
+		if secs, err := strconv.Atoi(ra); err == nil {
+			apiErr.RetryAfter = secs
+		}
 	}
 
-	ch := make(chan StreamEvent, 64)
-	go p.readSSEStream(ctx, resp.Body, ch)
-	return ch, nil
+	// Try to parse structured error JSON.
+	var errResp struct {
+		Error struct {
+			Type    string `json:"type"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(body, &errResp); err == nil && errResp.Error.Type != "" {
+		apiErr.ErrorType = errResp.Error.Type
+		apiErr.Message = errResp.Error.Message
+		return apiErr
+	}
+
+	// Fallback: use raw body as message.
+	apiErr.Message = strings.TrimSpace(string(body))
+	return apiErr
 }
 
 // -- Request construction --
@@ -490,7 +541,10 @@ func (p *AnthropicProvider) readSSEStream(ctx context.Context, body io.ReadClose
 			if err := json.Unmarshal(data, &d); err != nil {
 				p.send(ch, StreamEvent{Type: EventError, Error: fmt.Errorf("anthropic: unparseable error event: %s", string(data))})
 			} else {
-				p.send(ch, StreamEvent{Type: EventError, Error: fmt.Errorf("anthropic: %s: %s", d.Error.Type, d.Error.Message)})
+				p.send(ch, StreamEvent{Type: EventError, Error: &APIError{
+					ErrorType: d.Error.Type,
+					Message:   d.Error.Message,
+				}})
 			}
 			return
 

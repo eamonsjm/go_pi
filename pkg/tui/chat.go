@@ -2,6 +2,7 @@ package tui
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
 	"github.com/ejm/go_pi/pkg/agent"
+	"github.com/ejm/go_pi/pkg/ai"
 )
 
 // ---------------------------------------------------------------------------
@@ -181,7 +183,12 @@ func (c *ChatView) HandleEvent(ev agent.AgentEvent) bool {
 	case agent.EventAgentError:
 		msg := "unknown error"
 		if ev.Error != nil {
-			msg = ev.Error.Error()
+			var apiErr *ai.APIError
+			if errors.As(ev.Error, &apiErr) {
+				msg = apiErr.UserMessage()
+			} else {
+				msg = ev.Error.Error()
+			}
 		}
 		c.blocks = append(c.blocks, chatBlock{
 			kind: blockError,
