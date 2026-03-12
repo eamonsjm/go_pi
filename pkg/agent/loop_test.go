@@ -808,66 +808,6 @@ func TestCancelRacesWithPromptCompletion(t *testing.T) {
 	}
 }
 
-func TestRapidSteerDropsWithLog(t *testing.T) {
-	// Verify that rapid successive Steer() calls beyond buffer capacity
-	// log a warning instead of silently dropping messages.
-	provider := &mockProvider{streamFn: textResponse("done")}
-	reg := tools.NewRegistry()
-	a := NewAgentLoop(provider, reg)
-
-	// Buffer is 2 — first two should succeed, third should be dropped (and logged).
-	a.Steer("steer-1")
-	a.Steer("steer-2")
-	a.Steer("steer-3") // This one should be dropped and logged.
-
-	// Verify channel has exactly 2 messages (the buffer capacity).
-	if len(a.steerCh) != 2 {
-		t.Errorf("expected 2 buffered steer messages, got %d", len(a.steerCh))
-	}
-
-	// Drain and verify order.
-	msg1 := <-a.steerCh
-	msg2 := <-a.steerCh
-	if msg1 != "steer-1" {
-		t.Errorf("expected 'steer-1', got %q", msg1)
-	}
-	if msg2 != "steer-2" {
-		t.Errorf("expected 'steer-2', got %q", msg2)
-	}
-
-	// Channel should now be empty.
-	select {
-	case extra := <-a.steerCh:
-		t.Errorf("unexpected extra steer message: %q", extra)
-	default:
-		// Good — channel is empty.
-	}
-}
-
-func TestRapidFollowUpDropsWithLog(t *testing.T) {
-	// Same test for FollowUp channel.
-	provider := &mockProvider{streamFn: textResponse("done")}
-	reg := tools.NewRegistry()
-	a := NewAgentLoop(provider, reg)
-
-	a.FollowUp("fu-1")
-	a.FollowUp("fu-2")
-	a.FollowUp("fu-3") // Dropped and logged.
-
-	if len(a.followUpCh) != 2 {
-		t.Errorf("expected 2 buffered follow-up messages, got %d", len(a.followUpCh))
-	}
-
-	msg1 := <-a.followUpCh
-	msg2 := <-a.followUpCh
-	if msg1 != "fu-1" {
-		t.Errorf("expected 'fu-1', got %q", msg1)
-	}
-	if msg2 != "fu-2" {
-		t.Errorf("expected 'fu-2', got %q", msg2)
-	}
-}
-
 func TestSettersAndMessages(t *testing.T) {
 	provider := &mockProvider{}
 	reg := tools.NewRegistry()

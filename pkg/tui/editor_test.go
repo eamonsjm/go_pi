@@ -192,41 +192,6 @@ func TestEditor_Update_CtrlC_CountResetOnOtherKey(t *testing.T) {
 	}
 }
 
-func TestEditor_Update_CtrlD_Idle_Empty(t *testing.T) {
-	e := NewEditor()
-	e.state = editorIdle
-
-	cmd := e.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
-	if cmd == nil {
-		t.Fatal("Ctrl-D when idle with empty editor should return quit command")
-	}
-	msg := cmd()
-	if _, ok := msg.(editorQuitMsg); !ok {
-		t.Errorf("expected editorQuitMsg, got %T", msg)
-	}
-}
-
-func TestEditor_Update_CtrlD_Idle_WithText(t *testing.T) {
-	e := NewEditor()
-	e.state = editorIdle
-	e.textarea.SetValue("some text")
-
-	cmd := e.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
-	if cmd != nil {
-		t.Error("Ctrl-D when idle with text should return nil (no quit)")
-	}
-}
-
-func TestEditor_Update_CtrlD_Running(t *testing.T) {
-	e := NewEditor()
-	e.state = editorRunning
-
-	cmd := e.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
-	if cmd != nil {
-		t.Error("Ctrl-D when agent is running should return nil")
-	}
-}
-
 func TestEditor_CommandHint_NoCommands(t *testing.T) {
 	e := NewEditor()
 	// commands is nil

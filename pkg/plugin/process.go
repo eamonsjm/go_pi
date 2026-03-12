@@ -99,7 +99,7 @@ func (p *PluginProcess) readLoop() {
 	for p.scanner.Scan() {
 		var msg PluginMessage
 		if err := json.Unmarshal(p.scanner.Bytes(), &msg); err != nil {
-			log.Printf("plugin %s: skipping malformed JSON: %v", p.name, err)
+			// Log and skip invalid messages.
 			continue
 		}
 

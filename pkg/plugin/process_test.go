@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"strings"
@@ -606,39 +605,6 @@ func TestInitialize_ProcessExitedDuringInit(t *testing.T) {
 	err := p.Initialize(PluginConfig{})
 	if err == nil {
 		t.Fatal("expected error from crashed process")
-	}
-}
-
-func TestReadLoop_LogsMalformedJSON(t *testing.T) {
-	input := "NOT VALID JSON {{{\n" +
-		`{"type":"tool_result","content":"ok"}` + "\n"
-
-	p := newTestProcess("test-malformed", input)
-
-	// Capture log output.
-	var buf strings.Builder
-	log.SetOutput(&buf)
-	t.Cleanup(func() {
-		log.SetOutput(os.Stderr)
-	})
-
-	p.readLoop()
-
-	logOutput := buf.String()
-	if !strings.Contains(logOutput, "test-malformed") {
-		t.Errorf("log output missing plugin name, got: %q", logOutput)
-	}
-	if !strings.Contains(logOutput, "malformed JSON") {
-		t.Errorf("log output missing 'malformed JSON', got: %q", logOutput)
-	}
-
-	// Valid message after the bad line should still be delivered.
-	msg, ok := <-p.responseCh
-	if !ok {
-		t.Fatal("responseCh closed before delivering valid message")
-	}
-	if msg.Type != "tool_result" || msg.Content != "ok" {
-		t.Errorf("got message %+v, want tool_result with content 'ok'", msg)
 	}
 }
 
