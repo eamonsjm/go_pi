@@ -249,15 +249,44 @@ func buildSystemPrompt() string {
 	sb.WriteString("- Create parent directories when writing new files\n")
 	sb.WriteString("- Be careful with destructive operations\n\n")
 
-	// Load AGENTS.md or CLAUDE.md if present
-	for _, name := range []string{"AGENTS.md", "CLAUDE.md", ".gi/SYSTEM.md"} {
-		path := filepath.Join(cwd, name)
-		data, err := os.ReadFile(path)
-		if err == nil {
-			sb.WriteString(fmt.Sprintf("## Project Instructions (from %s)\n", name))
-			sb.WriteString(string(data))
+	// Walk directory tree from CWD to filesystem root, collecting context files.
+	// Files are collected deepest-first and deduplicated by content.
+	contextNames := []string{"CLAUDE.md", "AGENTS.md", ".claude/SYSTEM.md", ".gi/SYSTEM.md"}
+	seen := make(map[string]bool) // content dedup
+	dir := cwd
+	for {
+		for _, name := range contextNames {
+			path := filepath.Join(dir, name)
+			data, err := os.ReadFile(path)
+			if err != nil {
+				continue
+			}
+			content := strings.TrimSpace(string(data))
+			if content == "" || seen[content] {
+				continue
+			}
+			seen[content] = true
+			sb.WriteString(fmt.Sprintf("## Project Instructions (from %s)\n", path))
+			sb.WriteString(content)
 			sb.WriteString("\n\n")
 		}
+
+		// Collect APPEND_SYSTEM.md (additive, not deduplicated)
+		appendPath := filepath.Join(dir, "APPEND_SYSTEM.md")
+		if data, err := os.ReadFile(appendPath); err == nil {
+			content := strings.TrimSpace(string(data))
+			if content != "" {
+				sb.WriteString(fmt.Sprintf("## Additional Instructions (from %s)\n", appendPath))
+				sb.WriteString(content)
+				sb.WriteString("\n\n")
+			}
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
 	}
 
 	return sb.String()

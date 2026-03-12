@@ -1,0 +1,107 @@
+package main
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestBuildSystemPrompt_WalksDirectoryTree(t *testing.T) {
+	// Create a temp directory structure:
+	// root/CLAUDE.md
+	// root/sub/CLAUDE.md (different content)
+	// root/sub/AGENTS.md
+	root := t.TempDir()
+	sub := filepath.Join(root, "sub")
+	os.MkdirAll(sub, 0o755)
+
+	os.WriteFile(filepath.Join(root, "CLAUDE.md"), []byte("root instructions"), 0o644)
+	os.WriteFile(filepath.Join(sub, "CLAUDE.md"), []byte("sub instructions"), 0o644)
+	os.WriteFile(filepath.Join(sub, "AGENTS.md"), []byte("agents instructions"), 0o644)
+
+	// Change to sub directory
+	orig, _ := os.Getwd()
+	os.Chdir(sub)
+	defer os.Chdir(orig)
+
+	prompt := buildSystemPrompt()
+
+	// Deepest first: sub/CLAUDE.md before root/CLAUDE.md
+	subIdx := strings.Index(prompt, "sub instructions")
+	rootIdx := strings.Index(prompt, "root instructions")
+	agentsIdx := strings.Index(prompt, "agents instructions")
+
+	if subIdx == -1 {
+		t.Fatal("sub/CLAUDE.md content not found in prompt")
+	}
+	if rootIdx == -1 {
+		t.Fatal("root/CLAUDE.md content not found in prompt")
+	}
+	if agentsIdx == -1 {
+		t.Fatal("sub/AGENTS.md content not found in prompt")
+	}
+	if subIdx > rootIdx {
+		t.Error("sub/CLAUDE.md should appear before root/CLAUDE.md (deepest first)")
+	}
+}
+
+func TestBuildSystemPrompt_DeduplicatesByContent(t *testing.T) {
+	root := t.TempDir()
+	sub := filepath.Join(root, "sub")
+	os.MkdirAll(sub, 0o755)
+
+	// Same content in both
+	os.WriteFile(filepath.Join(root, "CLAUDE.md"), []byte("same content"), 0o644)
+	os.WriteFile(filepath.Join(sub, "CLAUDE.md"), []byte("same content"), 0o644)
+
+	orig, _ := os.Getwd()
+	os.Chdir(sub)
+	defer os.Chdir(orig)
+
+	prompt := buildSystemPrompt()
+
+	// Should only appear once
+	count := strings.Count(prompt, "same content")
+	if count != 1 {
+		t.Errorf("duplicate content should be deduplicated, found %d occurrences", count)
+	}
+}
+
+func TestBuildSystemPrompt_AppendSystemMd(t *testing.T) {
+	root := t.TempDir()
+	sub := filepath.Join(root, "sub")
+	os.MkdirAll(sub, 0o755)
+
+	os.WriteFile(filepath.Join(sub, "APPEND_SYSTEM.md"), []byte("appended content"), 0o644)
+	os.WriteFile(filepath.Join(root, "APPEND_SYSTEM.md"), []byte("root appended"), 0o644)
+
+	orig, _ := os.Getwd()
+	os.Chdir(sub)
+	defer os.Chdir(orig)
+
+	prompt := buildSystemPrompt()
+
+	if !strings.Contains(prompt, "appended content") {
+		t.Error("APPEND_SYSTEM.md from sub not found")
+	}
+	if !strings.Contains(prompt, "root appended") {
+		t.Error("APPEND_SYSTEM.md from root not found")
+	}
+}
+
+func TestBuildSystemPrompt_DotClaudeSystemMd(t *testing.T) {
+	root := t.TempDir()
+	os.MkdirAll(filepath.Join(root, ".claude"), 0o755)
+	os.WriteFile(filepath.Join(root, ".claude", "SYSTEM.md"), []byte("claude system"), 0o644)
+
+	orig, _ := os.Getwd()
+	os.Chdir(root)
+	defer os.Chdir(orig)
+
+	prompt := buildSystemPrompt()
+
+	if !strings.Contains(prompt, "claude system") {
+		t.Error(".claude/SYSTEM.md content not found in prompt")
+	}
+}
