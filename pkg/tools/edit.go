@@ -63,19 +63,56 @@ func (t *EditTool) Execute(ctx context.Context, params map[string]any) (string, 
 	if err != nil {
 		return "", fmt.Errorf("cannot read file: %v", err)
 	}
-	content := string(data)
 
-	// Count occurrences of old_string.
-	count := strings.Count(content, oldString)
-	if count == 0 {
-		return "", fmt.Errorf("old_string not found in %s. Make sure the string matches exactly, including whitespace and indentation.", filePath)
+	// Detect and strip BOM — we'll re-prepend it on write.
+	bom, rawContent := detectBOM(data)
+	content := string(rawContent)
+
+	// Detect line endings so we can preserve them.
+	lineEnding := detectLineEnding(content)
+
+	// Normalize to LF for matching, then restore original endings on write.
+	if lineEnding == "\r\n" {
+		content = strings.ReplaceAll(content, "\r\n", "\n")
+		oldString = strings.ReplaceAll(oldString, "\r\n", "\n")
+		newString = strings.ReplaceAll(newString, "\r\n", "\n")
 	}
-	if count > 1 {
+
+	// Try exact match first.
+	var matchTarget string
+	var normNote string
+
+	count := strings.Count(content, oldString)
+	switch {
+	case count == 1:
+		matchTarget = oldString
+	case count > 1:
 		return "", fmt.Errorf("old_string found %d times in %s. It must be unique. Provide more surrounding context to make the match unique.", count, filePath)
+	default:
+		// Exact match failed — try fuzzy matching with normalization.
+		matched, normName, found := fuzzyFind(content, oldString)
+		if !found {
+			return "", fmt.Errorf("old_string not found in %s. Make sure the string matches exactly, including whitespace and indentation.", filePath)
+		}
+		matchTarget = matched
+		normNote = fmt.Sprintf("Note: exact match failed. Matched via %s.", normName)
 	}
 
 	// Perform the replacement.
-	newContent := strings.Replace(content, oldString, newString, 1)
+	newContent := strings.Replace(content, matchTarget, newString, 1)
+
+	// Restore CRLF line endings if the file originally used them.
+	if lineEnding == "\r\n" {
+		newContent = strings.ReplaceAll(newContent, "\n", "\r\n")
+	}
+
+	// Re-prepend BOM if present.
+	var output []byte
+	if bom != nil {
+		output = append(bom, []byte(newContent)...)
+	} else {
+		output = []byte(newContent)
+	}
 
 	// Preserve original file permissions.
 	mode := os.FileMode(0644)
@@ -84,12 +121,21 @@ func (t *EditTool) Execute(ctx context.Context, params map[string]any) (string, 
 	}
 
 	// Write the file back.
-	if err := os.WriteFile(filePath, []byte(newContent), mode); err != nil {
+	if err := os.WriteFile(filePath, output, mode); err != nil {
 		return "", fmt.Errorf("cannot write file: %v", err)
 	}
 
-	// Generate a unified diff.
-	diff := unifiedDiff(filePath, content, newContent)
+	// Generate a unified diff (use LF-normalized content for readable diffs).
+	originalForDiff := content
+	if lineEnding == "\r\n" {
+		// Re-normalize for diff display.
+		newContent = strings.ReplaceAll(newContent, "\r\n", "\n")
+	}
+	diff := unifiedDiff(filePath, originalForDiff, newContent)
+
+	if normNote != "" {
+		diff = normNote + "\n" + diff
+	}
 	return diff, nil
 }
 
