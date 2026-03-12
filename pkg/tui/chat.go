@@ -179,6 +179,15 @@ func (c *ChatView) HandleEvent(ev agent.AgentEvent) bool {
 		})
 		return true
 
+	// ---- auto-compaction ----
+	case agent.EventAutoCompaction:
+		c.blocks = append(c.blocks, chatBlock{
+			kind:      blockCompaction,
+			text:      "Context automatically compacted to free space.\n\n" + ev.Delta,
+			collapsed: true,
+		})
+		return true
+
 	// ---- errors ----
 	case agent.EventAgentError:
 		msg := "unknown error"

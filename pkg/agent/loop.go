@@ -24,6 +24,14 @@ type AgentLoop struct {
 	maxTokens    int
 	thinking     ai.ThinkingLevel
 
+	// Auto-compaction settings.
+	contextWindow    int // total context window in tokens (0 = disabled)
+	reserveTokens    int // reserve buffer in tokens
+	keepRecentTokens int // approx tokens to preserve during compaction
+
+	// lastInputTokens stores the input_tokens from the most recent usage event.
+	lastInputTokens int
+
 	mu       sync.Mutex
 	messages []ai.Message
 	events   chan AgentEvent
@@ -40,13 +48,16 @@ type AgentLoop struct {
 // NewAgentLoop creates a new agent loop wired to the given provider and tool registry.
 func NewAgentLoop(provider ai.Provider, toolRegistry *tools.Registry, opts ...Option) *AgentLoop {
 	a := &AgentLoop{
-		provider:   provider,
-		tools:      toolRegistry,
-		maxTokens:  8192,
-		thinking:   ai.ThinkingOff,
-		events:     make(chan AgentEvent, eventBufSize),
-		steerCh:    make(chan string, 2),
-		followUpCh: make(chan string, 2),
+		provider:         provider,
+		tools:            toolRegistry,
+		maxTokens:        8192,
+		thinking:         ai.ThinkingOff,
+		contextWindow:    200000,
+		reserveTokens:    16384,
+		keepRecentTokens: 4096,
+		events:           make(chan AgentEvent, eventBufSize),
+		steerCh:          make(chan string, 2),
+		followUpCh:       make(chan string, 2),
 	}
 	for _, opt := range opts {
 		opt(a)
@@ -191,6 +202,12 @@ func (a *AgentLoop) run(ctx context.Context) error {
 			return err
 		}
 
+		// Check if auto-compaction is needed before the next LLM call.
+		if err := a.maybeAutoCompact(ctx); err != nil {
+			log.Printf("agent: auto-compaction failed: %v", err)
+			// Non-fatal: continue with the existing context.
+		}
+
 		assistantMsg, err := a.doTurn(ctx)
 		if err != nil {
 			a.emit(AgentEvent{Type: EventAgentError, Error: err})
@@ -329,6 +346,9 @@ func (a *AgentLoop) doTurn(ctx context.Context) (*ai.Message, error) {
 
 		case ai.EventMessageEnd:
 			if event.Usage != nil {
+				a.mu.Lock()
+				a.lastInputTokens = event.Usage.InputTokens
+				a.mu.Unlock()
 				a.emit(AgentEvent{Type: EventUsageUpdate, Usage: event.Usage})
 			}
 

@@ -17,6 +17,7 @@ const (
 	EventUsageUpdate       AgentEventType = "usage_update"
 	EventAgentError        AgentEventType = "agent_error"
 	EventCompaction        AgentEventType = "compaction"
+	EventAutoCompaction    AgentEventType = "auto_compaction"
 )
 
 // AgentEvent represents an event emitted during agent execution.
