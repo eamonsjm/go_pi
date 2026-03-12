@@ -136,7 +136,7 @@ func globRecursive(ctx context.Context, basePath, pattern string) ([]string, err
 		// Get relative path from base.
 		relPath, err := filepath.Rel(basePath, path)
 		if err != nil {
-			return nil
+			return fmt.Errorf("cannot make path relative: %s: %w", path, err)
 		}
 
 		// Skip directories themselves (we only want files).

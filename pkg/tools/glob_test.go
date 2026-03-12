@@ -186,6 +186,38 @@ func TestDoMatch_DepthLimitPreventsRunaway(t *testing.T) {
 	_ = result
 }
 
+func TestGlobRecursive_RelErrorPropagated(t *testing.T) {
+	// Verify that globRecursive returns all expected files without
+	// silently dropping any. Before the fix, a filepath.Rel error
+	// would cause files to be silently skipped (return nil).
+	// After the fix, such errors are returned and propagated.
+	dir := setupGlobDir(t)
+
+	matches, err := globRecursive(context.Background(), dir, "**/*.go")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// All .go files must be present — none silently dropped.
+	want := []string{"a.go", "c.go", "e.go"}
+	for _, name := range want {
+		found := false
+		for _, m := range matches {
+			if strings.HasSuffix(m, string(filepath.Separator)+name) || filepath.Base(m) == name {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected %s in results, got: %v", name, matches)
+		}
+	}
+
+	if len(matches) != 3 {
+		t.Errorf("expected exactly 3 .go files, got %d: %v", len(matches), matches)
+	}
+}
+
 func TestMatchDoublestar(t *testing.T) {
 	tests := []struct {
 		pattern string
