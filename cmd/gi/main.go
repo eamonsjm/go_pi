@@ -18,6 +18,7 @@ import (
 	"github.com/ejm/go_pi/pkg/auth"
 	"github.com/ejm/go_pi/pkg/config"
 	"github.com/ejm/go_pi/pkg/plugin"
+	"github.com/ejm/go_pi/pkg/rpc"
 	"github.com/ejm/go_pi/pkg/session"
 	"github.com/ejm/go_pi/pkg/tools"
 	"github.com/ejm/go_pi/pkg/tui"
@@ -31,6 +32,8 @@ func main() {
 	sessionFlag := flag.String("session", "", "Resume a session by ID")
 	newFlag := flag.Bool("new", false, "Start a fresh session instead of resuming")
 	cwdFlag := flag.String("cwd", "", "Working directory")
+	jsonFlag := flag.Bool("json", false, "JSON event stream output mode")
+	rpcFlag := flag.Bool("rpc", false, "JSON-RPC 2.0 mode over stdin/stdout")
 	pluginFlag := flag.String("plugin", "", "Comma-separated paths to plugin executables or directories")
 	flag.Parse()
 
@@ -117,6 +120,26 @@ func main() {
 			prompt = initialPrompt + "\n\n" + prompt
 		}
 		runPrintMode(agentLoop, sessionMgr, prompt)
+		return
+	}
+
+	// JSON event stream mode
+	if *jsonFlag {
+		if providerErr != nil {
+			log.Fatalf("Cannot use JSON mode: %v", providerErr)
+		}
+		agentLoop := makeAgentLoop(provider, registry, cfg)
+		rpc.RunJSONStream(agentLoop, initialPrompt)
+		return
+	}
+
+	// JSON-RPC 2.0 mode
+	if *rpcFlag {
+		if providerErr != nil {
+			log.Fatalf("Cannot use RPC mode: %v", providerErr)
+		}
+		agentLoop := makeAgentLoop(provider, registry, cfg)
+		rpc.RunRPC(agentLoop)
 		return
 	}
 
