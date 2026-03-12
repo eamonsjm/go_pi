@@ -58,6 +58,11 @@ func main() {
 		cfg.ThinkingLevel = *thinkingFlag
 	}
 
+	// Initialize theme from config (must happen before TUI creation).
+	if theme, err := tui.ResolveTheme(cfg.Theme); err == nil {
+		tui.SetTheme(theme)
+	}
+
 	if *cwdFlag != "" {
 		if err := os.Chdir(*cwdFlag); err != nil {
 			log.Fatalf("Failed to change directory: %v", err)

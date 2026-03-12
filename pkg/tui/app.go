@@ -178,6 +178,9 @@ func (a *App) RegisterBuiltinCommands(ctx context.Context, agentLoop *agent.Agen
 	a.RegisterCommand(NewShareCommand(sessionMgr))
 	a.RegisterCommand(NewHotkeysCommand(a.keybindings))
 
+	// Theme command.
+	a.RegisterCommand(NewThemeCommand(cfg, a.chat))
+
 	// Auth commands.
 	if authStore != nil && authResolver != nil {
 		a.RegisterCommand(NewLoginCommand(authStore, authResolver))
@@ -317,6 +320,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return a, msg.waitCmd
+
+	case themeChangedMsg:
+		a.chat.AddSystemMessage(fmt.Sprintf("Switched to theme: %s", msg.name))
+		return a, nil
 
 	case settingsDisplayMsg:
 		a.chat.AddSystemMessage(msg.text)

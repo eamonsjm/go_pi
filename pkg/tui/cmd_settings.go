@@ -70,15 +70,18 @@ func settingsDisplay(cfg *config.Config) tea.Cmd {
 			"  model:       %s\n"+
 			"  thinking:    %s\n"+
 			"  max_tokens:  %d\n"+
+			"  theme:       %s\n"+
 			"  session_dir: %s\n"+
 			"\n"+
 			"Type /settings <key> <value> to change. Example:\n"+
 			"  /settings thinking medium\n"+
-			"  /settings max_tokens 16384",
+			"  /settings max_tokens 16384\n"+
+			"  /settings theme dark",
 		cfg.DefaultProvider,
 		cfg.DefaultModel,
 		cfg.ThinkingLevel,
 		cfg.MaxTokens,
+		cfg.Theme,
 		cfg.SessionDir,
 	)
 	return func() tea.Msg {
@@ -138,6 +141,9 @@ func settingsUpdate(key, value string, cfg *config.Config, agentLoop *agent.Agen
 			return settingsUpdatedMsg{key: key, value: value}
 		}
 
+	case "theme":
+		return settingsError(fmt.Sprintf("use /theme %s to change the theme", value))
+
 	case "provider":
 		valid := map[string]bool{
 			"anthropic":  true,
@@ -153,6 +159,6 @@ func settingsUpdate(key, value string, cfg *config.Config, agentLoop *agent.Agen
 		return settingsError(fmt.Sprintf("provider change to %q requires restart. Edit ~/.gi/settings.json and relaunch.", value))
 
 	default:
-		return settingsError(fmt.Sprintf("unknown setting %q — valid keys: thinking, model, max_tokens, provider", key))
+		return settingsError(fmt.Sprintf("unknown setting %q — valid keys: thinking, model, max_tokens, provider, theme", key))
 	}
 }

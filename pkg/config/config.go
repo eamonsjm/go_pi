@@ -17,6 +17,9 @@ type Config struct {
 	ThinkingLevel string `json:"thinking_level"`
 	MaxTokens     int    `json:"max_tokens"`
 
+	// Appearance
+	Theme string `json:"theme"`
+
 	// Paths
 	SessionDir string `json:"session_dir"`
 	ConfigDir  string `json:"config_dir"`
@@ -31,6 +34,7 @@ func DefaultConfig() *Config {
 		DefaultModel:    "claude-sonnet-4-20250514",
 		ThinkingLevel:   "off",
 		MaxTokens:       8192,
+		Theme:           "auto",
 		SessionDir:      filepath.Join(giDir, "sessions"),
 		ConfigDir:       giDir,
 	}
@@ -128,6 +132,12 @@ func mergeFromFile(cfg *Config, path string) error {
 		var n int
 		if json.Unmarshal(v, &n) == nil && n > 0 {
 			cfg.MaxTokens = n
+		}
+	}
+	if v, ok := raw["theme"]; ok {
+		var s string
+		if json.Unmarshal(v, &s) == nil && s != "" {
+			cfg.Theme = s
 		}
 	}
 	if v, ok := raw["session_dir"]; ok {

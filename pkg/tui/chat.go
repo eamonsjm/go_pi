@@ -68,8 +68,12 @@ func NewChatView() *ChatView {
 	vp.SetContent("")
 	vp.YPosition = 0
 
+	glamourStyle := ActiveTheme().GlamourStyle
+	if glamourStyle == "" {
+		glamourStyle = "dark"
+	}
 	r, err := glamour.NewTermRenderer(
-		glamour.WithStandardStyle("dark"),
+		glamour.WithStandardStyle(glamourStyle),
 		glamour.WithWordWrap(78),
 	)
 	if err != nil {
@@ -94,8 +98,12 @@ func (c *ChatView) SetSize(w, h int) {
 	if wrap < 40 {
 		wrap = 40
 	}
+	glamourStyle := ActiveTheme().GlamourStyle
+	if glamourStyle == "" {
+		glamourStyle = "dark"
+	}
 	r, err := glamour.NewTermRenderer(
-		glamour.WithStandardStyle("dark"),
+		glamour.WithStandardStyle(glamourStyle),
 		glamour.WithWordWrap(wrap),
 	)
 	if err != nil {
@@ -247,6 +255,26 @@ func (c *ChatView) AddPluginMessage(pluginName, content string, isLog bool, logL
 		pluginName: pluginName,
 		logLevel:   lvl,
 	})
+	c.rebuildContent()
+}
+
+// RefreshTheme recreates the glamour renderer to match the active theme.
+func (c *ChatView) RefreshTheme() {
+	glamourStyle := ActiveTheme().GlamourStyle
+	if glamourStyle == "" {
+		glamourStyle = "dark"
+	}
+	wrap := c.width - 4
+	if wrap < 40 {
+		wrap = 40
+	}
+	r, err := glamour.NewTermRenderer(
+		glamour.WithStandardStyle(glamourStyle),
+		glamour.WithWordWrap(wrap),
+	)
+	if err == nil {
+		c.renderer = r
+	}
 	c.rebuildContent()
 }
 
