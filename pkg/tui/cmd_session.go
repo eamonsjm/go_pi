@@ -166,7 +166,11 @@ func formatSessionList(sessions []session.SessionInfo) string {
 	sb.WriteString("Available sessions:\n")
 	for i, s := range sessions {
 		dateStr := s.UpdatedAt.Format("2006-01-02 15:04")
-		sb.WriteString(fmt.Sprintf("  [%d] %s  %s  (%d entries)\n", i+1, shortID(s.ID), dateStr, s.Entries))
+		line := fmt.Sprintf("  [%d] %s  %s  (%d entries)", i+1, shortID(s.ID), dateStr, s.Entries)
+		if s.Preview != "" {
+			line += fmt.Sprintf("  %q", s.Preview)
+		}
+		sb.WriteString(line + "\n")
 	}
 	sb.WriteString("\nUse /resume <number> or /resume <id> to load a session.")
 	return sb.String()

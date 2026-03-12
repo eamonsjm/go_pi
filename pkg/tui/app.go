@@ -130,6 +130,14 @@ func (a *App) ShowWelcome(text string) {
 	a.chat.AddSystemMessage(text)
 }
 
+// RestoreSession replays saved messages into the chat view and updates the
+// header to show the session ID. Call this before tea.NewProgram.Run() to
+// display conversation history from a resumed session.
+func (a *App) RestoreSession(sessionID string, msgs []ai.Message) {
+	rebuildChatFromMessages(a.chat, msgs)
+	a.header.SetSession(shortID(sessionID))
+}
+
 // RegisterBuiltinCommands registers all built-in slash commands that need
 // access to external dependencies (agent loop, session manager, config).
 // The ctx should be the application lifecycle context so that long-running

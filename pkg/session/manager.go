@@ -37,6 +37,7 @@ type SessionInfo struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 	Entries   int       `json:"entries"`
+	Preview   string    `json:"preview,omitempty"` // first line of last user message
 }
 
 // Manager handles session persistence using JSONL files.
@@ -133,7 +134,7 @@ func (m *Manager) ListSessions() []SessionInfo {
 			ID:        id,
 			UpdatedAt: info.ModTime(),
 		}
-		// Read first entry for creation time and count entries.
+		// Read entries for creation time, count, and preview.
 		if f, err := os.Open(path); err == nil {
 			scanner := bufio.NewScanner(f)
 			scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
@@ -144,10 +145,25 @@ func (m *Manager) ListSessions() []SessionInfo {
 					continue
 				}
 				count++
+				var e Entry
+				if err := json.Unmarshal([]byte(line), &e); err != nil {
+					continue
+				}
 				if count == 1 {
-					var e Entry
-					if err := json.Unmarshal([]byte(line), &e); err == nil {
-						si.CreatedAt = e.Timestamp
+					si.CreatedAt = e.Timestamp
+				}
+				// Track the last user message for preview.
+				if e.Type == "message" {
+					if msg, ok := entryToMessage(e); ok && msg.Role == ai.RoleUser {
+						text := msg.GetText()
+						if first, _, ok := strings.Cut(text, "\n"); ok {
+							si.Preview = first
+						} else {
+							si.Preview = text
+						}
+						if len(si.Preview) > 80 {
+							si.Preview = si.Preview[:77] + "..."
+						}
 					}
 				}
 			}
@@ -161,6 +177,16 @@ func (m *Manager) ListSessions() []SessionInfo {
 		return sessions[i].UpdatedAt.After(sessions[j].UpdatedAt)
 	})
 	return sessions
+}
+
+// LatestSessionID returns the ID of the most recently updated session, or
+// empty string if no sessions exist on disk.
+func (m *Manager) LatestSessionID() string {
+	sessions := m.ListSessions()
+	if len(sessions) == 0 {
+		return ""
+	}
+	return sessions[0].ID
 }
 
 // AppendEntry appends a single entry to the current session's JSONL file
