@@ -293,14 +293,28 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case authOAuthMsg:
 		a.authPendingCodeCh = msg.codeCh
 		wrappedURL := wrapLongString(msg.url, a.width-4)
-		if err := openBrowser(msg.url); err == nil {
-			a.chat.AddSystemMessage(fmt.Sprintf(
-				"Login to %s\n\nOpened authorization URL in your browser.\n\nIf it didn't open, copy this URL:\n%s\n\nAfter authorizing, paste the code below and press Enter.",
-				msg.providerName, wrappedURL))
+		if msg.codeCh != nil {
+			// Code-paste flow (e.g. Anthropic): prompt user to paste code.
+			if err := openBrowser(msg.url); err == nil {
+				a.chat.AddSystemMessage(fmt.Sprintf(
+					"Login to %s\n\nOpened authorization URL in your browser.\n\nIf it didn't open, copy this URL:\n%s\n\nAfter authorizing, paste the code below and press Enter.",
+					msg.providerName, wrappedURL))
+			} else {
+				a.chat.AddSystemMessage(fmt.Sprintf(
+					"Login to %s\n\nOpen this URL in your browser:\n%s\n\nAfter authorizing, paste the code below and press Enter.",
+					msg.providerName, wrappedURL))
+			}
 		} else {
-			a.chat.AddSystemMessage(fmt.Sprintf(
-				"Login to %s\n\nOpen this URL in your browser:\n%s\n\nAfter authorizing, paste the code below and press Enter.",
-				msg.providerName, wrappedURL))
+			// Callback-based flow (e.g. OpenAI): browser redirects automatically.
+			if err := openBrowser(msg.url); err == nil {
+				a.chat.AddSystemMessage(fmt.Sprintf(
+					"Login to %s\n\nOpened authorization URL in your browser.\n\nIf it didn't open, copy this URL:\n%s\n\nWaiting for authorization...",
+					msg.providerName, wrappedURL))
+			} else {
+				a.chat.AddSystemMessage(fmt.Sprintf(
+					"Login to %s\n\nOpen this URL in your browser:\n%s\n\nWaiting for authorization...",
+					msg.providerName, wrappedURL))
+			}
 		}
 		return a, msg.waitCmd
 

@@ -73,28 +73,73 @@ func NewLoginCommand(store *auth.Store, resolver *auth.Resolver) *SlashCommand {
 			return func() tea.Msg {
 				anthProv, ok := oauthProv.(*auth.AnthropicOAuth)
 				if !ok {
-					// Non-Anthropic provider: run full Login flow with browser.
-					cred, err := oauthProv.Login(auth.OAuthCallbacks{
-						OnAuth: func(url, instructions string) {
-							openBrowser(url)
-						},
-					})
-					if err != nil {
-						return CommandResultMsg{
-							Text:    fmt.Sprintf("Login failed: %v", err),
-							IsError: true,
-						}
+					// Non-Anthropic provider (e.g. OpenAI): uses a local callback
+					// server. Capture the authorize URL via OnAuth so the TUI can
+					// display it and open the browser. Login() runs in a background
+					// goroutine; the waitCmd blocks until the callback completes.
+					type loginResult struct {
+						cred *auth.Credential
+						err  error
 					}
-					store.Set(provider, cred)
-					if err := store.Save(); err != nil {
-						return CommandResultMsg{
-							Text:    fmt.Sprintf("Login succeeded but failed to save: %v", err),
-							IsError: true,
+					urlCh := make(chan string, 1)
+					resultCh := make(chan loginResult, 1)
+
+					go func() {
+						cred, err := oauthProv.Login(auth.OAuthCallbacks{
+							OnAuth: func(url, _ string) {
+								urlCh <- url
+							},
+						})
+						resultCh <- loginResult{cred: cred, err: err}
+					}()
+
+					// Wait for either the URL (OnAuth fired) or an early failure.
+					select {
+					case authURL := <-urlCh:
+						return authOAuthMsg{
+							providerName: oauthProv.Name(),
+							url:          authURL,
+							codeCh:       nil, // callback-based: no code paste needed
+							waitCmd: func() tea.Msg {
+								result := <-resultCh
+								if result.err != nil {
+									return CommandResultMsg{
+										Text:    fmt.Sprintf("Login failed: %v", result.err),
+										IsError: true,
+									}
+								}
+								store.Set(provider, result.cred)
+								if err := store.Save(); err != nil {
+									return CommandResultMsg{
+										Text:    fmt.Sprintf("Login succeeded but failed to save: %v", err),
+										IsError: true,
+									}
+								}
+								return authLoginSuccessMsg{
+									providerName: provider,
+									text:         fmt.Sprintf("Logged in to %s!", oauthProv.Name()),
+								}
+							},
 						}
-					}
-					return authLoginSuccessMsg{
-						providerName: provider,
-						text:         fmt.Sprintf("Logged in to %s!", oauthProv.Name()),
+					case result := <-resultCh:
+						// Login completed or failed before OnAuth was called.
+						if result.err != nil {
+							return CommandResultMsg{
+								Text:    fmt.Sprintf("Login failed: %v", result.err),
+								IsError: true,
+							}
+						}
+						store.Set(provider, result.cred)
+						if err := store.Save(); err != nil {
+							return CommandResultMsg{
+								Text:    fmt.Sprintf("Login succeeded but failed to save: %v", err),
+								IsError: true,
+							}
+						}
+						return authLoginSuccessMsg{
+							providerName: provider,
+							text:         fmt.Sprintf("Logged in to %s!", oauthProv.Name()),
+						}
 					}
 				}
 
