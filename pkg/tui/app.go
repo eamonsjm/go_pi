@@ -29,6 +29,9 @@ type App struct {
 	// Slash command registry.
 	commands *CommandRegistry
 
+	// Keybinding configuration.
+	keybindings *KeybindingConfig
+
 	// Terminal dimensions.
 	width  int
 	height int
@@ -48,6 +51,10 @@ type App struct {
 	onModelChange  func(provider, model string)
 	onLoginSuccess func(provider string)
 
+	// Dependencies for keybinding actions.
+	cfg       *config.Config
+	agentLoop *agent.AgentLoop
+
 	// initialPrompt, if set, is auto-submitted after the first window resize.
 	initialPrompt string
 
@@ -63,6 +70,7 @@ func NewApp() *App {
 	reg := NewCommandRegistry()
 	editor := NewEditor()
 	editor.SetCommands(reg)
+	kb := LoadKeybindings()
 
 	app := &App{
 		chat:          NewChatView(),
@@ -71,6 +79,7 @@ func NewApp() *App {
 		footer:        NewFooter(),
 		modelSelector: NewModelSelector(),
 		commands:      reg,
+		keybindings:   kb,
 	}
 
 	// Register the /model command.
@@ -152,6 +161,10 @@ func (a *App) RestoreSession(sessionID string, msgs []ai.Message) {
 // The ctx should be the application lifecycle context so that long-running
 // commands like /compact are cancelled when the application exits.
 func (a *App) RegisterBuiltinCommands(ctx context.Context, agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg *config.Config, authStore *auth.Store, authResolver *auth.Resolver) {
+	// Store dependencies needed for keybinding actions.
+	a.cfg = cfg
+	a.agentLoop = agentLoop
+
 	a.RegisterCommand(NewCompactCommand(ctx, agentLoop))
 	a.RegisterCommand(NewSettingsCommand(cfg, agentLoop, a.header))
 	a.RegisterCommand(NewNewSessionCommand(agentLoop, sessionMgr, a.chat, a.header))
@@ -163,6 +176,7 @@ func (a *App) RegisterBuiltinCommands(ctx context.Context, agentLoop *agent.Agen
 	a.RegisterCommand(NewCopyCommand(sessionMgr))
 	a.RegisterCommand(NewExportCommand(sessionMgr))
 	a.RegisterCommand(NewShareCommand(sessionMgr))
+	a.RegisterCommand(NewHotkeysCommand(a.keybindings))
 
 	// Auth commands.
 	if authStore != nil && authResolver != nil {
@@ -368,18 +382,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 
-		switch msg.String() {
-		case "ctrl+t":
-			// Toggle thinking expand/collapse.
-			if a.agentRunning {
-				a.chat.ToggleThinking()
-				return a, nil
-			}
-		case "ctrl+r":
-			// Toggle tool result expand/collapse.
-			if a.agentRunning {
-				a.chat.ToggleToolResult()
-				return a, nil
+		if action, ok := a.keybindings.ActionFor(msg.String()); ok {
+			if cmd := a.handleAction(action); cmd != nil {
+				return a, cmd
 			}
 		}
 	}
@@ -448,6 +453,101 @@ func SendDone() tea.Msg {
 // SendError returns a Cmd that signals an agent error.
 func SendError(err error) tea.Msg {
 	return AgentErrorMsg{Err: err}
+}
+
+// ---------------------------------------------------------------------------
+// Keybinding action dispatch
+// ---------------------------------------------------------------------------
+
+// handleAction executes the given keybinding action and returns a tea.Cmd if
+// the action was handled, or nil to let the event propagate.
+func (a *App) handleAction(action Action) tea.Cmd {
+	switch action {
+
+	case ActionToggleThinking:
+		if a.agentRunning {
+			a.chat.ToggleThinking()
+			return func() tea.Msg { return nil }
+		}
+
+	case ActionToggleToolResult:
+		if a.agentRunning {
+			a.chat.ToggleToolResult()
+			return func() tea.Msg { return nil }
+		}
+
+	case ActionCycleThinking:
+		return a.cycleThinking()
+
+	case ActionCycleModelForward:
+		return a.cycleModel(1)
+
+	case ActionCycleModelBackward:
+		return a.cycleModel(-1)
+
+	case ActionSuspend:
+		return tea.Suspend
+	}
+
+	return nil
+}
+
+// thinkingOrder defines the cycle order for thinking levels.
+var thinkingOrder = []string{"off", "low", "medium", "high"}
+
+// cycleThinking advances the thinking level to the next value in the cycle.
+func (a *App) cycleThinking() tea.Cmd {
+	if a.cfg == nil || a.agentLoop == nil {
+		return nil
+	}
+
+	current := a.cfg.ThinkingLevel
+	nextIdx := 0
+	for i, level := range thinkingOrder {
+		if level == current {
+			nextIdx = (i + 1) % len(thinkingOrder)
+			break
+		}
+	}
+
+	next := thinkingOrder[nextIdx]
+	level := validThinkingLevels[next]
+	a.cfg.ThinkingLevel = next
+	a.agentLoop.SetThinking(level)
+	a.header.SetThinking(level)
+	_ = a.cfg.Save()
+
+	text := fmt.Sprintf("Thinking: %s", next)
+	a.chat.AddSystemMessage(text)
+	return func() tea.Msg { return nil }
+}
+
+// cycleModel switches to the next (or previous) model in the default list.
+func (a *App) cycleModel(direction int) tea.Cmd {
+	if a.cfg == nil {
+		return nil
+	}
+
+	currentModel := a.cfg.DefaultModel
+	currentIdx := -1
+	for i, opt := range defaultModels {
+		if opt.Model == currentModel {
+			currentIdx = i
+			break
+		}
+	}
+
+	var nextIdx int
+	if currentIdx < 0 {
+		nextIdx = 0
+	} else {
+		nextIdx = (currentIdx + direction + len(defaultModels)) % len(defaultModels)
+	}
+
+	opt := defaultModels[nextIdx]
+	return func() tea.Msg {
+		return modelSelectedMsg{provider: opt.Provider, model: opt.Model}
+	}
 }
 
 // ---------------------------------------------------------------------------
