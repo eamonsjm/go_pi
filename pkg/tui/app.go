@@ -209,7 +209,6 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if a.authPendingCodeCh != nil {
 			ch := a.authPendingCodeCh
 			a.authPendingCodeCh = nil
-			a.editor.ResetPlaceholder()
 			a.chat.AddUserMessage(msg.text)
 			ch <- msg.text
 			return a, nil
@@ -240,7 +239,6 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case authLoginSuccessMsg:
-		a.editor.ResetPlaceholder()
 		a.chat.AddSystemMessage(msg.text)
 		if a.onLoginSuccess != nil {
 			a.onLoginSuccess(msg.providerName)
@@ -253,15 +251,15 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case authOAuthMsg:
 		a.authPendingCodeCh = msg.codeCh
-		a.editor.SetPlaceholder("Paste authorization code here... (Enter to submit)")
+		wrappedURL := wrapLongString(msg.url, a.width-4)
 		if err := openBrowser(msg.url); err == nil {
 			a.chat.AddSystemMessage(fmt.Sprintf(
 				"Login to %s\n\nOpened authorization URL in your browser.\n\nIf it didn't open, copy this URL:\n%s\n\nAfter authorizing, paste the code below and press Enter.",
-				msg.providerName, msg.url))
+				msg.providerName, wrappedURL))
 		} else {
 			a.chat.AddSystemMessage(fmt.Sprintf(
 				"Login to %s\n\nOpen this URL in your browser:\n%s\n\nAfter authorizing, paste the code below and press Enter.",
-				msg.providerName, msg.url))
+				msg.providerName, wrappedURL))
 		}
 		return a, msg.waitCmd
 
@@ -344,13 +342,14 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		switch msg.String() {
-		case "t":
-			// Toggle thinking expand/collapse (only when not typing).
+		case "ctrl+t":
+			// Toggle thinking expand/collapse.
 			if a.agentRunning {
 				a.chat.ToggleThinking()
 				return a, nil
 			}
-		case "r":
+		case "ctrl+r":
+			// Toggle tool result expand/collapse.
 			if a.agentRunning {
 				a.chat.ToggleToolResult()
 				return a, nil
@@ -507,3 +506,18 @@ const (
 	thinkingLevelHigh   thinkingLevel = ai.ThinkingHigh
 )
 
+// wrapLongString inserts newlines into a string that has no natural break
+// points (like URLs) so it fits within the given width.
+func wrapLongString(s string, width int) string {
+	if width <= 0 || len(s) <= width {
+		return s
+	}
+	var result []byte
+	for i, b := range []byte(s) {
+		if i > 0 && i%width == 0 {
+			result = append(result, '\n')
+		}
+		result = append(result, b)
+	}
+	return string(result)
+}

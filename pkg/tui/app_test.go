@@ -650,9 +650,9 @@ func TestApp_Update_KeyT_ToggleThinking(t *testing.T) {
 		t.Fatal("should start collapsed")
 	}
 
-	app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+	app.Update(tea.KeyMsg{Type: tea.KeyCtrlT})
 	if app.chat.blocks[0].collapsed {
-		t.Error("should be expanded after 't' press while running")
+		t.Error("should be expanded after Ctrl+T while running")
 	}
 }
 
@@ -662,9 +662,9 @@ func TestApp_Update_KeyR_ToggleToolResult(t *testing.T) {
 	app.chat.HandleEvent(agent.AgentEvent{Type: agent.EventToolExecStart, ToolCallID: "tc-1", ToolName: "bash"})
 	app.chat.HandleEvent(agent.AgentEvent{Type: agent.EventToolExecEnd, ToolCallID: "tc-1", ToolResult: "output"})
 
-	app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	app.Update(tea.KeyMsg{Type: tea.KeyCtrlR})
 	if app.chat.blocks[0].collapsed {
-		t.Error("should be expanded after 'r' press while running")
+		t.Error("should be expanded after Ctrl+R while running")
 	}
 }
 

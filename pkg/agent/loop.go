@@ -45,8 +45,8 @@ func NewAgentLoop(provider ai.Provider, toolRegistry *tools.Registry, opts ...Op
 		maxTokens:  8192,
 		thinking:   ai.ThinkingOff,
 		events:     make(chan AgentEvent, eventBufSize),
-		steerCh:    make(chan string, 1),
-		followUpCh: make(chan string, 1),
+		steerCh:    make(chan string, 2),
+		followUpCh: make(chan string, 2),
 	}
 	for _, opt := range opts {
 		opt(a)
@@ -130,10 +130,10 @@ func (a *AgentLoop) Cancel() {
 // remaining tool calls are skipped and the steering message is sent to the model
 // as a user turn. Safe to call from any goroutine.
 func (a *AgentLoop) Steer(text string) {
-	// Non-blocking send — only one steering message can be buffered.
 	select {
 	case a.steerCh <- text:
 	default:
+		log.Printf("agent: steer message dropped (channel full): %s", text)
 	}
 }
 
@@ -143,6 +143,7 @@ func (a *AgentLoop) FollowUp(text string) {
 	select {
 	case a.followUpCh <- text:
 	default:
+		log.Printf("agent: follow-up message dropped (channel full): %s", text)
 	}
 }
 

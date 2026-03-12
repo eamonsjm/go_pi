@@ -343,7 +343,7 @@ func (c *ChatView) renderThinking(sb *strings.Builder, blk chatBlock) {
 	indicator := ThinkingLabelStyle.Render("  thinking...")
 	if blk.collapsed {
 		lines := strings.Count(blk.text, "\n") + 1
-		summary := MutedStyle.Render(fmt.Sprintf(" (%d lines — press 't' to expand)", lines))
+		summary := MutedStyle.Render(fmt.Sprintf(" (%d lines — Ctrl+T to expand)", lines))
 		sb.WriteString(indicator + summary + "\n")
 	} else {
 		sb.WriteString(indicator + "\n")
@@ -372,7 +372,7 @@ func (c *ChatView) renderToolCall(sb *strings.Builder, blk chatBlock) {
 			sb.WriteString(ToolResultStyle.Render(preview) + "\n")
 			total := strings.Count(blk.toolResult, "\n") + 1
 			if total > 10 {
-				more := MutedStyle.Render(fmt.Sprintf("  ... %d more lines (press 'r' to expand)", total-10))
+				more := MutedStyle.Render(fmt.Sprintf("  ... %d more lines (Ctrl+R to expand)", total-10))
 				sb.WriteString(more + "\n")
 			}
 		} else {
