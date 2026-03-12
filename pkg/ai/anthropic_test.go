@@ -926,6 +926,331 @@ func TestAnthropicStream_ContextCancellation(t *testing.T) {
 	}
 }
 
+func TestAnthropicStream_OutOfOrderContentBlocks(t *testing.T) {
+	// Content blocks arrive with interleaved indices: block 0 (thinking) starts,
+	// then block 1 (text) starts, then deltas for block 1 arrive before block 0's
+	// delta. The parser uses a map keyed by index, so both should be tracked.
+	sse := `event: message_start
+data: {"type":"message_start","message":{"id":"msg_ooo","role":"assistant","usage":{"input_tokens":5,"output_tokens":0}}}
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}
+
+event: content_block_start
+data: {"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"Answer"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"Hmm..."}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":1}
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":8}}
+
+event: message_stop
+data: {"type":"message_stop"}
+
+`
+	srv, p := newTestAnthropicServer(t, sse)
+	defer srv.Close()
+
+	ch, err := p.Stream(context.Background(), StreamRequest{
+		Model:    "test",
+		Messages: []Message{NewTextMessage(RoleUser, "think then answer")},
+	})
+	if err != nil {
+		t.Fatalf("Stream failed: %v", err)
+	}
+
+	events := collectEvents(ch)
+
+	var thinkingText, textContent string
+	var hasError bool
+	for _, e := range events {
+		switch e.Type {
+		case EventThinkingDelta:
+			thinkingText += e.Delta
+		case EventTextDelta:
+			textContent += e.Delta
+		case EventError:
+			hasError = true
+		}
+	}
+
+	if hasError {
+		t.Error("unexpected error event for out-of-order content blocks")
+	}
+	if thinkingText != "Hmm..." {
+		t.Errorf("expected thinking %q, got %q", "Hmm...", thinkingText)
+	}
+	if textContent != "Answer" {
+		t.Errorf("expected text %q, got %q", "Answer", textContent)
+	}
+
+	// Verify stream completed normally with message_end.
+	last := events[len(events)-1]
+	if last.Type != EventMessageEnd {
+		t.Errorf("expected message_end, got %v", last.Type)
+	}
+}
+
+func TestAnthropicStream_DuplicateBlockIndices(t *testing.T) {
+	// Two content_block_start events arrive with the same index.
+	// The second overwrites the first in the blocks map. The parser should
+	// not panic and should use the latest block state for subsequent deltas.
+	sse := `event: message_start
+data: {"type":"message_start","message":{"id":"msg_dup","role":"assistant","usage":{"input_tokens":5,"output_tokens":0}}}
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_first","name":"search"}}
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_second","name":"lookup"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"q\":\"test\"}"}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0}
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":10}}
+
+event: message_stop
+data: {"type":"message_stop"}
+
+`
+	srv, p := newTestAnthropicServer(t, sse)
+	defer srv.Close()
+
+	ch, err := p.Stream(context.Background(), StreamRequest{
+		Model:    "test",
+		Messages: []Message{NewTextMessage(RoleUser, "hi")},
+	})
+	if err != nil {
+		t.Fatalf("Stream failed: %v", err)
+	}
+
+	events := collectEvents(ch)
+
+	// Should see two tool_use_start events (one for each block_start).
+	var toolStarts []StreamEvent
+	var toolDeltas []StreamEvent
+	var toolEnds []StreamEvent
+	for _, e := range events {
+		switch e.Type {
+		case EventToolUseStart:
+			toolStarts = append(toolStarts, e)
+		case EventToolUseDelta:
+			toolDeltas = append(toolDeltas, e)
+		case EventToolUseEnd:
+			toolEnds = append(toolEnds, e)
+		}
+	}
+
+	if len(toolStarts) != 2 {
+		t.Fatalf("expected 2 tool_use_start events, got %d", len(toolStarts))
+	}
+	if toolStarts[0].ToolCallID != "toolu_first" {
+		t.Errorf("expected first start ID %q, got %q", "toolu_first", toolStarts[0].ToolCallID)
+	}
+	if toolStarts[1].ToolCallID != "toolu_second" {
+		t.Errorf("expected second start ID %q, got %q", "toolu_second", toolStarts[1].ToolCallID)
+	}
+
+	// Delta should use the second (overwritten) block's tool info.
+	if len(toolDeltas) != 1 {
+		t.Fatalf("expected 1 tool_use_delta, got %d", len(toolDeltas))
+	}
+	if toolDeltas[0].ToolCallID != "toolu_second" {
+		t.Errorf("expected delta tool ID %q, got %q", "toolu_second", toolDeltas[0].ToolCallID)
+	}
+	if toolDeltas[0].ToolName != "lookup" {
+		t.Errorf("expected delta tool name %q, got %q", "lookup", toolDeltas[0].ToolName)
+	}
+
+	// End should also use the second block's tool info.
+	if len(toolEnds) != 1 {
+		t.Fatalf("expected 1 tool_use_end, got %d", len(toolEnds))
+	}
+	if toolEnds[0].ToolCallID != "toolu_second" {
+		t.Errorf("expected end tool ID %q, got %q", "toolu_second", toolEnds[0].ToolCallID)
+	}
+}
+
+func TestAnthropicStream_MissingBlockStartBeforeDelta(t *testing.T) {
+	// A content_block_delta arrives for an index that never had a
+	// content_block_start. The parser should gracefully skip it (bs == nil).
+	sse := `event: message_start
+data: {"type":"message_start","message":{"id":"msg_miss","role":"assistant","usage":{"input_tokens":5,"output_tokens":0}}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"orphan text"}}
+
+event: content_block_start
+data: {"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"valid text"}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":1}
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":3}}
+
+event: message_stop
+data: {"type":"message_stop"}
+
+`
+	srv, p := newTestAnthropicServer(t, sse)
+	defer srv.Close()
+
+	ch, err := p.Stream(context.Background(), StreamRequest{
+		Model:    "test",
+		Messages: []Message{NewTextMessage(RoleUser, "hi")},
+	})
+	if err != nil {
+		t.Fatalf("Stream failed: %v", err)
+	}
+
+	events := collectEvents(ch)
+
+	// The orphan delta (index 0 with no block_start) should be silently dropped.
+	// Only the valid text from index 1 should appear.
+	var textParts []string
+	var hasError bool
+	for _, e := range events {
+		switch e.Type {
+		case EventTextDelta:
+			textParts = append(textParts, e.Delta)
+		case EventError:
+			hasError = true
+		}
+	}
+
+	if hasError {
+		t.Error("unexpected error event — orphan deltas should be silently skipped")
+	}
+	fullText := strings.Join(textParts, "")
+	if fullText != "valid text" {
+		t.Errorf("expected only %q, got %q (orphan delta should be dropped)", "valid text", fullText)
+	}
+
+	// Verify stream completed normally.
+	last := events[len(events)-1]
+	if last.Type != EventMessageEnd {
+		t.Errorf("expected message_end, got %v", last.Type)
+	}
+}
+
+func TestAnthropicStream_LargeToolInputPayload(t *testing.T) {
+	// A tool input payload that is large but within the 1MB buffer limit.
+	// The parser should correctly accumulate and emit all chunks.
+	// We use a large but simple value to keep things within the scanner buffer.
+	largeValue := strings.Repeat("a", 100_000)
+	chunk1 := `{"data":"` + largeValue[:50_000]
+	chunk2 := largeValue[50_000:] + `"}`
+
+	// Build SSE lines with proper JSON encoding using json.Marshal for delta payloads.
+	delta1, _ := json.Marshal(map[string]any{
+		"type":  "content_block_delta",
+		"index": 0,
+		"delta": map[string]any{
+			"type":         "input_json_delta",
+			"partial_json": chunk1,
+		},
+	})
+	delta2, _ := json.Marshal(map[string]any{
+		"type":  "content_block_delta",
+		"index": 0,
+		"delta": map[string]any{
+			"type":         "input_json_delta",
+			"partial_json": chunk2,
+		},
+	})
+
+	sse := "event: message_start\n" +
+		"data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_large\",\"role\":\"assistant\",\"usage\":{\"input_tokens\":5,\"output_tokens\":0}}}\n\n" +
+		"event: content_block_start\n" +
+		"data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_big\",\"name\":\"ingest\"}}\n\n" +
+		"event: content_block_delta\n" +
+		"data: " + string(delta1) + "\n\n" +
+		"event: content_block_delta\n" +
+		"data: " + string(delta2) + "\n\n" +
+		"event: content_block_stop\n" +
+		"data: {\"type\":\"content_block_stop\",\"index\":0}\n\n" +
+		"event: message_delta\n" +
+		"data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\"},\"usage\":{\"output_tokens\":100}}\n\n" +
+		"event: message_stop\n" +
+		"data: {\"type\":\"message_stop\"}\n\n"
+
+	srv, p := newTestAnthropicServer(t, sse)
+	defer srv.Close()
+
+	ch, err := p.Stream(context.Background(), StreamRequest{
+		Model:    "test",
+		Messages: []Message{NewTextMessage(RoleUser, "ingest data")},
+	})
+	if err != nil {
+		t.Fatalf("Stream failed: %v", err)
+	}
+
+	events := collectEvents(ch)
+
+	var accumulatedInput string
+	var hasError bool
+	var hasToolEnd bool
+	for _, e := range events {
+		switch e.Type {
+		case EventToolUseDelta:
+			accumulatedInput += e.PartialInput
+			if e.ToolCallID != "toolu_big" {
+				t.Errorf("expected tool ID %q, got %q", "toolu_big", e.ToolCallID)
+			}
+		case EventToolUseEnd:
+			hasToolEnd = true
+		case EventError:
+			hasError = true
+			t.Errorf("unexpected error: %v", e.Error)
+		}
+	}
+
+	if hasError {
+		t.Fatal("large tool input should not cause errors")
+	}
+	if !hasToolEnd {
+		t.Error("expected tool_use_end event")
+	}
+
+	expectedInput := chunk1 + chunk2
+	if accumulatedInput != expectedInput {
+		t.Errorf("accumulated input length: got %d, want %d", len(accumulatedInput), len(expectedInput))
+	}
+
+	// Verify the accumulated input is valid JSON.
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(accumulatedInput), &parsed); err != nil {
+		t.Errorf("accumulated input is not valid JSON: %v", err)
+	}
+	if data, ok := parsed["data"].(string); !ok || len(data) != 100_000 {
+		t.Errorf("expected data field of length 100000, got length %d", len(data))
+	}
+
+	// Stream should complete normally.
+	last := events[len(events)-1]
+	if last.Type != EventMessageEnd {
+		t.Errorf("expected message_end, got %v", last.Type)
+	}
+}
+
 func TestAnthropicStream_ScannerBufferOverflow(t *testing.T) {
 	// Create a data line that exceeds the 1MB scanner buffer limit.
 	longPayload := strings.Repeat("x", 1024*1024)
