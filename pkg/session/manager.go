@@ -74,13 +74,17 @@ func (m *Manager) CurrentID() string {
 }
 
 // LoadSession loads an existing session from disk by ID.
-func (m *Manager) LoadSession(id string) error {
+func (m *Manager) LoadSession(id string) (retErr error) {
 	path := m.sessionPath(id)
 	f, err := os.Open(path)
 	if err != nil {
 		return fmt.Errorf("open session %s: %w", id, err)
 	}
-	defer f.Close()
+	defer func() {
+		if cerr := f.Close(); cerr != nil && retErr == nil {
+			retErr = fmt.Errorf("close session %s: %w", id, cerr)
+		}
+	}()
 
 	var entries []Entry
 	scanner := bufio.NewScanner(f)
@@ -183,10 +187,14 @@ func (m *Manager) AppendEntry(entry Entry) error {
 	if err != nil {
 		return fmt.Errorf("open session file: %w", err)
 	}
-	defer f.Close()
 
 	if _, err := f.Write(append(data, '\n')); err != nil {
+		f.Close()
 		return fmt.Errorf("write entry: %w", err)
+	}
+
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("close session file: %w", err)
 	}
 
 	m.entries = append(m.entries, entry)
