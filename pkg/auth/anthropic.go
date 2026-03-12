@@ -99,19 +99,19 @@ func (a *AnthropicOAuth) StartAuthFlow() (*AuthSession, error) {
 		redirectURI = defaultAnthropicRedirectURI
 	}
 
-	// Per Anthropic spec, state = PKCE verifier.
-	params := url.Values{
-		"code":                  {"true"},
-		"client_id":             {a.ClientID},
-		"response_type":         {"code"},
-		"redirect_uri":          {redirectURI},
-		"scope":                 {a.Scope},
-		"code_challenge":        {pkce.Challenge},
-		"code_challenge_method": {"S256"},
-		"state":                 {pkce.Verifier},
-	}
-
-	authorizeURL := a.AuthorizeURL + "/oauth/authorize?" + params.Encode()
+	// Build query string manually to preserve parameter order matching
+	// Anthropic's expected format. url.Values.Encode() sorts alphabetically,
+	// but Anthropic's OAuth server expects the order from the reference
+	// implementation (URLSearchParams insertion order).
+	authorizeURL := a.AuthorizeURL + "/oauth/authorize?" +
+		"code=true" +
+		"&client_id=" + url.QueryEscape(a.ClientID) +
+		"&response_type=code" +
+		"&redirect_uri=" + url.QueryEscape(redirectURI) +
+		"&scope=" + url.QueryEscape(a.Scope) +
+		"&code_challenge=" + url.QueryEscape(pkce.Challenge) +
+		"&code_challenge_method=S256" +
+		"&state=" + url.QueryEscape(pkce.Verifier)
 
 	return &AuthSession{
 		AuthorizeURL: authorizeURL,
@@ -121,12 +121,21 @@ func (a *AnthropicOAuth) StartAuthFlow() (*AuthSession, error) {
 }
 
 // ExchangeCode exchanges the user-provided authorization code for tokens.
-func (a *AnthropicOAuth) ExchangeCode(session *AuthSession, code string) (*Credential, error) {
+// The rawCode may be in "code#state" format from Anthropic's redirect page;
+// if so, the state is extracted and used in the token exchange request.
+func (a *AnthropicOAuth) ExchangeCode(session *AuthSession, rawCode string) (*Credential, error) {
+	code := rawCode
+	state := session.PKCE.Verifier
+	if parts := strings.SplitN(rawCode, "#", 2); len(parts) == 2 {
+		code = parts[0]
+		state = parts[1]
+	}
+
 	reqBody := tokenExchangeRequest{
 		GrantType:    "authorization_code",
 		ClientID:     a.ClientID,
 		Code:         code,
-		State:        session.PKCE.Verifier,
+		State:        state,
 		RedirectURI:  session.RedirectURI,
 		CodeVerifier: session.PKCE.Verifier,
 	}

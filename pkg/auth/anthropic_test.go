@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 )
@@ -107,6 +108,27 @@ func TestAnthropicOAuth_StartAuthFlow(t *testing.T) {
 	if q.Get("redirect_uri") != defaultAnthropicRedirectURI {
 		t.Errorf("redirect_uri = %q", q.Get("redirect_uri"))
 	}
+
+	// Verify parameter order matches Anthropic's expected format.
+	// Extract the query string (everything after '?').
+	rawQuery := u.RawQuery
+	paramKeys := []string{}
+	for _, pair := range strings.Split(rawQuery, "&") {
+		key := strings.SplitN(pair, "=", 2)[0]
+		paramKeys = append(paramKeys, key)
+	}
+	expectedOrder := []string{
+		"code", "client_id", "response_type", "redirect_uri",
+		"scope", "code_challenge", "code_challenge_method", "state",
+	}
+	if len(paramKeys) != len(expectedOrder) {
+		t.Fatalf("parameter count = %d, want %d", len(paramKeys), len(expectedOrder))
+	}
+	for i, key := range paramKeys {
+		if key != expectedOrder[i] {
+			t.Errorf("parameter[%d] = %q, want %q", i, key, expectedOrder[i])
+		}
+	}
 }
 
 func TestAnthropicOAuth_ExchangeCode(t *testing.T) {
@@ -166,6 +188,56 @@ func TestAnthropicOAuth_ExchangeCode(t *testing.T) {
 	}
 	if cred.Type != CredentialOAuth {
 		t.Errorf("Type = %q, want oauth", cred.Type)
+	}
+}
+
+func TestAnthropicOAuth_ExchangeCode_CodeHashState(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/oauth/token", func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var req tokenExchangeRequest
+		if err := json.Unmarshal(body, &req); err != nil {
+			t.Fatalf("unmarshal request: %v", err)
+		}
+		// Code should be split from "code#state" format.
+		if req.Code != "the-auth-code" {
+			t.Errorf("code = %q, want %q", req.Code, "the-auth-code")
+		}
+		// State should come from the paste, not from PKCE verifier.
+		if req.State != "the-redirect-state" {
+			t.Errorf("state = %q, want %q", req.State, "the-redirect-state")
+		}
+		// CodeVerifier should still be the PKCE verifier.
+		if req.CodeVerifier == "" {
+			t.Error("missing code_verifier")
+		}
+		if req.State == req.CodeVerifier {
+			t.Error("state should differ from code_verifier when code#state is provided")
+		}
+		json.NewEncoder(w).Encode(tokenResponse{
+			AccessToken:  "access-split",
+			RefreshToken: "refresh-split",
+			ExpiresIn:    3600,
+		})
+	})
+
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	a := NewAnthropicOAuth()
+	a.TokenURL = server.URL
+
+	session, err := a.StartAuthFlow()
+	if err != nil {
+		t.Fatalf("StartAuthFlow: %v", err)
+	}
+
+	cred, err := a.ExchangeCode(session, "the-auth-code#the-redirect-state")
+	if err != nil {
+		t.Fatalf("ExchangeCode: %v", err)
+	}
+	if cred.AccessToken != "access-split" {
+		t.Errorf("AccessToken = %q", cred.AccessToken)
 	}
 }
 
@@ -316,6 +388,18 @@ func TestAnthropicOAuth_RefreshToken_NoRefreshToken(t *testing.T) {
 func TestAnthropicOAuth_Login_FullFlow(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/oauth/token", func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var req tokenExchangeRequest
+		if err := json.Unmarshal(body, &req); err != nil {
+			t.Fatalf("unmarshal request: %v", err)
+		}
+		// Verify code#state splitting works through Login.
+		if req.Code != "login-code" {
+			t.Errorf("code = %q, want %q", req.Code, "login-code")
+		}
+		if req.State != "login-state" {
+			t.Errorf("state = %q, want %q", req.State, "login-state")
+		}
 		json.NewEncoder(w).Encode(tokenResponse{
 			AccessToken:  "login-access",
 			RefreshToken: "login-refresh",
@@ -338,8 +422,8 @@ func TestAnthropicOAuth_Login_FullFlow(t *testing.T) {
 			authInstructions = instructions
 		},
 		OnPrompt: func(prompt string) (string, error) {
-			// Simulate user pasting the code.
-			return "login-code", nil
+			// Simulate user pasting code#state from redirect.
+			return "login-code#login-state", nil
 		},
 		OnProgress: func(msg string) {
 			progressMsgs = append(progressMsgs, msg)
