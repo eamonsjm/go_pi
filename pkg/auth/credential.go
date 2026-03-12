@@ -76,8 +76,15 @@ func resolveKeyValue(val string) (string, error) {
 		return resolveCommand(val[1:])
 	}
 
-	// Env var heuristic: all uppercase letters and underscores, at least 2 chars.
-	if looksLikeEnvVar(val) {
+	// Env var heuristic: all uppercase letters, digits, and underscores, at least 2 chars.
+	envVar := len(val) >= 2
+	for _, r := range val {
+		if r != '_' && (r < 'A' || r > 'Z') && (r < '0' || r > '9') {
+			envVar = false
+			break
+		}
+	}
+	if envVar {
 		if v := os.Getenv(val); v != "" {
 			return v, nil
 		}
@@ -85,18 +92,6 @@ func resolveKeyValue(val string) (string, error) {
 	}
 
 	return val, nil
-}
-
-func looksLikeEnvVar(s string) bool {
-	if len(s) < 2 {
-		return false
-	}
-	for _, r := range s {
-		if r != '_' && (r < 'A' || r > 'Z') && (r < '0' || r > '9') {
-			return false
-		}
-	}
-	return true
 }
 
 func resolveCommand(cmd string) (string, error) {

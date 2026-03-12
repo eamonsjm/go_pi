@@ -131,24 +131,39 @@ func TestResolveKey_OAuth(t *testing.T) {
 	}
 }
 
-func TestLooksLikeEnvVar(t *testing.T) {
+func TestResolveKeyValue_EnvVarHeuristic(t *testing.T) {
+	// Strings that look like env vars (uppercase + digits + underscores, len >= 2)
+	// are checked against os.Getenv before falling through to literal.
 	tests := []struct {
-		input string
-		want  bool
+		input   string
+		wantEnv bool // true = treated as env var candidate
 	}{
 		{"ANTHROPIC_API_KEY", true},
 		{"MY_KEY", true},
 		{"AB", true},
-		{"A", false},         // too short
-		{"", false},          // empty
-		{"my_key", false},    // lowercase
-		{"MY-KEY", false},    // hyphen
+		{"A1B2", true},
+		{"A", false},          // too short
+		{"", false},           // empty
+		{"my_key", false},     // lowercase
+		{"MY-KEY", false},     // hyphen
 		{"sk-ant-123", false}, // mixed
-		{"A1B2", true},       // digits ok
 	}
 	for _, tt := range tests {
-		if got := looksLikeEnvVar(tt.input); got != tt.want {
-			t.Errorf("looksLikeEnvVar(%q) = %v, want %v", tt.input, got, tt.want)
+		if tt.wantEnv {
+			t.Setenv(tt.input, "from-env")
+		}
+		got, err := resolveKeyValue(tt.input)
+		if err != nil {
+			t.Fatalf("resolveKeyValue(%q): unexpected error: %v", tt.input, err)
+		}
+		if tt.wantEnv {
+			if got != "from-env" {
+				t.Errorf("resolveKeyValue(%q) = %q, want %q (env var candidate)", tt.input, got, "from-env")
+			}
+		} else {
+			if got != tt.input {
+				t.Errorf("resolveKeyValue(%q) = %q, want %q (literal passthrough)", tt.input, got, tt.input)
+			}
 		}
 	}
 }
