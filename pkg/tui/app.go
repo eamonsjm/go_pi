@@ -236,9 +236,15 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case authOAuthMsg:
 		a.authPendingCodeCh = msg.codeCh
-		a.chat.AddSystemMessage(fmt.Sprintf(
-			"Login to %s\n\n  Open this URL in your browser:\n  %s\n\nAfter authorizing, paste the code below and press Enter.",
-			msg.providerName, msg.url))
+		if err := openBrowser(msg.url); err == nil {
+			a.chat.AddSystemMessage(fmt.Sprintf(
+				"Login to %s\n\nOpened authorization URL in your browser.\n\nIf it didn't open, copy this URL:\n%s\n\nAfter authorizing, paste the code below and press Enter.",
+				msg.providerName, msg.url))
+		} else {
+			a.chat.AddSystemMessage(fmt.Sprintf(
+				"Login to %s\n\nOpen this URL in your browser:\n%s\n\nAfter authorizing, paste the code below and press Enter.",
+				msg.providerName, msg.url))
+		}
 		return a, msg.waitCmd
 
 	case settingsDisplayMsg:
