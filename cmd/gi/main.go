@@ -191,7 +191,7 @@ func resolveProvider(cfg *config.Config, resolver *auth.Resolver) (ai.Provider, 
 	providerName := cfg.DefaultProvider
 	if providerName == "" {
 		// Auto-detect based on available credentials.
-		for _, name := range []string{"anthropic", "openrouter", "openai"} {
+		for _, name := range []string{"anthropic", "openrouter", "openai", "gemini"} {
 			key, _ := resolver.Resolve(name)
 			if key != "" {
 				providerName = name
@@ -199,7 +199,7 @@ func resolveProvider(cfg *config.Config, resolver *auth.Resolver) (ai.Provider, 
 			}
 		}
 		if providerName == "" {
-			return nil, fmt.Errorf("no API key found. Set ANTHROPIC_API_KEY, OPENROUTER_API_KEY, or OPENAI_API_KEY, or use /login <provider>")
+			return nil, fmt.Errorf("no API key found. Set ANTHROPIC_API_KEY, OPENROUTER_API_KEY, OPENAI_API_KEY, or GEMINI_API_KEY, or use /login <provider>")
 		}
 	}
 
@@ -212,6 +212,8 @@ func resolveProvider(cfg *config.Config, resolver *auth.Resolver) (ai.Provider, 
 			model = "anthropic/claude-sonnet-4-20250514"
 		case "openai":
 			model = "gpt-4o"
+		case "gemini":
+			model = "gemini-2.0-flash"
 		}
 		cfg.DefaultModel = model
 	}
@@ -234,6 +236,8 @@ func resolveProvider(cfg *config.Config, resolver *auth.Resolver) (ai.Provider, 
 		return ai.NewOpenRouterProvider(key)
 	case "openai":
 		return ai.NewOpenAIProvider(key)
+	case "gemini":
+		return ai.NewGeminiProvider(key)
 	default:
 		return nil, fmt.Errorf("unknown provider: %s", providerName)
 	}
@@ -407,7 +411,8 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 				"  /login anthropic          — OAuth login (Claude Pro/Max)\n"+
 				"  /login openai             — OAuth login (ChatGPT Plus/Pro)\n"+
 				"  export ANTHROPIC_API_KEY=sk-...  — API key\n"+
-				"  export OPENAI_API_KEY=sk-...     — OpenAI key\n\n"+
+				"  export OPENAI_API_KEY=sk-...     — OpenAI key\n"+
+			"  export GEMINI_API_KEY=...        — Gemini key\n\n"+
 				"Or save to ~/.gi/auth.json.\n"+
 				"Use /auth to check status. (%v)", providerErr))
 	}

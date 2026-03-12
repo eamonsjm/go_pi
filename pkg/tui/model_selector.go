@@ -46,6 +46,8 @@ var defaultModels = []ModelOption{
 	{Provider: "openrouter", Model: "anthropic/claude-sonnet-4-20250514", Label: "Claude Sonnet 4 (OpenRouter)"},
 	{Provider: "openrouter", Model: "anthropic/claude-opus-4-20250514", Label: "Claude Opus 4 (OpenRouter)"},
 	{Provider: "openrouter", Model: "google/gemini-2.5-pro", Label: "Gemini 2.5 Pro (OpenRouter)"},
+	{Provider: "gemini", Model: "gemini-2.5-pro", Label: "Gemini 2.5 Pro"},
+	{Provider: "gemini", Model: "gemini-2.0-flash", Label: "Gemini 2.0 Flash"},
 	{Provider: "openai", Model: "gpt-4o", Label: "GPT-4o"},
 	{Provider: "openai", Model: "o3", Label: "o3"},
 }
