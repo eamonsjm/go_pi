@@ -692,3 +692,129 @@ func TestGeminiStream_URLContainsModel(t *testing.T) {
 		t.Errorf("expected URL to contain alt=sse, got %q", gotURL)
 	}
 }
+
+func TestGeminiBuildRequestBody_ImageContent(t *testing.T) {
+	p := &GeminiProvider{apiKey: "test"}
+
+	req := StreamRequest{
+		Model: "gemini-2.0-flash",
+		Messages: []Message{
+			{
+				Role: RoleUser,
+				Content: []ContentBlock{
+					{Type: ContentTypeText, Text: "What is in this image?"},
+					{Type: ContentTypeImage, MediaType: "image/png", ImageData: "iVBOR"},
+				},
+			},
+		},
+	}
+
+	data, err := p.buildRequestBody(req)
+	if err != nil {
+		t.Fatalf("buildRequestBody failed: %v", err)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(data, &body); err != nil {
+		t.Fatalf("failed to parse JSON: %v", err)
+	}
+
+	contents := body["contents"].([]any)
+	if len(contents) != 1 {
+		t.Fatalf("expected 1 content, got %d", len(contents))
+	}
+
+	content := contents[0].(map[string]any)
+	parts := content["parts"].([]any)
+	if len(parts) != 2 {
+		t.Fatalf("expected 2 parts, got %d", len(parts))
+	}
+
+	// First part: text.
+	textPart := parts[0].(map[string]any)
+	if textPart["text"] != "What is in this image?" {
+		t.Errorf("expected text content, got %v", textPart["text"])
+	}
+
+	// Second part: inlineData.
+	imgPart := parts[1].(map[string]any)
+	inlineData, ok := imgPart["inlineData"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected inlineData in second part, got %v", imgPart)
+	}
+	if inlineData["mimeType"] != "image/png" {
+		t.Errorf("expected mimeType 'image/png', got %v", inlineData["mimeType"])
+	}
+	if inlineData["data"] != "iVBOR" {
+		t.Errorf("expected data 'iVBOR', got %v", inlineData["data"])
+	}
+}
+
+func TestGeminiBuildRequestBody_RichToolResult(t *testing.T) {
+	p := &GeminiProvider{apiKey: "test"}
+
+	req := StreamRequest{
+		Model: "gemini-2.0-flash",
+		Messages: []Message{
+			NewRichToolResultMessage("read_file", []ContentBlock{
+				{Type: ContentTypeText, Text: "File contents:"},
+				{Type: ContentTypeImage, MediaType: "image/jpeg", ImageData: "/9j/4"},
+			}, false),
+		},
+	}
+
+	data, err := p.buildRequestBody(req)
+	if err != nil {
+		t.Fatalf("buildRequestBody failed: %v", err)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(data, &body); err != nil {
+		t.Fatalf("failed to parse JSON: %v", err)
+	}
+
+	contents := body["contents"].([]any)
+	if len(contents) != 1 {
+		t.Fatalf("expected 1 content, got %d", len(contents))
+	}
+
+	content := contents[0].(map[string]any)
+	if content["role"] != "user" {
+		t.Errorf("expected role 'user', got %v", content["role"])
+	}
+
+	parts := content["parts"].([]any)
+	// Should have: functionResponse, text, inlineData = 3 parts.
+	if len(parts) != 3 {
+		t.Fatalf("expected 3 parts, got %d", len(parts))
+	}
+
+	// First part: functionResponse.
+	frPart := parts[0].(map[string]any)
+	funcResp, ok := frPart["functionResponse"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected functionResponse in first part, got %v", frPart)
+	}
+	if funcResp["name"] != "read_file" {
+		t.Errorf("expected name 'read_file', got %v", funcResp["name"])
+	}
+
+	// Second part: text.
+	textPart := parts[1].(map[string]any)
+	if textPart["text"] != "File contents:" {
+		t.Errorf("expected text 'File contents:', got %v", textPart["text"])
+	}
+
+	// Third part: inlineData.
+	imgPart := parts[2].(map[string]any)
+	inlineData, ok := imgPart["inlineData"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected inlineData in third part, got %v", imgPart)
+	}
+	if inlineData["mimeType"] != "image/jpeg" {
+		t.Errorf("expected mimeType 'image/jpeg', got %v", inlineData["mimeType"])
+	}
+	if inlineData["data"] != "/9j/4" {
+		t.Errorf("expected data '/9j/4', got %v", inlineData["data"])
+	}
+}

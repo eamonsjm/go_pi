@@ -92,9 +92,21 @@ type oaiStreamOpt struct {
 
 type oaiMessage struct {
 	Role       string          `json:"role"`
-	Content    any             `json:"content,omitempty"`     // string or nil
+	Content    any             `json:"content,omitempty"`     // string, []oaiContentPart, or nil
 	ToolCalls  []oaiToolCall   `json:"tool_calls,omitempty"`
 	ToolCallID string          `json:"tool_call_id,omitempty"`
+}
+
+// oaiContentPart represents a content part in OpenAI's multi-modal message format.
+type oaiContentPart struct {
+	Type     string       `json:"type"`
+	Text     string       `json:"text,omitempty"`
+	ImageURL *oaiImageURL `json:"image_url,omitempty"`
+}
+
+// oaiImageURL represents an image URL in OpenAI's vision format.
+type oaiImageURL struct {
+	URL string `json:"url"`
 }
 
 type oaiToolCall struct {
@@ -177,19 +189,38 @@ func mapToOpenAIMessage(m Message) oaiMessage {
 	if len(m.Content) == 1 && m.Content[0].Type == ContentTypeToolResult {
 		cb := m.Content[0]
 		om.Role = "tool"
-		om.Content = cb.Content
 		om.ToolCallID = cb.ToolResultID
+		if len(cb.ContentBlocks) > 0 {
+			// Rich tool result: serialize as array of content parts.
+			om.Content = mapContentBlocksToOAI(cb.ContentBlocks)
+		} else {
+			om.Content = cb.Content
+		}
 		return om
 	}
 
-	// Build text content and tool calls.
+	// Build text content, image content, and tool calls.
 	var textParts []string
+	var contentParts []oaiContentPart
 	var toolCalls []oaiToolCall
+	hasImages := false
 
 	for _, cb := range m.Content {
 		switch cb.Type {
 		case ContentTypeText:
 			textParts = append(textParts, cb.Text)
+			contentParts = append(contentParts, oaiContentPart{
+				Type: "text",
+				Text: cb.Text,
+			})
+		case ContentTypeImage:
+			hasImages = true
+			contentParts = append(contentParts, oaiContentPart{
+				Type: "image_url",
+				ImageURL: &oaiImageURL{
+					URL: "data:" + cb.MediaType + ";base64," + cb.ImageData,
+				},
+			})
 		case ContentTypeToolUse:
 			inputJSON, _ := json.Marshal(cb.Input)
 			toolCalls = append(toolCalls, oaiToolCall{
@@ -203,7 +234,10 @@ func mapToOpenAIMessage(m Message) oaiMessage {
 		}
 	}
 
-	if len(textParts) > 0 {
+	if hasImages {
+		// Use array content format for multi-modal messages.
+		om.Content = contentParts
+	} else if len(textParts) > 0 {
 		om.Content = strings.Join(textParts, "")
 	}
 	if len(toolCalls) > 0 {
@@ -212,6 +246,25 @@ func mapToOpenAIMessage(m Message) oaiMessage {
 	}
 
 	return om
+}
+
+// mapContentBlocksToOAI converts ContentBlocks to OpenAI content parts.
+func mapContentBlocksToOAI(blocks []ContentBlock) []oaiContentPart {
+	parts := make([]oaiContentPart, 0, len(blocks))
+	for _, b := range blocks {
+		switch b.Type {
+		case ContentTypeText:
+			parts = append(parts, oaiContentPart{Type: "text", Text: b.Text})
+		case ContentTypeImage:
+			parts = append(parts, oaiContentPart{
+				Type: "image_url",
+				ImageURL: &oaiImageURL{
+					URL: "data:" + b.MediaType + ";base64," + b.ImageData,
+				},
+			})
+		}
+	}
+	return parts
 }
 
 // -- SSE stream parsing --

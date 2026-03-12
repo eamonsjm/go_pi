@@ -759,6 +759,134 @@ func TestOpenAIStream_ContextCancellation(t *testing.T) {
 	}
 }
 
+func TestOpenAIBuildRequestBody_ImageContent(t *testing.T) {
+	p := &OpenAIProvider{apiKey: "test"}
+
+	req := StreamRequest{
+		Model: "gpt-4o",
+		Messages: []Message{
+			{
+				Role: RoleUser,
+				Content: []ContentBlock{
+					{Type: ContentTypeText, Text: "What is in this image?"},
+					{Type: ContentTypeImage, MediaType: "image/png", ImageData: "iVBOR"},
+				},
+			},
+		},
+	}
+
+	data, err := p.buildRequestBody(req)
+	if err != nil {
+		t.Fatalf("buildRequestBody failed: %v", err)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(data, &body); err != nil {
+		t.Fatalf("failed to parse JSON: %v", err)
+	}
+
+	msgs := body["messages"].([]any)
+	msg := msgs[0].(map[string]any)
+	if msg["role"] != "user" {
+		t.Errorf("expected role 'user', got %v", msg["role"])
+	}
+
+	// Content should be an array (multi-modal format).
+	contentParts, ok := msg["content"].([]any)
+	if !ok {
+		t.Fatalf("expected content to be array, got %T", msg["content"])
+	}
+	if len(contentParts) != 2 {
+		t.Fatalf("expected 2 content parts, got %d", len(contentParts))
+	}
+
+	// First part: text.
+	textPart := contentParts[0].(map[string]any)
+	if textPart["type"] != "text" {
+		t.Errorf("expected first part type 'text', got %v", textPart["type"])
+	}
+	if textPart["text"] != "What is in this image?" {
+		t.Errorf("expected text content, got %v", textPart["text"])
+	}
+
+	// Second part: image_url.
+	imgPart := contentParts[1].(map[string]any)
+	if imgPart["type"] != "image_url" {
+		t.Errorf("expected second part type 'image_url', got %v", imgPart["type"])
+	}
+	imgURL := imgPart["image_url"].(map[string]any)
+	expectedURL := "data:image/png;base64,iVBOR"
+	if imgURL["url"] != expectedURL {
+		t.Errorf("expected image URL %q, got %v", expectedURL, imgURL["url"])
+	}
+}
+
+func TestOpenAIBuildRequestBody_RichToolResult(t *testing.T) {
+	p := &OpenAIProvider{apiKey: "test"}
+
+	req := StreamRequest{
+		Model: "gpt-4o",
+		Messages: []Message{
+			NewRichToolResultMessage("call_abc", []ContentBlock{
+				{Type: ContentTypeText, Text: "File contents:"},
+				{Type: ContentTypeImage, MediaType: "image/png", ImageData: "iVBOR"},
+			}, false),
+		},
+	}
+
+	data, err := p.buildRequestBody(req)
+	if err != nil {
+		t.Fatalf("buildRequestBody failed: %v", err)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(data, &body); err != nil {
+		t.Fatalf("failed to parse JSON: %v", err)
+	}
+
+	msgs := body["messages"].([]any)
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(msgs))
+	}
+
+	msg := msgs[0].(map[string]any)
+	if msg["role"] != "tool" {
+		t.Errorf("expected role 'tool', got %v", msg["role"])
+	}
+	if msg["tool_call_id"] != "call_abc" {
+		t.Errorf("expected tool_call_id 'call_abc', got %v", msg["tool_call_id"])
+	}
+
+	// Content should be an array of parts.
+	contentParts, ok := msg["content"].([]any)
+	if !ok {
+		t.Fatalf("expected content to be array, got %T: %v", msg["content"], msg["content"])
+	}
+	if len(contentParts) != 2 {
+		t.Fatalf("expected 2 content parts, got %d", len(contentParts))
+	}
+
+	// First part: text.
+	textPart := contentParts[0].(map[string]any)
+	if textPart["type"] != "text" {
+		t.Errorf("expected first part type 'text', got %v", textPart["type"])
+	}
+	if textPart["text"] != "File contents:" {
+		t.Errorf("expected text 'File contents:', got %v", textPart["text"])
+	}
+
+	// Second part: image_url.
+	imgPart := contentParts[1].(map[string]any)
+	if imgPart["type"] != "image_url" {
+		t.Errorf("expected second part type 'image_url', got %v", imgPart["type"])
+	}
+	imgURL := imgPart["image_url"].(map[string]any)
+	expectedURL := "data:image/png;base64,iVBOR"
+	if imgURL["url"] != expectedURL {
+		t.Errorf("expected image URL %q, got %v", expectedURL, imgURL["url"])
+	}
+}
+
 func TestOpenAIStream_ScannerBufferOverflow(t *testing.T) {
 	// Create a data line that exceeds the 1MB scanner buffer limit.
 	longPayload := strings.Repeat("x", 1024*1024)

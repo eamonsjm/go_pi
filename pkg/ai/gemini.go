@@ -110,8 +110,15 @@ type gemContent struct {
 
 type gemPart struct {
 	Text             string            `json:"text,omitempty"`
+	InlineData       *gemInlineData    `json:"inlineData,omitempty"`
 	FunctionCall     *gemFunctionCall  `json:"functionCall,omitempty"`
 	FunctionResponse *gemFuncResponse  `json:"functionResponse,omitempty"`
+}
+
+// gemInlineData represents inline binary data (images) in Gemini's format.
+type gemInlineData struct {
+	MimeType string `json:"mimeType"`
+	Data     string `json:"data"`
 }
 
 type gemFunctionCall struct {
@@ -221,6 +228,14 @@ func mapToGeminiContent(m Message) gemContent {
 		case ContentTypeText:
 			gc.Parts = append(gc.Parts, gemPart{Text: cb.Text})
 
+		case ContentTypeImage:
+			gc.Parts = append(gc.Parts, gemPart{
+				InlineData: &gemInlineData{
+					MimeType: cb.MediaType,
+					Data:     cb.ImageData,
+				},
+			})
+
 		case ContentTypeToolUse:
 			args, _ := toStringMap(cb.Input)
 			gc.Parts = append(gc.Parts, gemPart{
@@ -232,14 +247,37 @@ func mapToGeminiContent(m Message) gemContent {
 
 		case ContentTypeToolResult:
 			gc.Role = "user"
-			gc.Parts = append(gc.Parts, gemPart{
-				FunctionResponse: &gemFuncResponse{
-					Name: cb.ToolResultID,
-					Response: map[string]any{
-						"result": cb.Content,
+			if len(cb.ContentBlocks) > 0 {
+				// Rich tool result: emit functionResponse then inline_data parts.
+				gc.Parts = append(gc.Parts, gemPart{
+					FunctionResponse: &gemFuncResponse{
+						Name:     cb.ToolResultID,
+						Response: map[string]any{"result": ""},
 					},
-				},
-			})
+				})
+				for _, sub := range cb.ContentBlocks {
+					switch sub.Type {
+					case ContentTypeText:
+						gc.Parts = append(gc.Parts, gemPart{Text: sub.Text})
+					case ContentTypeImage:
+						gc.Parts = append(gc.Parts, gemPart{
+							InlineData: &gemInlineData{
+								MimeType: sub.MediaType,
+								Data:     sub.ImageData,
+							},
+						})
+					}
+				}
+			} else {
+				gc.Parts = append(gc.Parts, gemPart{
+					FunctionResponse: &gemFuncResponse{
+						Name: cb.ToolResultID,
+						Response: map[string]any{
+							"result": cb.Content,
+						},
+					},
+				})
+			}
 
 		case ContentTypeThinking:
 			// Thinking content is not sent back to Gemini.
