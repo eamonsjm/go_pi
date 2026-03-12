@@ -21,6 +21,7 @@ const (
 // AnthropicProvider implements the Provider interface for Anthropic's Messages API.
 type AnthropicProvider struct {
 	apiKey     string
+	useBearer  bool // true when using an OAuth access token instead of API key
 	httpClient *http.Client
 	baseURL    string
 }
@@ -41,6 +42,20 @@ func NewAnthropicProvider(apiKey string) (*AnthropicProvider, error) {
 	}, nil
 }
 
+// NewAnthropicProviderWithToken creates a provider that uses an OAuth access
+// token with Authorization: Bearer header instead of x-api-key.
+func NewAnthropicProviderWithToken(token string) (*AnthropicProvider, error) {
+	if token == "" {
+		return nil, fmt.Errorf("anthropic: OAuth token is empty")
+	}
+	return &AnthropicProvider{
+		apiKey:     token,
+		useBearer:  true,
+		httpClient: &http.Client{},
+		baseURL:    anthropicAPIURL,
+	}, nil
+}
+
 func (p *AnthropicProvider) Name() string { return "anthropic" }
 
 // Stream sends a streaming request to the Anthropic Messages API and returns
@@ -56,7 +71,11 @@ func (p *AnthropicProvider) Stream(ctx context.Context, req StreamRequest) (<-ch
 		return nil, fmt.Errorf("anthropic: failed to create HTTP request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("x-api-key", p.apiKey)
+	if p.useBearer {
+		httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
+	} else {
+		httpReq.Header.Set("x-api-key", p.apiKey)
+	}
 	httpReq.Header.Set("anthropic-version", anthropicAPIVersion)
 
 	resp, err := p.httpClient.Do(httpReq)

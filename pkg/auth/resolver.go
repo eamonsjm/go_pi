@@ -48,6 +48,14 @@ func (r *Resolver) GetOAuthProvider(id string) OAuthProvider {
 	return r.providers[id]
 }
 
+// IsOAuthToken reports whether the stored credential for the given provider
+// is an OAuth token (not a real API key). When true, the caller should use
+// Bearer auth instead of x-api-key.
+func (r *Resolver) IsOAuthToken(provider string) bool {
+	cred := r.store.Get(provider)
+	return cred != nil && cred.Type == CredentialOAuth && cred.Key == ""
+}
+
 // Resolve returns a usable API key for the given provider by walking
 // the resolution chain. Returns an error only if resolution fails at every
 // level; an empty key with nil error means no credentials are configured.

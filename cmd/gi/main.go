@@ -203,6 +203,9 @@ func resolveProvider(cfg *config.Config, resolver *auth.Resolver) (ai.Provider, 
 
 	switch providerName {
 	case "anthropic":
+		if resolver.IsOAuthToken(providerName) {
+			return ai.NewAnthropicProviderWithToken(key)
+		}
 		return ai.NewAnthropicProvider(key)
 	case "openrouter":
 		return ai.NewOpenRouterProvider(key)
