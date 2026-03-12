@@ -1,13 +1,10 @@
 package auth
 
 import (
-	"context"
-	"crypto/rand"
-	"encoding/hex"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -15,28 +12,38 @@ import (
 )
 
 const (
-	defaultAnthropicAuthURL  = "https://console.anthropic.com"
-	defaultAnthropicClientID = "pi-cli"
-	defaultAnthropicScope    = "org:create_api_key user:profile user:inference"
-	defaultAuthTimeout       = 5 * time.Minute
+	defaultAnthropicAuthorizeURL = "https://claude.ai"
+	defaultAnthropicTokenURL     = "https://console.anthropic.com"
+	defaultAnthropicClientID     = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+	defaultAnthropicRedirectURI  = "https://console.anthropic.com/oauth/code/callback"
+	defaultAnthropicScope        = "org:create_api_key user:profile user:inference"
+	defaultAuthTimeout           = 5 * time.Minute
 )
 
 // AnthropicOAuth implements OAuthProvider for Anthropic using
 // OAuth 2.0 authorization code grant with PKCE (RFC 7636).
+//
+// The flow uses Anthropic's hosted callback page: the user authorizes in
+// the browser, gets redirected to console.anthropic.com which displays the
+// authorization code, and then pastes the code back into the TUI.
 type AnthropicOAuth struct {
-	AuthURL    string
-	ClientID   string
-	Scope      string
-	HTTPClient *http.Client
+	AuthorizeURL string // Base URL for /oauth/authorize (default: https://claude.ai)
+	TokenURL     string // Base URL for /v1/oauth/token (default: https://console.anthropic.com)
+	ClientID     string
+	RedirectURI  string
+	Scope        string
+	HTTPClient   *http.Client
 }
 
 // NewAnthropicOAuth creates an Anthropic OAuth provider with default settings.
 func NewAnthropicOAuth() *AnthropicOAuth {
 	return &AnthropicOAuth{
-		AuthURL:    defaultAnthropicAuthURL,
-		ClientID:   defaultAnthropicClientID,
-		Scope:      defaultAnthropicScope,
-		HTTPClient: &http.Client{Timeout: 30 * time.Second},
+		AuthorizeURL: defaultAnthropicAuthorizeURL,
+		TokenURL:     defaultAnthropicTokenURL,
+		ClientID:     defaultAnthropicClientID,
+		RedirectURI:  defaultAnthropicRedirectURI,
+		Scope:        defaultAnthropicScope,
+		HTTPClient:   &http.Client{Timeout: 30 * time.Second},
 	}
 }
 
@@ -44,23 +51,12 @@ func (a *AnthropicOAuth) ID() string   { return "anthropic" }
 func (a *AnthropicOAuth) Name() string { return "Anthropic (Claude)" }
 
 // AuthSession holds state for an in-progress authorization code flow.
+// Unlike a local-callback approach, the user manually pastes the code
+// from Anthropic's redirect page.
 type AuthSession struct {
 	AuthorizeURL string
 	PKCE         *PKCEChallenge
-	State        string
 	RedirectURI  string
-
-	listener net.Listener
-	codeCh   chan string
-	errCh    chan error
-	server   *http.Server
-}
-
-// Close shuts down the callback server and releases the port.
-func (s *AuthSession) Close() {
-	if s.server != nil {
-		s.server.Shutdown(context.Background())
-	}
 }
 
 // tokenResponse is the JSON response from the token endpoint.
@@ -72,120 +68,75 @@ type tokenResponse struct {
 	APIKey       string `json:"api_key,omitempty"`
 }
 
+// tokenExchangeRequest is the JSON body sent to the token endpoint.
+type tokenExchangeRequest struct {
+	GrantType    string `json:"grant_type"`
+	ClientID     string `json:"client_id"`
+	Code         string `json:"code,omitempty"`
+	State        string `json:"state,omitempty"`
+	RedirectURI  string `json:"redirect_uri,omitempty"`
+	CodeVerifier string `json:"code_verifier,omitempty"`
+	RefreshToken string `json:"refresh_token,omitempty"`
+}
+
 // tokenErrorResponse is the error response from the token endpoint.
 type tokenErrorResponse struct {
 	Error            string `json:"error"`
 	ErrorDescription string `json:"error_description"`
 }
 
-// StartAuthFlow initiates the authorization code flow with PKCE.
-// It starts a local HTTP server to receive the callback and returns an
-// AuthSession containing the authorization URL to open in a browser.
+// StartAuthFlow generates PKCE parameters and builds the authorization URL.
+// The caller should display the URL to the user and collect the authorization
+// code they paste back from the redirect page.
 func (a *AnthropicOAuth) StartAuthFlow() (*AuthSession, error) {
 	pkce, err := GeneratePKCE()
 	if err != nil {
 		return nil, fmt.Errorf("generate PKCE: %w", err)
 	}
 
-	state, err := randomHex(16)
-	if err != nil {
-		return nil, fmt.Errorf("generate state: %w", err)
+	redirectURI := a.RedirectURI
+	if redirectURI == "" {
+		redirectURI = defaultAnthropicRedirectURI
 	}
 
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return nil, fmt.Errorf("start callback server: %w", err)
-	}
-
-	port := listener.Addr().(*net.TCPAddr).Port
-	redirectURI := fmt.Sprintf("http://localhost:%d/callback", port)
-
+	// Per Anthropic spec, state = PKCE verifier.
 	params := url.Values{
+		"code":                  {"true"},
 		"client_id":             {a.ClientID},
-		"response_type":        {"code"},
-		"redirect_uri":         {redirectURI},
-		"scope":                {a.Scope},
+		"response_type":         {"code"},
+		"redirect_uri":          {redirectURI},
+		"scope":                 {a.Scope},
 		"code_challenge":        {pkce.Challenge},
 		"code_challenge_method": {"S256"},
-		"state":                {state},
+		"state":                 {pkce.Verifier},
 	}
 
-	authorizeURL := a.AuthURL + "/oauth/authorize?" + params.Encode()
+	authorizeURL := a.AuthorizeURL + "/oauth/authorize?" + params.Encode()
 
-	session := &AuthSession{
+	return &AuthSession{
 		AuthorizeURL: authorizeURL,
 		PKCE:         pkce,
-		State:        state,
 		RedirectURI:  redirectURI,
-		listener:     listener,
-		codeCh:       make(chan string, 1),
-		errCh:        make(chan error, 1),
-	}
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
-		if errMsg := r.URL.Query().Get("error"); errMsg != "" {
-			desc := r.URL.Query().Get("error_description")
-			if desc == "" {
-				desc = errMsg
-			}
-			http.Error(w, "Authorization failed. You can close this tab.", http.StatusBadRequest)
-			session.errCh <- fmt.Errorf("authorization error: %s", desc)
-			return
-		}
-
-		if r.URL.Query().Get("state") != state {
-			http.Error(w, "Invalid state parameter.", http.StatusBadRequest)
-			session.errCh <- fmt.Errorf("state mismatch")
-			return
-		}
-
-		code := r.URL.Query().Get("code")
-		if code == "" {
-			http.Error(w, "Missing authorization code.", http.StatusBadRequest)
-			session.errCh <- fmt.Errorf("missing authorization code in callback")
-			return
-		}
-
-		w.Header().Set("Content-Type", "text/html")
-		fmt.Fprint(w, "<html><body><h2>Authorization successful!</h2><p>You can close this tab and return to the terminal.</p></body></html>")
-		session.codeCh <- code
-	})
-
-	session.server = &http.Server{Handler: mux}
-	go session.server.Serve(listener)
-
-	return session, nil
+	}, nil
 }
 
-// ExchangeAuthCode waits for the browser callback and exchanges the
-// authorization code for tokens. The session's callback server is shut
-// down when this method returns.
-func (a *AnthropicOAuth) ExchangeAuthCode(session *AuthSession, timeout time.Duration) (*Credential, error) {
-	defer session.Close()
-
-	if timeout <= 0 {
-		timeout = defaultAuthTimeout
+// ExchangeCode exchanges the user-provided authorization code for tokens.
+func (a *AnthropicOAuth) ExchangeCode(session *AuthSession, code string) (*Credential, error) {
+	reqBody := tokenExchangeRequest{
+		GrantType:    "authorization_code",
+		ClientID:     a.ClientID,
+		Code:         code,
+		State:        session.PKCE.Verifier,
+		RedirectURI:  session.RedirectURI,
+		CodeVerifier: session.PKCE.Verifier,
 	}
 
-	var code string
-	select {
-	case code = <-session.codeCh:
-	case err := <-session.errCh:
-		return nil, err
-	case <-time.After(timeout):
-		return nil, fmt.Errorf("authorization timed out — no response within %v", timeout)
+	bodyJSON, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("marshal token request: %w", err)
 	}
 
-	form := url.Values{
-		"grant_type":    {"authorization_code"},
-		"code":          {code},
-		"client_id":     {a.ClientID},
-		"redirect_uri":  {session.RedirectURI},
-		"code_verifier": {session.PKCE.Verifier},
-	}
-
-	resp, err := a.HTTPClient.PostForm(a.tokenURL(), form)
+	resp, err := a.HTTPClient.Post(a.tokenEndpoint(), "application/json", bytes.NewReader(bodyJSON))
 	if err != nil {
 		return nil, fmt.Errorf("token exchange: %w", err)
 	}
@@ -214,13 +165,26 @@ func (a *AnthropicOAuth) Login(cb OAuthCallbacks) (*Credential, error) {
 
 	if cb.OnAuth != nil {
 		cb.OnAuth(session.AuthorizeURL,
-			"Open this URL in your browser to authorize")
+			"Open this URL in your browser to authorize, then paste the code below")
 	}
 	if cb.OnProgress != nil {
-		cb.OnProgress("Waiting for authorization...")
+		cb.OnProgress("Waiting for authorization code...")
 	}
 
-	cred, err := a.ExchangeAuthCode(session, defaultAuthTimeout)
+	if cb.OnPrompt == nil {
+		return nil, fmt.Errorf("Login requires an OnPrompt callback to receive the authorization code")
+	}
+
+	code, err := cb.OnPrompt("Paste authorization code")
+	if err != nil {
+		return nil, fmt.Errorf("prompt for code: %w", err)
+	}
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return nil, fmt.Errorf("empty authorization code")
+	}
+
+	cred, err := a.ExchangeCode(session, code)
 	if err != nil {
 		return nil, err
 	}
@@ -237,13 +201,18 @@ func (a *AnthropicOAuth) RefreshToken(cred *Credential) (*Credential, error) {
 		return nil, fmt.Errorf("no refresh token available")
 	}
 
-	form := url.Values{
-		"grant_type":    {"refresh_token"},
-		"refresh_token": {cred.RefreshToken},
-		"client_id":     {a.ClientID},
+	reqBody := tokenExchangeRequest{
+		GrantType:    "refresh_token",
+		RefreshToken: cred.RefreshToken,
+		ClientID:     a.ClientID,
 	}
 
-	resp, err := a.HTTPClient.PostForm(a.tokenURL(), form)
+	bodyJSON, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("marshal refresh request: %w", err)
+	}
+
+	resp, err := a.HTTPClient.Post(a.tokenEndpoint(), "application/json", bytes.NewReader(bodyJSON))
 	if err != nil {
 		return nil, fmt.Errorf("refresh request: %w", err)
 	}
@@ -278,9 +247,9 @@ func (a *AnthropicOAuth) GetAPIKey(cred *Credential) string {
 	return cred.AccessToken
 }
 
-// tokenURL returns the token endpoint URL.
-func (a *AnthropicOAuth) tokenURL() string {
-	return a.AuthURL + "/v1/oauth/token"
+// tokenEndpoint returns the token endpoint URL.
+func (a *AnthropicOAuth) tokenEndpoint() string {
+	return a.TokenURL + "/v1/oauth/token"
 }
 
 // tokenToCredential converts a token response to a Credential.
@@ -295,12 +264,4 @@ func (a *AnthropicOAuth) tokenToCredential(token *tokenResponse) *Credential {
 		cred.Key = token.APIKey
 	}
 	return cred
-}
-
-func randomHex(n int) (string, error) {
-	buf := make([]byte, n)
-	if _, err := rand.Read(buf); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(buf), nil
 }

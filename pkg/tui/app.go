@@ -36,6 +36,11 @@ type App struct {
 	// Agent state.
 	agentRunning bool
 
+	// authPendingCodeCh is non-nil while waiting for the user to paste an
+	// OAuth authorization code. The next editorSubmitMsg sends the text to
+	// this channel instead of the agent.
+	authPendingCodeCh chan string
+
 	// Callbacks wired by the caller that owns the agent loop.
 	onSubmit      func(text string)
 	onCancel      func()
@@ -192,6 +197,15 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// ---- Editor actions ----
 	case editorSubmitMsg:
+		// If we're waiting for an OAuth code, route the input there.
+		if a.authPendingCodeCh != nil {
+			ch := a.authPendingCodeCh
+			a.authPendingCodeCh = nil
+			a.chat.AddUserMessage(msg.text)
+			ch <- msg.text
+			return a, nil
+		}
+
 		a.chat.AddUserMessage(msg.text)
 		a.agentRunning = true
 		a.editor.SetState(editorRunning)
@@ -221,8 +235,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case authOAuthMsg:
+		a.authPendingCodeCh = msg.codeCh
 		a.chat.AddSystemMessage(fmt.Sprintf(
-			"Login to %s\n\n  Open this URL in your browser:\n  %s\n\nWaiting for authorization...",
+			"Login to %s\n\n  Open this URL in your browser:\n  %s\n\nAfter authorizing, paste the code below and press Enter.",
 			msg.providerName, msg.url))
 		return a, msg.waitCmd
 

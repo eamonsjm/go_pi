@@ -10,12 +10,15 @@ import (
 	"github.com/ejm/go_pi/pkg/auth"
 )
 
-// authOAuthMsg is sent when the authorization URL is ready (Phase 1).
-// The handler shows the URL to the user, then starts waiting for the
-// browser callback (Phase 2).
+// authOAuthMsg is sent when the authorization URL is ready. The app shows
+// the URL and instructions, then enters "auth pending" mode. The user's
+// next input is treated as the authorization code and sent to codeCh.
+// The waitCmd blocks on codeCh, exchanges the code for tokens, and returns
+// a CommandResultMsg.
 type authOAuthMsg struct {
 	providerName string
 	url          string
+	codeCh       chan string
 	waitCmd      tea.Cmd
 }
 
@@ -45,12 +48,10 @@ func NewLoginCommand(store *auth.Store, resolver *auth.Resolver) *SlashCommand {
 				}
 			}
 
-			// Phase 1: Start auth flow (opens local callback server).
-			// Returns authOAuthMsg which triggers Phase 2 in app.Update.
 			return func() tea.Msg {
 				anthProv, ok := oauthProv.(*auth.AnthropicOAuth)
 				if !ok {
-					// Non-browser provider: run full Login flow in one shot.
+					// Non-Anthropic provider: run full Login flow in one shot.
 					cred, err := oauthProv.Login(auth.OAuthCallbacks{})
 					if err != nil {
 						return CommandResultMsg{
@@ -70,7 +71,8 @@ func NewLoginCommand(store *auth.Store, resolver *auth.Resolver) *SlashCommand {
 					}
 				}
 
-				// Anthropic: two-phase authorization code + PKCE flow.
+				// Anthropic: code-paste flow. Start the auth flow (generates
+				// PKCE + authorize URL), then let the TUI prompt for the code.
 				session, err := anthProv.StartAuthFlow()
 				if err != nil {
 					return CommandResultMsg{
@@ -79,11 +81,33 @@ func NewLoginCommand(store *auth.Store, resolver *auth.Resolver) *SlashCommand {
 					}
 				}
 
+				codeCh := make(chan string, 1)
+
 				return authOAuthMsg{
 					providerName: oauthProv.Name(),
 					url:          session.AuthorizeURL,
+					codeCh:       codeCh,
 					waitCmd: func() tea.Msg {
-						cred, err := anthProv.ExchangeAuthCode(session, 0)
+						// Block until the user pastes the code.
+						var code string
+						select {
+						case code = <-codeCh:
+						case <-time.After(defaultLoginTimeout):
+							return CommandResultMsg{
+								Text:    "Login timed out — no code entered within 10 minutes.",
+								IsError: true,
+							}
+						}
+
+						code = strings.TrimSpace(code)
+						if code == "" {
+							return CommandResultMsg{
+								Text:    "Login cancelled — empty code.",
+								IsError: true,
+							}
+						}
+
+						cred, err := anthProv.ExchangeCode(session, code)
 						if err != nil {
 							return CommandResultMsg{
 								Text:    fmt.Sprintf("Login failed: %v", err),
@@ -106,6 +130,8 @@ func NewLoginCommand(store *auth.Store, resolver *auth.Resolver) *SlashCommand {
 		},
 	}
 }
+
+const defaultLoginTimeout = 10 * time.Minute
 
 // NewLogoutCommand creates the /logout slash command.
 func NewLogoutCommand(store *auth.Store) *SlashCommand {
