@@ -143,9 +143,12 @@ func settingsUpdate(key, value string, cfg *config.Config, agentLoop *agent.Agen
 			"anthropic":  true,
 			"openrouter": true,
 			"openai":     true,
+			"gemini":     true,
+			"azure":      true,
+			"bedrock":    true,
 		}
 		if !valid[value] {
-			return settingsError(fmt.Sprintf("unknown provider %q — valid: anthropic, openrouter, openai", value))
+			return settingsError(fmt.Sprintf("unknown provider %q — valid: anthropic, openrouter, openai, gemini, azure, bedrock", value))
 		}
 		return settingsError(fmt.Sprintf("provider change to %q requires restart. Edit ~/.gi/settings.json and relaunch.", value))
 
