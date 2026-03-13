@@ -57,6 +57,10 @@ type Editor struct {
 	// any non-Tab keypress.
 	tabMatches []*SlashCommand
 	tabIndex   int
+
+	// completer holds active @filepath tab completion state, or nil when
+	// not completing.
+	completer *fileCompletion
 }
 
 // NewEditor creates an Editor ready for use.
@@ -183,6 +187,10 @@ func (e *Editor) Update(msg tea.Msg) tea.Cmd {
 			return nil
 
 		case tea.KeyTab:
+			if e.handleTabCompletion() {
+				return nil
+			}
+			// No @token — try slash command completion.
 			return e.handleTab()
 
 		case tea.KeyEnter:
@@ -265,6 +273,7 @@ func (e *Editor) Update(msg tea.Msg) tea.Cmd {
 		if msg.Type != tea.KeyTab {
 			e.tabMatches = nil
 			e.tabIndex = 0
+			e.completer = nil
 		}
 	}
 
@@ -279,12 +288,143 @@ func (e *Editor) View() string {
 	style := e.borderStyle()
 	style = style.Width(e.width - 2) // account for border chars
 
-	hint := e.commandHint()
+	hint := e.fileCompletionHint()
+	if hint == "" {
+		hint = e.commandHint()
+	}
 	editor := style.Render(e.textarea.View())
 	if hint != "" {
 		return hint + "\n" + editor
 	}
 	return editor
+}
+
+// handleTabCompletion attempts @filepath tab completion. Returns true if
+// the Tab keypress was consumed (an @ token was found), false otherwise.
+func (e *Editor) handleTabCompletion() bool {
+	if e.completer != nil {
+		// Already in completion mode — cycle to next match.
+		current := e.completer.matches[e.completer.idx]
+		if strings.HasSuffix(current, "/") {
+			// Current completion is a directory — drill into it.
+			newMatches := completeFilePath(current)
+			if len(newMatches) > 0 {
+				e.completer.matches = newMatches
+				e.completer.idx = 0
+				e.applyCompletion()
+				return true
+			}
+		}
+		e.completer.idx = (e.completer.idx + 1) % len(e.completer.matches)
+		e.applyCompletion()
+		return true
+	}
+
+	// Look for an @token at the cursor position.
+	runes := []rune(e.textarea.Value())
+	cursor := e.cursorRuneOffset()
+	partial, atStart, ok := findAtToken(runes, cursor)
+	if !ok {
+		return false
+	}
+
+	matches := completeFilePath(partial)
+	if len(matches) == 0 {
+		return false
+	}
+
+	e.completer = &fileCompletion{
+		matches:    matches,
+		idx:        0,
+		textBefore: string(runes[:atStart]),
+		textAfter:  string(runes[cursor:]),
+	}
+	e.applyCompletion()
+	return true
+}
+
+// applyCompletion sets the textarea value to reflect the currently selected
+// completion and positions the cursor right after the completed path.
+func (e *Editor) applyCompletion() {
+	c := e.completer
+	completion := c.matches[c.idx]
+	newText := c.textBefore + "@" + completion + c.textAfter
+
+	e.textarea.SetValue(newText)
+
+	// SetValue puts the cursor at the end. If there's text after the
+	// completion we need to reposition the cursor.
+	if c.textAfter != "" {
+		targetRune := len([]rune(c.textBefore)) + 1 + len([]rune(completion))
+		e.navigateTo(newText, targetRune)
+	}
+}
+
+// cursorRuneOffset returns the cursor position as a rune offset in the
+// full textarea value.
+func (e *Editor) cursorRuneOffset() int {
+	lines := strings.Split(e.textarea.Value(), "\n")
+	row := e.textarea.Line()
+	col := e.textarea.LineInfo().ColumnOffset
+
+	offset := 0
+	for i := 0; i < row && i < len(lines); i++ {
+		offset += len([]rune(lines[i])) + 1 // +1 for newline
+	}
+	offset += col
+	return offset
+}
+
+// navigateTo moves the textarea cursor to the given rune offset within text.
+func (e *Editor) navigateTo(text string, runeOffset int) {
+	lines := strings.Split(text, "\n")
+
+	targetLine := 0
+	targetCol := 0
+	remaining := runeOffset
+
+	for i, line := range lines {
+		lineLen := len([]rune(line))
+		if remaining <= lineLen {
+			targetLine = i
+			targetCol = remaining
+			break
+		}
+		remaining -= lineLen + 1
+	}
+
+	// After SetValue cursor is on the last line — walk up.
+	currentLine := len(lines) - 1
+	for i := 0; i < currentLine-targetLine; i++ {
+		e.textarea.CursorUp()
+	}
+	e.textarea.SetCursor(targetCol)
+}
+
+// fileCompletionHint returns a hint line showing available file completions
+// when actively completing, or empty string otherwise.
+func (e *Editor) fileCompletionHint() string {
+	if e.completer == nil || len(e.completer.matches) <= 1 {
+		return ""
+	}
+
+	const maxShow = 10
+	matches := e.completer.matches
+	truncated := false
+	if len(matches) > maxShow {
+		matches = matches[:maxShow]
+		truncated = true
+	}
+
+	parts := make([]string, 0, len(matches))
+	for _, m := range matches {
+		parts = append(parts, m)
+	}
+	hint := strings.Join(parts, "  ")
+	if truncated {
+		hint += fmt.Sprintf("  (+%d more)", len(e.completer.matches)-maxShow)
+	}
+	return MutedStyle.Render(hint)
 }
 
 // commandHint returns an autocomplete hint string when the current input looks
