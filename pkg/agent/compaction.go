@@ -94,7 +94,7 @@ func (a *AgentLoop) Compact(ctx context.Context, instructions string) error {
 	a.messages = []ai.Message{compactedMsg}
 	a.mu.Unlock()
 
-	a.emit(AgentEvent{
+	a.emit(ctx, AgentEvent{
 		Type:  EventCompaction,
 		Delta: summaryText,
 	})
@@ -220,7 +220,7 @@ func (a *AgentLoop) autoCompact(ctx context.Context) error {
 	a.lastInputTokens = 0 // Reset so we don't re-trigger immediately.
 	a.mu.Unlock()
 
-	a.emit(AgentEvent{
+	a.emit(ctx, AgentEvent{
 		Type:  EventAutoCompaction,
 		Delta: summaryText,
 	})

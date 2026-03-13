@@ -194,8 +194,8 @@ func (a *AgentLoop) Prompt(ctx context.Context, text string) error {
 // run is the core loop. It sends messages to the model, processes tool calls,
 // handles steering, and loops until the model is done.
 func (a *AgentLoop) run(ctx context.Context) error {
-	a.emit(AgentEvent{Type: EventAgentStart})
-	defer a.emit(AgentEvent{Type: EventAgentEnd})
+	a.emit(ctx, AgentEvent{Type: EventAgentStart})
+	defer a.emit(ctx, AgentEvent{Type: EventAgentEnd})
 
 	for {
 		if err := ctx.Err(); err != nil {
@@ -210,7 +210,7 @@ func (a *AgentLoop) run(ctx context.Context) error {
 
 		assistantMsg, err := a.doTurn(ctx)
 		if err != nil {
-			a.emit(AgentEvent{Type: EventAgentError, Error: err})
+			a.emit(ctx, AgentEvent{Type: EventAgentError, Error: err})
 			return err
 		}
 
@@ -232,7 +232,7 @@ func (a *AgentLoop) run(ctx context.Context) error {
 			// Check for steering interrupt before each tool.
 			select {
 			case steerMsg := <-a.steerCh:
-				a.addSteeringSkipResults(toolCalls, tc.ToolUseID)
+				a.addSteeringSkipResults(ctx, toolCalls, tc.ToolUseID)
 				a.appendMessage(ai.NewTextMessage(ai.RoleUser, steerMsg))
 				steered = true
 			default:
@@ -247,7 +247,7 @@ func (a *AgentLoop) run(ctx context.Context) error {
 			}
 
 			a.appendMessage(toolResult)
-			a.emit(AgentEvent{Type: EventToolResult, Message: &toolResult})
+			a.emit(ctx, AgentEvent{Type: EventToolResult, Message: &toolResult})
 
 			// Check for steering after execution too.
 			select {
@@ -256,7 +256,7 @@ func (a *AgentLoop) run(ctx context.Context) error {
 				for _, remaining := range toolCalls[i+1:] {
 					skipResult := ai.NewToolResultMessage(remaining.ToolUseID, "tool execution skipped: user sent a new message", true)
 					a.appendMessage(skipResult)
-					a.emit(AgentEvent{Type: EventToolResult, Message: &skipResult})
+					a.emit(ctx, AgentEvent{Type: EventToolResult, Message: &skipResult})
 				}
 				a.appendMessage(ai.NewTextMessage(ai.RoleUser, steerMsg))
 				steered = true
@@ -275,7 +275,7 @@ func (a *AgentLoop) run(ctx context.Context) error {
 // streamed assistant response. It emits text/thinking delta events as
 // they arrive and returns the completed assistant message.
 func (a *AgentLoop) doTurn(ctx context.Context) (*ai.Message, error) {
-	a.emit(AgentEvent{Type: EventTurnStart})
+	a.emit(ctx, AgentEvent{Type: EventTurnStart})
 
 	a.mu.Lock()
 	req := ai.StreamRequest{
@@ -308,11 +308,11 @@ func (a *AgentLoop) doTurn(ctx context.Context) (*ai.Message, error) {
 		case ai.EventMessageStart:
 
 		case ai.EventTextDelta:
-			a.emit(AgentEvent{Type: EventAssistantText, Delta: event.Delta})
+			a.emit(ctx, AgentEvent{Type: EventAssistantText, Delta: event.Delta})
 			appendTextDelta(&assistantMsg, event.Delta)
 
 		case ai.EventThinkingDelta:
-			a.emit(AgentEvent{Type: EventAssistantThinking, Delta: event.Delta})
+			a.emit(ctx, AgentEvent{Type: EventAssistantThinking, Delta: event.Delta})
 			appendThinkingDelta(&assistantMsg, event.Delta)
 
 		case ai.EventToolUseStart:
@@ -349,7 +349,7 @@ func (a *AgentLoop) doTurn(ctx context.Context) (*ai.Message, error) {
 				a.mu.Lock()
 				a.lastInputTokens = event.Usage.InputTokens
 				a.mu.Unlock()
-				a.emit(AgentEvent{Type: EventUsageUpdate, Usage: event.Usage})
+				a.emit(ctx, AgentEvent{Type: EventUsageUpdate, Usage: event.Usage})
 			}
 
 		case ai.EventError:
@@ -358,7 +358,7 @@ func (a *AgentLoop) doTurn(ctx context.Context) (*ai.Message, error) {
 	}
 
 	a.appendMessage(assistantMsg)
-	a.emit(AgentEvent{Type: EventTurnEnd, Message: &assistantMsg})
+	a.emit(ctx, AgentEvent{Type: EventTurnEnd, Message: &assistantMsg})
 	return &assistantMsg, nil
 }
 
@@ -367,7 +367,7 @@ func (a *AgentLoop) doTurn(ctx context.Context) (*ai.Message, error) {
 func (a *AgentLoop) executeTool(ctx context.Context, tc ai.ContentBlock) ai.Message {
 	params := toParamsMap(tc.Input)
 
-	a.emit(AgentEvent{
+	a.emit(ctx, AgentEvent{
 		Type:       EventToolExecStart,
 		ToolCallID: tc.ToolUseID,
 		ToolName:   tc.ToolName,
@@ -377,7 +377,7 @@ func (a *AgentLoop) executeTool(ctx context.Context, tc ai.ContentBlock) ai.Mess
 	tool, ok := a.tools.Get(tc.ToolName)
 	if !ok {
 		errMsg := fmt.Sprintf("unknown tool: %s", tc.ToolName)
-		a.emit(AgentEvent{
+		a.emit(ctx, AgentEvent{
 			Type:       EventToolExecEnd,
 			ToolCallID: tc.ToolUseID,
 			ToolName:   tc.ToolName,
@@ -401,7 +401,7 @@ func (a *AgentLoop) executeTool(ctx context.Context, tc ai.ContentBlock) ai.Mess
 				}
 			}
 		}
-		a.emit(AgentEvent{
+		a.emit(ctx, AgentEvent{
 			Type:       EventToolExecEnd,
 			ToolCallID: tc.ToolUseID,
 			ToolName:   tc.ToolName,
@@ -420,7 +420,7 @@ func (a *AgentLoop) executeTool(ctx context.Context, tc ai.ContentBlock) ai.Mess
 		result = err.Error()
 	}
 
-	a.emit(AgentEvent{
+	a.emit(ctx, AgentEvent{
 		Type:       EventToolExecEnd,
 		ToolCallID: tc.ToolUseID,
 		ToolName:   tc.ToolName,
@@ -434,7 +434,7 @@ func (a *AgentLoop) executeTool(ctx context.Context, tc ai.ContentBlock) ai.Mess
 // skipped due to a steering interrupt. The skipAfterID parameter indicates the
 // tool call ID after which to start adding skip results. If empty, no skip
 // results are added (all tools already have results).
-func (a *AgentLoop) addSteeringSkipResults(toolCalls []ai.ContentBlock, skipAfterID string) {
+func (a *AgentLoop) addSteeringSkipResults(ctx context.Context, toolCalls []ai.ContentBlock, skipAfterID string) {
 	skipping := false
 	if skipAfterID == "" {
 		return
@@ -445,13 +445,13 @@ func (a *AgentLoop) addSteeringSkipResults(toolCalls []ai.ContentBlock, skipAfte
 			// This tool call itself is being skipped — add a result for it.
 			skipResult := ai.NewToolResultMessage(tc.ToolUseID, "tool execution skipped: user sent a new message", true)
 			a.appendMessage(skipResult)
-			a.emit(AgentEvent{Type: EventToolResult, Message: &skipResult})
+			a.emit(ctx, AgentEvent{Type: EventToolResult, Message: &skipResult})
 			continue
 		}
 		if skipping {
 			skipResult := ai.NewToolResultMessage(tc.ToolUseID, "tool execution skipped: user sent a new message", true)
 			a.appendMessage(skipResult)
-			a.emit(AgentEvent{Type: EventToolResult, Message: &skipResult})
+			a.emit(ctx, AgentEvent{Type: EventToolResult, Message: &skipResult})
 		}
 	}
 }
@@ -463,17 +463,17 @@ func (a *AgentLoop) appendMessage(msg ai.Message) {
 	a.messages = append(a.messages, msg)
 }
 
-// emit sends an event to the events channel. It never blocks — if the channel
-// is full the event is dropped and a warning is logged. The mutex is held
-// briefly to ensure the channel reference is not replaced concurrently.
-func (a *AgentLoop) emit(event AgentEvent) {
+// emit sends an event to the events channel. If the channel buffer is full,
+// it blocks until space is available or the context is cancelled — providing
+// back-pressure to the agent loop so events are never silently dropped.
+// The mutex is held briefly to snapshot the channel reference.
+func (a *AgentLoop) emit(ctx context.Context, event AgentEvent) {
 	a.mu.Lock()
 	ch := a.events
 	a.mu.Unlock()
 	select {
 	case ch <- event:
-	default:
-		log.Printf("agent: event dropped (type=%s), events channel buffer full", event.Type)
+	case <-ctx.Done():
 	}
 }
 
