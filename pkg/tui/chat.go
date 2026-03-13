@@ -47,6 +47,10 @@ type chatBlock struct {
 	// Plugin fields (blockPlugin only).
 	pluginName string
 	logLevel   string // "info", "warn", "error" — non-empty for log messages
+
+	// rendered caches the last rendered output for this block. Empty means
+	// the block needs re-rendering. Cleared whenever block content changes.
+	rendered string
 }
 
 // ---------------------------------------------------------------------------
@@ -93,6 +97,14 @@ func NewChatView() *ChatView {
 	}
 }
 
+// invalidateRenderCaches clears all cached block renders (e.g. on resize or
+// theme change where every block must be re-rendered with new parameters).
+func (c *ChatView) invalidateRenderCaches() {
+	for i := range c.blocks {
+		c.blocks[i].rendered = ""
+	}
+}
+
 // SetSize adjusts the viewport dimensions (called on window resize).
 func (c *ChatView) SetSize(w, h int) {
 	c.width = w
@@ -119,6 +131,7 @@ func (c *ChatView) SetSize(w, h int) {
 		c.renderer = r
 	}
 
+	c.invalidateRenderCaches()
 	c.rebuildContent()
 }
 
@@ -135,6 +148,7 @@ func (c *ChatView) HandleEvent(ev agent.AgentEvent) bool {
 	case agent.EventAssistantText:
 		if blk := c.lastBlock(blockAssistantText); blk != nil {
 			blk.text += ev.Delta
+			blk.rendered = ""
 		} else {
 			c.blocks = append(c.blocks, chatBlock{
 				kind: blockAssistantText,
@@ -147,6 +161,7 @@ func (c *ChatView) HandleEvent(ev agent.AgentEvent) bool {
 	case agent.EventAssistantThinking:
 		if blk := c.lastBlock(blockThinking); blk != nil {
 			blk.text += ev.Delta
+			blk.rendered = ""
 		} else {
 			c.blocks = append(c.blocks, chatBlock{
 				kind:      blockThinking,
@@ -174,6 +189,7 @@ func (c *ChatView) HandleEvent(ev agent.AgentEvent) bool {
 				b.toolResult = ev.ToolResult
 				b.toolError = ev.ToolError
 				b.collapsed = true
+				b.rendered = ""
 				break
 			}
 		}
@@ -282,6 +298,7 @@ func (c *ChatView) RefreshTheme() {
 	if err == nil {
 		c.renderer = r
 	}
+	c.invalidateRenderCaches()
 	c.rebuildContent()
 }
 
@@ -296,6 +313,7 @@ func (c *ChatView) ToggleThinking() {
 	for i := len(c.blocks) - 1; i >= 0; i-- {
 		if c.blocks[i].kind == blockThinking {
 			c.blocks[i].collapsed = !c.blocks[i].collapsed
+			c.blocks[i].rendered = ""
 			c.rebuildContent()
 			return
 		}
@@ -307,6 +325,7 @@ func (c *ChatView) ToggleToolResult() {
 	for i := len(c.blocks) - 1; i >= 0; i-- {
 		if c.blocks[i].kind == blockToolCall && c.blocks[i].toolResult != "" {
 			c.blocks[i].collapsed = !c.blocks[i].collapsed
+			c.blocks[i].rendered = ""
 			c.rebuildContent()
 			return
 		}
@@ -357,33 +376,27 @@ func (c *ChatView) View() string {
 // rebuildContent renders all blocks into a single string and pushes it into
 // the viewport. Auto-scrolls to the bottom only if the viewport was already
 // at the bottom (so manual scroll-back is preserved during streaming).
+//
+// Uses per-block render caching: only blocks with an empty `rendered` field
+// are re-rendered. During streaming this means only the active assistant
+// block is re-rendered on each delta, turning the cost from O(all_blocks)
+// to O(1 block).
 func (c *ChatView) rebuildContent() {
 	wasAtBottom := c.viewport.AtBottom()
 
 	var sb strings.Builder
 
-	for i, blk := range c.blocks {
-		if i > 0 {
-			sb.WriteString("\n")
+	for i := range c.blocks {
+		blk := &c.blocks[i]
+		if blk.rendered == "" {
+			var buf strings.Builder
+			if i > 0 {
+				buf.WriteString("\n")
+			}
+			c.renderBlock(&buf, blk)
+			blk.rendered = buf.String()
 		}
-		switch blk.kind {
-		case blockUser:
-			c.renderUser(&sb, blk)
-		case blockAssistantText:
-			c.renderAssistant(&sb, blk)
-		case blockThinking:
-			c.renderThinking(&sb, blk)
-		case blockToolCall:
-			c.renderToolCall(&sb, blk)
-		case blockError:
-			c.renderError(&sb, blk)
-		case blockSystem:
-			c.renderSystem(&sb, blk)
-		case blockPlugin:
-			c.renderPlugin(&sb, blk)
-		case blockCompaction:
-			c.renderCompaction(&sb, blk)
-		}
+		sb.WriteString(blk.rendered)
 	}
 
 	c.viewport.SetContent(sb.String())
@@ -392,6 +405,28 @@ func (c *ChatView) rebuildContent() {
 		c.hasNewBelow = false
 	} else {
 		c.hasNewBelow = true
+	}
+}
+
+// renderBlock dispatches to the appropriate block renderer.
+func (c *ChatView) renderBlock(sb *strings.Builder, blk *chatBlock) {
+	switch blk.kind {
+	case blockUser:
+		c.renderUser(sb, *blk)
+	case blockAssistantText:
+		c.renderAssistant(sb, *blk)
+	case blockThinking:
+		c.renderThinking(sb, *blk)
+	case blockToolCall:
+		c.renderToolCall(sb, *blk)
+	case blockError:
+		c.renderError(sb, *blk)
+	case blockSystem:
+		c.renderSystem(sb, *blk)
+	case blockPlugin:
+		c.renderPlugin(sb, *blk)
+	case blockCompaction:
+		c.renderCompaction(sb, *blk)
 	}
 }
 
@@ -539,6 +574,7 @@ func (c *ChatView) ToggleCompaction() {
 	for i := len(c.blocks) - 1; i >= 0; i-- {
 		if c.blocks[i].kind == blockCompaction {
 			c.blocks[i].collapsed = !c.blocks[i].collapsed
+			c.blocks[i].rendered = ""
 			c.rebuildContent()
 			return
 		}
