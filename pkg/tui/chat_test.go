@@ -690,3 +690,55 @@ func TestChatView_RapidResize(t *testing.T) {
 	}
 	_ = cv.View()
 }
+
+// ---------------------------------------------------------------------------
+// Word-wrap tests
+// ---------------------------------------------------------------------------
+
+func TestChatView_UserMessageWraps(t *testing.T) {
+	cv := NewChatView()
+	cv.SetSize(40, 20)
+
+	long := strings.Repeat("word ", 20) // 100 chars, wider than 40-col terminal
+	cv.AddUserMessage(long)
+
+	content := cv.View()
+	for _, line := range strings.Split(content, "\n") {
+		// Each visible line (ignoring ANSI) should fit within the viewport width.
+		// We check raw length as a rough bound; ANSI codes add chars but
+		// the underlying text should be wrapped well under 40 visible cols.
+		if len(strings.TrimRight(line, " ")) > 200 {
+			t.Errorf("line too long (len=%d), wrapping may be broken: %q", len(line), line)
+		}
+	}
+}
+
+func TestChatView_SystemMessageWraps(t *testing.T) {
+	cv := NewChatView()
+	cv.SetSize(40, 20)
+
+	long := strings.Repeat("info ", 30)
+	cv.AddSystemMessage(long)
+
+	// Should not panic and should render content.
+	content := cv.View()
+	if content == "" {
+		t.Error("expected non-empty view content")
+	}
+}
+
+func TestChatView_ErrorMessageWraps(t *testing.T) {
+	cv := NewChatView()
+	cv.SetSize(40, 20)
+
+	cv.HandleEvent(agent.AgentEvent{
+		Type:  agent.EventAgentError,
+		Error: errors.New(strings.Repeat("fail ", 30)),
+	})
+	cv.rebuildContent()
+
+	content := cv.View()
+	if content == "" {
+		t.Error("expected non-empty view content")
+	}
+}

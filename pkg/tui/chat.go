@@ -10,8 +10,10 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/ejm/go_pi/pkg/agent"
 	"github.com/ejm/go_pi/pkg/ai"
+	"github.com/muesli/reflow/wordwrap"
 )
 
 // ---------------------------------------------------------------------------
@@ -365,7 +367,11 @@ func (c *ChatView) rebuildContent() {
 func (c *ChatView) renderUser(sb *strings.Builder, blk chatBlock) {
 	label := UserRoleStyle.Render("You:")
 	sb.WriteString(label + " ")
-	sb.WriteString(UserMsgStyle.Render(blk.text))
+	w := c.width - lipgloss.Width(label) - 1
+	if w < 20 {
+		w = 20
+	}
+	sb.WriteString(UserMsgStyle.Render(wordwrap.String(blk.text, w)))
 	sb.WriteString("\n")
 }
 
@@ -428,25 +434,31 @@ func (c *ChatView) renderToolCall(sb *strings.Builder, blk chatBlock) {
 }
 
 func (c *ChatView) renderError(sb *strings.Builder, blk chatBlock) {
-	sb.WriteString(ErrorMsgStyle.Render("Error: "+blk.text) + "\n")
+	w := c.msgWidth()
+	sb.WriteString(ErrorMsgStyle.Render(wordwrap.String("Error: "+blk.text, w)) + "\n")
 }
 
 func (c *ChatView) renderSystem(sb *strings.Builder, blk chatBlock) {
-	sb.WriteString(SystemMsgStyle.Render(blk.text) + "\n")
+	w := c.msgWidth()
+	sb.WriteString(SystemMsgStyle.Render(wordwrap.String(blk.text, w)) + "\n")
 }
 
 func (c *ChatView) renderPlugin(sb *strings.Builder, blk chatBlock) {
 	label := PluginNameStyle.Render(fmt.Sprintf("[%s]", blk.pluginName))
 
 	if blk.logLevel != "" {
-		// Log message — single line with level-appropriate styling.
+		// Log message with level-appropriate styling, wrapped to fit.
+		w := c.width - lipgloss.Width(label) - 1
+		if w < 20 {
+			w = 20
+		}
 		switch blk.logLevel {
 		case "error":
-			sb.WriteString(label + " " + ErrorMsgStyle.Render(blk.text) + "\n")
+			sb.WriteString(label + " " + ErrorMsgStyle.Render(wordwrap.String(blk.text, w)) + "\n")
 		case "warn":
-			sb.WriteString(label + " " + PluginLogWarnStyle.Render(blk.text) + "\n")
+			sb.WriteString(label + " " + PluginLogWarnStyle.Render(wordwrap.String(blk.text, w)) + "\n")
 		default:
-			sb.WriteString(label + " " + MutedStyle.Render(blk.text) + "\n")
+			sb.WriteString(label + " " + MutedStyle.Render(wordwrap.String(blk.text, w)) + "\n")
 		}
 		return
 	}
@@ -516,6 +528,15 @@ func (c *ChatView) lastBlock(kind chatBlockKind) *chatBlock {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+// msgWidth returns the available width for full-width message text.
+func (c *ChatView) msgWidth() int {
+	w := c.width - 2
+	if w < 20 {
+		w = 20
+	}
+	return w
+}
 
 // formatArgs produces a compact key: value summary of tool arguments.
 func formatArgs(args map[string]any) string {
