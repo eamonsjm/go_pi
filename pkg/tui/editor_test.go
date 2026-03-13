@@ -471,6 +471,156 @@ func TestEditor_History_UpNoopWhenEmpty(t *testing.T) {
 	_ = cmd
 }
 
+// ---------------------------------------------------------------------------
+// Tab completion
+// ---------------------------------------------------------------------------
+
+func TestEditor_Tab_UniqueMatch(t *testing.T) {
+	e := NewEditor()
+	reg := NewCommandRegistry()
+	reg.Register(&SlashCommand{Name: "compact", Description: "Compact context"})
+	reg.Register(&SlashCommand{Name: "model", Description: "Switch model"})
+	e.SetCommands(reg)
+	e.textarea.SetValue("/com")
+
+	e.Update(tea.KeyMsg{Type: tea.KeyTab})
+	// Unique match should complete with trailing space.
+	if got := e.Value(); got != "/compact " {
+		t.Errorf("expected '/compact ' (with space), got %q", got)
+	}
+}
+
+func TestEditor_Tab_MultipleMatches_Cycles(t *testing.T) {
+	e := NewEditor()
+	reg := NewCommandRegistry()
+	reg.Register(&SlashCommand{Name: "model", Description: "Switch model"})
+	reg.Register(&SlashCommand{Name: "module", Description: "Load module"})
+	reg.Register(&SlashCommand{Name: "compact", Description: "Compact context"})
+	e.SetCommands(reg)
+	e.textarea.SetValue("/mod")
+
+	// First Tab — first match (alphabetically: model).
+	e.Update(tea.KeyMsg{Type: tea.KeyTab})
+	if got := e.Value(); got != "/model" {
+		t.Errorf("expected '/model', got %q", got)
+	}
+
+	// Second Tab — second match (module).
+	e.Update(tea.KeyMsg{Type: tea.KeyTab})
+	if got := e.Value(); got != "/module" {
+		t.Errorf("expected '/module', got %q", got)
+	}
+
+	// Third Tab — wraps back to first.
+	e.Update(tea.KeyMsg{Type: tea.KeyTab})
+	if got := e.Value(); got != "/model" {
+		t.Errorf("expected '/model' (wrap), got %q", got)
+	}
+}
+
+func TestEditor_Tab_NoMatch(t *testing.T) {
+	e := NewEditor()
+	reg := NewCommandRegistry()
+	reg.Register(&SlashCommand{Name: "model", Description: "Switch model"})
+	e.SetCommands(reg)
+	e.textarea.SetValue("/xyz")
+
+	e.Update(tea.KeyMsg{Type: tea.KeyTab})
+	// No match — text unchanged.
+	if got := e.Value(); got != "/xyz" {
+		t.Errorf("expected '/xyz' unchanged, got %q", got)
+	}
+}
+
+func TestEditor_Tab_NoCommands(t *testing.T) {
+	e := NewEditor()
+	e.textarea.SetValue("/foo")
+
+	e.Update(tea.KeyMsg{Type: tea.KeyTab})
+	if got := e.Value(); got != "/foo" {
+		t.Errorf("expected '/foo' unchanged, got %q", got)
+	}
+}
+
+func TestEditor_Tab_NotSlash(t *testing.T) {
+	e := NewEditor()
+	reg := NewCommandRegistry()
+	reg.Register(&SlashCommand{Name: "model", Description: "Switch model"})
+	e.SetCommands(reg)
+	e.textarea.SetValue("hello")
+
+	e.Update(tea.KeyMsg{Type: tea.KeyTab})
+	// Non-slash text — Tab should not alter content.
+	if got := e.Value(); got != "hello" {
+		t.Errorf("expected 'hello' unchanged, got %q", got)
+	}
+}
+
+func TestEditor_Tab_AlreadyHasArgs(t *testing.T) {
+	e := NewEditor()
+	reg := NewCommandRegistry()
+	reg.Register(&SlashCommand{Name: "model", Description: "Switch model"})
+	e.SetCommands(reg)
+	e.textarea.SetValue("/model gpt")
+
+	e.Update(tea.KeyMsg{Type: tea.KeyTab})
+	// Space already present — no completion.
+	if got := e.Value(); got != "/model gpt" {
+		t.Errorf("expected '/model gpt' unchanged, got %q", got)
+	}
+}
+
+func TestEditor_Tab_CycleResetOnOtherKey(t *testing.T) {
+	e := NewEditor()
+	reg := NewCommandRegistry()
+	reg.Register(&SlashCommand{Name: "model", Description: "Switch model"})
+	reg.Register(&SlashCommand{Name: "module", Description: "Load module"})
+	e.SetCommands(reg)
+	e.textarea.SetValue("/mod")
+
+	// Start cycling.
+	e.Update(tea.KeyMsg{Type: tea.KeyTab})
+	if got := e.Value(); got != "/model" {
+		t.Fatalf("expected '/model', got %q", got)
+	}
+
+	// Type a character — resets tab state.
+	e.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+
+	// Verify tab state was cleared.
+	if e.tabMatches != nil {
+		t.Error("expected tabMatches to be nil after non-Tab key")
+	}
+}
+
+func TestEditor_Tab_SpaceAfterUniqueCompletion(t *testing.T) {
+	e := NewEditor()
+	reg := NewCommandRegistry()
+	reg.Register(&SlashCommand{Name: "login", Description: "Log in"})
+	e.SetCommands(reg)
+	e.textarea.SetValue("/lo")
+
+	e.Update(tea.KeyMsg{Type: tea.KeyTab})
+	got := e.Value()
+	if got != "/login " {
+		t.Errorf("expected '/login ' with trailing space, got %q", got)
+	}
+}
+
+func TestEditor_Tab_WorksWhileRunning(t *testing.T) {
+	e := NewEditor()
+	e.state = editorRunning
+	reg := NewCommandRegistry()
+	reg.Register(&SlashCommand{Name: "compact", Description: "Compact context"})
+	e.SetCommands(reg)
+	e.textarea.SetValue("/com")
+
+	e.Update(tea.KeyMsg{Type: tea.KeyTab})
+	if got := e.Value(); got != "/compact " {
+		t.Errorf("expected '/compact ' while running, got %q", got)
+	}
+}
+
 func TestEditor_History_DownNoopWhenNotInHistory(t *testing.T) {
 	e := NewEditor()
 	submitText(e, "hello")

@@ -51,6 +51,12 @@ type Editor struct {
 	// ctrlCCount tracks consecutive Ctrl-C presses while idle so the user
 	// must press it twice to quit.
 	ctrlCCount int
+
+	// tabMatches holds the set of matching commands during Tab cycling.
+	// tabIndex is the current position in that set.  Both are reset on
+	// any non-Tab keypress.
+	tabMatches []*SlashCommand
+	tabIndex   int
 }
 
 // NewEditor creates an Editor ready for use.
@@ -176,6 +182,9 @@ func (e *Editor) Update(msg tea.Msg) tea.Cmd {
 			}
 			return nil
 
+		case tea.KeyTab:
+			return e.handleTab()
+
 		case tea.KeyEnter:
 			// Submit on Enter (no shift).
 			text := e.textarea.Value()
@@ -252,6 +261,11 @@ func (e *Editor) Update(msg tea.Msg) tea.Cmd {
 		if msg.Type != tea.KeyCtrlC {
 			e.ctrlCCount = 0
 		}
+		// Reset tab-completion state on any non-Tab keypress.
+		if msg.Type != tea.KeyTab {
+			e.tabMatches = nil
+			e.tabIndex = 0
+		}
 	}
 
 	var cmd tea.Cmd
@@ -314,6 +328,57 @@ func (e *Editor) borderStyle() lipgloss.Style {
 	default:
 		return EditorStyle
 	}
+}
+
+// handleTab performs slash-command tab completion.  On a unique match the
+// partial is replaced with the full command name followed by a space.  When
+// multiple commands match, repeated Tab presses cycle through them.
+func (e *Editor) handleTab() tea.Cmd {
+	if e.commands == nil {
+		return nil
+	}
+	text := e.textarea.Value()
+	if !strings.HasPrefix(text, "/") || strings.Contains(text, "\n") {
+		return nil
+	}
+
+	rest := text[1:]
+	// If the text already contains a space the user is typing args — no
+	// completion to offer.
+	if strings.ContainsRune(rest, ' ') {
+		return nil
+	}
+
+	// On first Tab press (no active cycle), compute matches from the typed
+	// prefix.  On subsequent presses, reuse the existing match set and
+	// advance the index.
+	if e.tabMatches == nil {
+		matches := e.commands.Match(rest)
+		if len(matches) == 0 {
+			return nil
+		}
+		e.tabMatches = matches
+		e.tabIndex = 0
+	} else {
+		e.tabIndex = (e.tabIndex + 1) % len(e.tabMatches)
+	}
+
+	chosen := e.tabMatches[e.tabIndex]
+	if len(e.tabMatches) == 1 {
+		// Unique match — complete with a trailing space so the user can
+		// start typing args immediately.
+		e.textarea.SetValue("/" + chosen.Name + " ")
+		e.textarea.CursorEnd()
+		// Clear cycle state since completion is final.
+		e.tabMatches = nil
+		e.tabIndex = 0
+	} else {
+		// Multiple matches — show the current candidate without trailing
+		// space so the user can keep cycling.
+		e.textarea.SetValue("/" + chosen.Name)
+		e.textarea.CursorEnd()
+	}
+	return nil
 }
 
 // parseSlashCommand splits "/name some args" into ("name", "some args").
