@@ -2,6 +2,7 @@ package tui
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -374,7 +375,7 @@ func TestApp_View_Quitting(t *testing.T) {
 	app.quitting = true
 	view := app.View()
 	stripped := stripAnsi(view)
-	if !containsSubstring(stripped, "Goodbye") {
+	if !strings.Contains(stripped, "Goodbye") {
 		t.Errorf("expected 'Goodbye' message, got %q", stripped)
 	}
 }
@@ -405,7 +406,7 @@ func TestApp_View_ModelSelectorOverlay(t *testing.T) {
 	app.modelSelector.Show()
 	view := app.View()
 	stripped := stripAnsi(view)
-	if !containsSubstring(stripped, "Select Model") {
+	if !strings.Contains(stripped, "Select Model") {
 		t.Error("expected model selector overlay in view")
 	}
 }

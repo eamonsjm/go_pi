@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/ejm/go_pi/pkg/ai"
@@ -61,7 +62,7 @@ func TestHeader_View_ContainsModel(t *testing.T) {
 	h.SetModel("test-model")
 	view := h.View()
 	stripped := stripAnsi(view)
-	if !containsSubstring(stripped, "test-model") {
+	if !strings.Contains(stripped, "test-model") {
 		t.Errorf("expected View to contain model name, got %q", stripped)
 	}
 }
@@ -72,7 +73,7 @@ func TestHeader_View_ContainsThinking(t *testing.T) {
 	h.SetThinking(ai.ThinkingHigh)
 	view := h.View()
 	stripped := stripAnsi(view)
-	if !containsSubstring(stripped, "thinking: high") {
+	if !strings.Contains(stripped, "thinking: high") {
 		t.Errorf("expected View to contain thinking indicator, got %q", stripped)
 	}
 }
@@ -83,7 +84,7 @@ func TestHeader_View_NoThinkingWhenOff(t *testing.T) {
 	h.SetThinking(ai.ThinkingOff)
 	view := h.View()
 	stripped := stripAnsi(view)
-	if containsSubstring(stripped, "thinking:") {
+	if strings.Contains(stripped, "thinking:") {
 		t.Errorf("expected no thinking indicator when off, got %q", stripped)
 	}
 }
@@ -94,7 +95,7 @@ func TestHeader_View_ContainsSession(t *testing.T) {
 	h.SetSession("my-session")
 	view := h.View()
 	stripped := stripAnsi(view)
-	if !containsSubstring(stripped, "my-session") {
+	if !strings.Contains(stripped, "my-session") {
 		t.Errorf("expected View to contain session name, got %q", stripped)
 	}
 }
@@ -104,21 +105,8 @@ func TestHeader_View_ContainsGi(t *testing.T) {
 	h.SetWidth(80)
 	view := h.View()
 	stripped := stripAnsi(view)
-	if !containsSubstring(stripped, "gi") {
+	if !strings.Contains(stripped, "gi") {
 		t.Errorf("expected View to contain app name 'gi', got %q", stripped)
 	}
 }
 
-// containsSubstring checks if s contains substr.
-func containsSubstring(s, substr string) bool {
-	return len(s) >= len(substr) && searchString(s, substr)
-}
-
-func searchString(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
-}

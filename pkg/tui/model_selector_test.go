@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -286,7 +287,7 @@ func TestModelSelector_View_Visible(t *testing.T) {
 	ms.SetSize(80, 40)
 	view := ms.View()
 	stripped := stripAnsi(view)
-	if !containsSubstring(stripped, "Select Model") {
+	if !strings.Contains(stripped, "Select Model") {
 		t.Error("expected 'Select Model' title in view")
 	}
 }

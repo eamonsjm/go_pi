@@ -3,6 +3,7 @@ package tui
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ejm/go_pi/pkg/agent"
@@ -290,30 +291,9 @@ func TestSettingsDisplay_ShowsCurrentValues(t *testing.T) {
 	// Check that current values appear in the display.
 	checks := []string{"openai", "gpt-4", "high", "4096"}
 	for _, want := range checks {
-		found := false
-		if len(display.text) > 0 {
-			for _, line := range []string{display.text} {
-				if contains(line, want) {
-					found = true
-					break
-				}
-			}
-		}
-		if !found {
+		if !strings.Contains(display.text, want) {
 			t.Errorf("display text should contain %q", want)
 		}
 	}
 }
 
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsSubstr(s, substr))
-}
-
-func containsSubstr(s, sub string) bool {
-	for i := 0; i <= len(s)-len(sub); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
-		}
-	}
-	return false
-}
