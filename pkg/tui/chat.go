@@ -62,6 +62,11 @@ type ChatView struct {
 
 	// Markdown renderer (created once, re-used).
 	renderer *glamour.TermRenderer
+
+	// hasNewBelow is true when content has grown while the viewport is
+	// scrolled away from the bottom. Cleared when the viewport reaches
+	// the bottom again (via auto-scroll or user scroll).
+	hasNewBelow bool
 }
 
 // NewChatView creates a ChatView with sensible defaults.
@@ -315,11 +320,34 @@ func (c *ChatView) ToggleToolResult() {
 func (c *ChatView) Update(msg tea.Msg) tea.Cmd {
 	var cmd tea.Cmd
 	c.viewport, cmd = c.viewport.Update(msg)
+	if c.viewport.AtBottom() {
+		c.hasNewBelow = false
+	}
 	return cmd
 }
 
 func (c *ChatView) View() string {
-	return c.viewport.View()
+	view := c.viewport.View()
+	if !c.hasNewBelow {
+		return view
+	}
+
+	// Overlay a "new content below" indicator on the last line.
+	lines := strings.Split(view, "\n")
+	if len(lines) == 0 {
+		return view
+	}
+
+	indicator := NewContentBelowStyle.Render("↓ new content below ↓")
+	indicatorWidth := lipgloss.Width(indicator)
+
+	padding := (c.width - indicatorWidth) / 2
+	if padding < 0 {
+		padding = 0
+	}
+
+	lines[len(lines)-1] = strings.Repeat(" ", padding) + indicator
+	return strings.Join(lines, "\n")
 }
 
 // ---------------------------------------------------------------------------
@@ -361,6 +389,9 @@ func (c *ChatView) rebuildContent() {
 	c.viewport.SetContent(sb.String())
 	if wasAtBottom {
 		c.viewport.GotoBottom()
+		c.hasNewBelow = false
+	} else {
+		c.hasNewBelow = true
 	}
 }
 

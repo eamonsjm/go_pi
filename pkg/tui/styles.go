@@ -138,4 +138,10 @@ var (
 	SystemMsgStyle = lipgloss.NewStyle().
 			Foreground(ColorMuted).
 			Italic(true)
+
+	NewContentBelowStyle = lipgloss.NewStyle().
+				Foreground(ColorText).
+				Background(lipgloss.Color("#374151")).
+				Bold(true).
+				Padding(0, 1)
 )

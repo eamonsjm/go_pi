@@ -2,6 +2,7 @@ package tui
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -795,6 +796,93 @@ func TestRebuildChatFromMessages_ToolBlocks(t *testing.T) {
 	}
 	if !hasTool {
 		t.Error("expected tool call block")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Auto-scroll / new-content-below indicator tests
+// ---------------------------------------------------------------------------
+
+func TestChatView_HasNewBelow_AtBottom(t *testing.T) {
+	cv := NewChatView()
+	cv.SetSize(80, 24)
+
+	// Initially at bottom — hasNewBelow should be false.
+	cv.HandleEvent(agent.AgentEvent{Type: agent.EventAssistantText, Delta: "hello"})
+	cv.rebuildContent()
+	if cv.hasNewBelow {
+		t.Error("expected hasNewBelow=false when viewport is at bottom")
+	}
+}
+
+func TestChatView_HasNewBelow_ScrolledUp(t *testing.T) {
+	cv := NewChatView()
+	cv.SetSize(80, 5) // small viewport
+
+	// Fill content beyond viewport height.
+	for i := 0; i < 20; i++ {
+		cv.HandleEvent(agent.AgentEvent{
+			Type:  agent.EventAssistantText,
+			Delta: fmt.Sprintf("line %d\n", i),
+		})
+	}
+	cv.rebuildContent()
+	// Viewport auto-scrolled to bottom — hasNewBelow should be false.
+	if cv.hasNewBelow {
+		t.Error("expected hasNewBelow=false after initial scroll-to-bottom")
+	}
+
+	// Simulate user scrolling up by setting offset manually.
+	cv.viewport.YOffset = 0
+
+	// New content arrives.
+	cv.HandleEvent(agent.AgentEvent{
+		Type:  agent.EventAssistantText,
+		Delta: "new content\n",
+	})
+	cv.rebuildContent()
+	if !cv.hasNewBelow {
+		t.Error("expected hasNewBelow=true when scrolled up and content grows")
+	}
+
+	// View should contain the indicator.
+	view := cv.View()
+	if !strings.Contains(view, "new content below") {
+		t.Error("expected 'new content below' indicator in view")
+	}
+}
+
+func TestChatView_HasNewBelow_ClearedOnScrollToBottom(t *testing.T) {
+	cv := NewChatView()
+	cv.SetSize(80, 5)
+
+	// Fill content and scroll up.
+	for i := 0; i < 20; i++ {
+		cv.HandleEvent(agent.AgentEvent{
+			Type:  agent.EventAssistantText,
+			Delta: fmt.Sprintf("line %d\n", i),
+		})
+	}
+	cv.rebuildContent()
+	cv.viewport.YOffset = 0
+	cv.HandleEvent(agent.AgentEvent{Type: agent.EventAssistantText, Delta: "more\n"})
+	cv.rebuildContent()
+	if !cv.hasNewBelow {
+		t.Fatal("precondition: hasNewBelow should be true")
+	}
+
+	// Scroll back to bottom.
+	cv.viewport.GotoBottom()
+	// Simulate Update being called (which checks AtBottom).
+	cv.Update(nil)
+	if cv.hasNewBelow {
+		t.Error("expected hasNewBelow=false after scrolling back to bottom")
+	}
+
+	// View should NOT contain the indicator.
+	view := cv.View()
+	if strings.Contains(view, "new content below") {
+		t.Error("indicator should not appear when at bottom")
 	}
 }
 
