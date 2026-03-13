@@ -460,7 +460,7 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 				"Use /auth to check status. (%v)", providerErr))
 	}
 
-	p := tea.NewProgram(app, tea.WithAltScreen())
+	p := tea.NewProgram(app, tea.WithAltScreen(), tea.WithMouseCellMotion())
 
 	// Wire up callbacks
 	app.SetCallbacks(

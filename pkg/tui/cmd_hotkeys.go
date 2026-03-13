@@ -31,6 +31,18 @@ func NewHotkeysCommand(kb *KeybindingConfig) *SlashCommand {
 				sb.WriteString(fmt.Sprintf("    %-20s  %s\n", f[0], f[1]))
 			}
 
+			// Viewport navigation.
+			sb.WriteString("\n  Viewport navigation:\n")
+			viewport := [][2]string{
+				{"Up/Down", "Scroll one line"},
+				{"PgUp/PgDn", "Scroll one page"},
+				{"Home/End", "Jump to top/bottom"},
+				{"Mouse wheel", "Scroll viewport"},
+			}
+			for _, v := range viewport {
+				sb.WriteString(fmt.Sprintf("    %-20s  %s\n", v[0], v[1]))
+			}
+
 			// Customizable bindings.
 			sb.WriteString("\n  Customizable:\n")
 			for _, b := range kb.AllBindings() {
