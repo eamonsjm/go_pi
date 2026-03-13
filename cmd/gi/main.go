@@ -483,8 +483,8 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 					p.Send(tui.StreamEventMsg{Event: event})
 					pluginMgr.ForwardEvent(event)
 
-					// Save assistant messages to session
-					if event.Type == agent.EventTurnEnd && event.Message != nil {
+					// Save assistant and tool_result messages to session
+					if (event.Type == agent.EventTurnEnd || event.Type == agent.EventToolResult) && event.Message != nil {
 						sessionMgr.SaveMessage(*event.Message)
 					}
 				}

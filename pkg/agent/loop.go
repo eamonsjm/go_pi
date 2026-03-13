@@ -247,13 +247,16 @@ func (a *AgentLoop) run(ctx context.Context) error {
 			}
 
 			a.appendMessage(toolResult)
+			a.emit(AgentEvent{Type: EventToolResult, Message: &toolResult})
 
 			// Check for steering after execution too.
 			select {
 			case steerMsg := <-a.steerCh:
 				// Current tool already has a result; skip remaining tools.
 				for _, remaining := range toolCalls[i+1:] {
-					a.appendMessage(ai.NewToolResultMessage(remaining.ToolUseID, "tool execution skipped: user sent a new message", true))
+					skipResult := ai.NewToolResultMessage(remaining.ToolUseID, "tool execution skipped: user sent a new message", true)
+					a.appendMessage(skipResult)
+					a.emit(AgentEvent{Type: EventToolResult, Message: &skipResult})
 				}
 				a.appendMessage(ai.NewTextMessage(ai.RoleUser, steerMsg))
 				steered = true
@@ -440,11 +443,15 @@ func (a *AgentLoop) addSteeringSkipResults(toolCalls []ai.ContentBlock, skipAfte
 		if tc.ToolUseID == skipAfterID {
 			skipping = true
 			// This tool call itself is being skipped — add a result for it.
-			a.appendMessage(ai.NewToolResultMessage(tc.ToolUseID, "tool execution skipped: user sent a new message", true))
+			skipResult := ai.NewToolResultMessage(tc.ToolUseID, "tool execution skipped: user sent a new message", true)
+			a.appendMessage(skipResult)
+			a.emit(AgentEvent{Type: EventToolResult, Message: &skipResult})
 			continue
 		}
 		if skipping {
-			a.appendMessage(ai.NewToolResultMessage(tc.ToolUseID, "tool execution skipped: user sent a new message", true))
+			skipResult := ai.NewToolResultMessage(tc.ToolUseID, "tool execution skipped: user sent a new message", true)
+			a.appendMessage(skipResult)
+			a.emit(AgentEvent{Type: EventToolResult, Message: &skipResult})
 		}
 	}
 }

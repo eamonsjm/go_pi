@@ -14,6 +14,7 @@ const (
 	EventAssistantThinking AgentEventType = "assistant_thinking"
 	EventToolExecStart     AgentEventType = "tool_exec_start"
 	EventToolExecEnd       AgentEventType = "tool_exec_end"
+	EventToolResult        AgentEventType = "tool_result"
 	EventUsageUpdate       AgentEventType = "usage_update"
 	EventAgentError        AgentEventType = "agent_error"
 	EventCompaction        AgentEventType = "compaction"
