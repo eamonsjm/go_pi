@@ -305,6 +305,63 @@ func TestEditor_CommandHint_Multiline(t *testing.T) {
 	}
 }
 
+func TestEditor_SlashCommand_WhileRunning(t *testing.T) {
+	e := NewEditor()
+	e.state = editorRunning
+	e.textarea.SetValue("/compact")
+
+	cmd := e.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("slash command while running should return a command")
+	}
+	msg := cmd()
+	cmdMsg, ok := msg.(editorCommandMsg)
+	if !ok {
+		t.Fatalf("expected editorCommandMsg, got %T", msg)
+	}
+	if cmdMsg.name != "compact" {
+		t.Errorf("expected command name 'compact', got %q", cmdMsg.name)
+	}
+}
+
+func TestEditor_SlashCommand_WhileThinking(t *testing.T) {
+	e := NewEditor()
+	e.state = editorThinking
+	e.textarea.SetValue("/clear")
+
+	cmd := e.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("slash command while thinking should return a command")
+	}
+	msg := cmd()
+	cmdMsg, ok := msg.(editorCommandMsg)
+	if !ok {
+		t.Fatalf("expected editorCommandMsg, got %T", msg)
+	}
+	if cmdMsg.name != "clear" {
+		t.Errorf("expected command name 'clear', got %q", cmdMsg.name)
+	}
+}
+
+func TestEditor_Steering_NonSlash_WhileRunning(t *testing.T) {
+	e := NewEditor()
+	e.state = editorRunning
+	e.textarea.SetValue("do something else")
+
+	cmd := e.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("non-slash text while running should return a command")
+	}
+	msg := cmd()
+	steerMsg, ok := msg.(editorSteerMsg)
+	if !ok {
+		t.Fatalf("expected editorSteerMsg, got %T", msg)
+	}
+	if steerMsg.text != "do something else" {
+		t.Errorf("expected steering text 'do something else', got %q", steerMsg.text)
+	}
+}
+
 // submitText simulates typing text and pressing Enter.
 func submitText(e *Editor, text string) {
 	e.textarea.SetValue(text)

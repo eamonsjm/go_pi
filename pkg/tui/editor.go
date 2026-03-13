@@ -191,8 +191,9 @@ func (e *Editor) Update(msg tea.Msg) tea.Cmd {
 			e.textarea.Reset()
 			e.ctrlCCount = 0
 
-			// Check for slash command (only when idle).
-			if e.state == editorIdle && strings.HasPrefix(text, "/") {
+			// Slash commands are always handled locally, regardless of
+			// whether the agent is idle or running.
+			if strings.HasPrefix(text, "/") {
 				name, args := parseSlashCommand(text)
 				return func() tea.Msg { return editorCommandMsg{name: name, args: args} }
 			}
