@@ -360,6 +360,48 @@ func TestHelperPlugin(t *testing.T) {
 		// Exit without reading anything — simulates crash.
 		os.Exit(1)
 
+	case "crash_after_delay":
+		// Initialize successfully, then crash after a short delay.
+		// Used for testing auto-restart.
+		if !scanner.Scan() {
+			os.Exit(1)
+		}
+		resp := PluginMessage{
+			Type: "capabilities",
+			Tools: []ToolDef{
+				{Name: "echo", Description: "echoes input", InputSchema: map[string]any{"type": "object"}},
+			},
+		}
+		data, _ := json.Marshal(resp)
+		fmt.Fprintln(os.Stdout, string(data))
+
+		// Serve requests briefly, then crash.
+		crashTimer := time.NewTimer(100 * time.Millisecond)
+		for {
+			select {
+			case <-crashTimer.C:
+				os.Exit(1)
+			default:
+			}
+			if !scanner.Scan() {
+				break
+			}
+			var req HostMessage
+			json.Unmarshal(scanner.Bytes(), &req)
+			switch req.Type {
+			case "tool_call":
+				r := PluginMessage{
+					Type:    "tool_result",
+					ID:      req.ID,
+					Content: "echoed:" + req.Name,
+				}
+				d, _ := json.Marshal(r)
+				fmt.Fprintln(os.Stdout, string(d))
+			case "shutdown":
+				os.Exit(0)
+			}
+		}
+
 	default:
 		fmt.Fprintf(os.Stderr, "unknown PLUGIN_MODE: %s\n", mode)
 		os.Exit(2)
@@ -402,6 +444,8 @@ func startTestPlugin(t *testing.T, mode string) *PluginProcess {
 	p := &PluginProcess{
 		name:       "test-plugin",
 		path:       os.Args[0],
+		args:       []string{"-test.run=TestHelperPlugin"},
+		env:        cmd.Env,
 		cmd:        cmd,
 		stdin:      stdinPipe,
 		scanner:    scanner,
@@ -827,5 +871,253 @@ func TestExecuteCommandOnClosedProcess(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "process closed") {
 		t.Errorf("error = %q, want containing %q", err.Error(), "process closed")
+	}
+}
+
+// --- Auto-restart tests ---
+
+func TestAutoRestart_RecoverFromCrash(t *testing.T) {
+	p := startTestPlugin(t, "echo_caps")
+	if err := p.Initialize(PluginConfig{}); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+
+	// Verify the plugin works before crash.
+	content, _, err := p.ExecuteTool("pre-crash", "echo", nil)
+	if err != nil {
+		t.Fatalf("ExecuteTool before crash: %v", err)
+	}
+	if content != "echoed:echo" {
+		t.Errorf("content = %q, want %q", content, "echoed:echo")
+	}
+
+	// Enable auto-restart with fast backoff for testing.
+	p.EnableAutoRestart(RestartConfig{
+		MaxAttempts:    3,
+		InitialBackoff: 50 * time.Millisecond,
+		MaxBackoff:     200 * time.Millisecond,
+	})
+
+	// Kill the process to simulate a crash.
+	p.cmd.Process.Kill()
+
+	// Wait for the supervisor to detect the crash and complete a restart.
+	// RestartCount >= 1 ensures the supervisor attempted restart.
+	// Alive() ensures the restart completed and the process is running.
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case <-deadline:
+			t.Fatalf("timed out waiting for plugin to restart (restartCount=%d, alive=%v, restarting=%v)",
+				p.RestartCount(), p.Alive(), p.Restarting())
+		default:
+		}
+		if p.RestartCount() >= 1 && p.Alive() {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	// Verify plugin works after restart.
+	content, _, err = p.ExecuteTool("post-crash", "echo", nil)
+	if err != nil {
+		t.Fatalf("ExecuteTool after restart: %v", err)
+	}
+	if content != "echoed:echo" {
+		t.Errorf("content = %q, want %q", content, "echoed:echo")
+	}
+
+	if p.RestartCount() < 1 {
+		t.Errorf("RestartCount() = %d, want >= 1", p.RestartCount())
+	}
+}
+
+func TestAutoRestart_NoRestartOnCleanShutdown(t *testing.T) {
+	p := startTestPlugin(t, "echo_caps")
+	if err := p.Initialize(PluginConfig{}); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+
+	p.EnableAutoRestart(RestartConfig{
+		MaxAttempts:    3,
+		InitialBackoff: 50 * time.Millisecond,
+		MaxBackoff:     200 * time.Millisecond,
+	})
+
+	// Clean shutdown should not trigger restart.
+	if err := p.Stop(); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+
+	if p.Alive() {
+		t.Error("process still alive after clean shutdown")
+	}
+	if p.RestartCount() != 0 {
+		t.Errorf("RestartCount() = %d, want 0 after clean shutdown", p.RestartCount())
+	}
+}
+
+func TestAutoRestart_MaxAttemptsExhausted(t *testing.T) {
+	p := startTestPlugin(t, "echo_caps")
+	if err := p.Initialize(PluginConfig{}); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+
+	p.EnableAutoRestart(RestartConfig{
+		MaxAttempts:    2,
+		InitialBackoff: 10 * time.Millisecond,
+		MaxBackoff:     20 * time.Millisecond,
+	})
+
+	// Switch the environment to exit_immediately so restarts fail.
+	p.mu.Lock()
+	p.env = append(os.Environ(),
+		"GO_PLUGIN_TEST_HELPER=1",
+		"PLUGIN_MODE=exit_immediately",
+	)
+	p.mu.Unlock()
+
+	// Kill current process to trigger restart.
+	p.cmd.Process.Kill()
+
+	// Wait for the supervisor to exhaust max attempts.
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for supervisor to give up")
+		default:
+		}
+
+		p.mu.Lock()
+		closed := p.closed
+		p.mu.Unlock()
+		if closed {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	if p.Alive() {
+		t.Error("process still alive after max attempts exhausted")
+	}
+}
+
+func TestAutoRestart_RestartingState(t *testing.T) {
+	p := startTestPlugin(t, "echo_caps")
+	if err := p.Initialize(PluginConfig{}); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+
+	p.EnableAutoRestart(RestartConfig{
+		MaxAttempts:    3,
+		InitialBackoff: 200 * time.Millisecond, // Longer backoff so we can observe restarting state
+		MaxBackoff:     1 * time.Second,
+	})
+
+	// Kill the process.
+	p.cmd.Process.Kill()
+
+	// Should enter restarting state.
+	deadline := time.After(2 * time.Second)
+	sawRestarting := false
+	for {
+		select {
+		case <-deadline:
+			if !sawRestarting {
+				t.Fatal("never saw restarting state")
+			}
+			return
+		default:
+		}
+
+		if p.Restarting() {
+			sawRestarting = true
+			// During restart, Alive should be false.
+			if p.Alive() {
+				t.Error("Alive() = true while restarting, want false")
+			}
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// Wait for restart to complete.
+	for {
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for restart to complete")
+		default:
+		}
+		if p.Alive() {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	if p.Restarting() {
+		t.Error("still restarting after plugin came back alive")
+	}
+}
+
+func TestAutoRestart_StopDuringRestart(t *testing.T) {
+	p := startTestPlugin(t, "echo_caps")
+	if err := p.Initialize(PluginConfig{}); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+
+	p.EnableAutoRestart(RestartConfig{
+		MaxAttempts:    5,
+		InitialBackoff: 500 * time.Millisecond, // Long backoff so we can stop during it
+		MaxBackoff:     2 * time.Second,
+	})
+
+	// Kill the process to trigger restart.
+	p.cmd.Process.Kill()
+
+	// Wait until restarting state is entered.
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for restarting state")
+		default:
+		}
+		if p.Restarting() {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// Stop during the backoff wait — should cancel promptly.
+	done := make(chan error, 1)
+	go func() {
+		done <- p.Stop()
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Stop during restart: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Stop did not return during restart backoff")
+	}
+
+	if p.Alive() {
+		t.Error("process still alive after stop during restart")
+	}
+}
+
+func TestDefaultRestartConfig(t *testing.T) {
+	cfg := DefaultRestartConfig()
+	if cfg.MaxAttempts != 5 {
+		t.Errorf("MaxAttempts = %d, want 5", cfg.MaxAttempts)
+	}
+	if cfg.InitialBackoff != 1*time.Second {
+		t.Errorf("InitialBackoff = %v, want 1s", cfg.InitialBackoff)
+	}
+	if cfg.MaxBackoff != 30*time.Second {
+		t.Errorf("MaxBackoff = %v, want 30s", cfg.MaxBackoff)
 	}
 }

@@ -33,6 +33,9 @@ func (t *PluginTool) Schema() any {
 // result. If the plugin reports an error, it is returned as a Go error.
 func (t *PluginTool) Execute(ctx context.Context, params map[string]any) (string, error) {
 	if !t.process.Alive() {
+		if t.process.Restarting() {
+			return "", fmt.Errorf("plugin %s is restarting after a crash", t.process.name)
+		}
 		return "", fmt.Errorf("plugin %s is not running", t.process.name)
 	}
 

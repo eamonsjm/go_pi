@@ -17,14 +17,23 @@ import (
 type Manager struct {
 	plugins      []*PluginProcess
 	toolRegistry *tools.Registry
+	restartCfg   *RestartConfig // if set, enables auto-restart for plugins
 }
 
 // NewManager creates a new plugin manager. The tool registry is used to register
 // plugin-provided tools alongside built-in tools.
 func NewManager(toolRegistry *tools.Registry) *Manager {
+	cfg := DefaultRestartConfig()
 	return &Manager{
 		toolRegistry: toolRegistry,
+		restartCfg:   &cfg,
 	}
+}
+
+// SetRestartConfig sets the restart configuration for plugins. If cfg is nil,
+// auto-restart is disabled.
+func (m *Manager) SetRestartConfig(cfg *RestartConfig) {
+	m.restartCfg = cfg
 }
 
 // Discover scans the given directories for plugins. Each subdirectory is
@@ -138,6 +147,10 @@ func (m *Manager) Initialize(cfg PluginConfig) error {
 		if err := m.initializePlugin(p, cfg); err != nil {
 			log.Printf("plugin: %s initialization failed: %v", p.name, err)
 			continue
+		}
+
+		if m.restartCfg != nil {
+			p.EnableAutoRestart(*m.restartCfg)
 		}
 
 		alive = append(alive, p)

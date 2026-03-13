@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -23,12 +24,35 @@ const (
 
 	// maxScannerBuffer is the maximum size of a single JSONL message (1 MB).
 	maxScannerBuffer = 1024 * 1024
+
+	// Default restart configuration values.
+	defaultMaxRestartAttempts    = 5
+	defaultInitialRestartBackoff = 1 * time.Second
+	defaultMaxRestartBackoff     = 30 * time.Second
 )
+
+// RestartConfig controls auto-restart behavior for crashed plugins.
+type RestartConfig struct {
+	MaxAttempts    int
+	InitialBackoff time.Duration
+	MaxBackoff     time.Duration
+}
+
+// DefaultRestartConfig returns a RestartConfig with default values.
+func DefaultRestartConfig() RestartConfig {
+	return RestartConfig{
+		MaxAttempts:    defaultMaxRestartAttempts,
+		InitialBackoff: defaultInitialRestartBackoff,
+		MaxBackoff:     defaultMaxRestartBackoff,
+	}
+}
 
 // PluginProcess manages a single plugin subprocess and its JSONL communication.
 type PluginProcess struct {
 	name         string
 	path         string
+	args         []string // arguments for subprocess (not including path)
+	env          []string // environment for subprocess (nil = inherit parent)
 	cmd          *exec.Cmd
 	stdin        io.WriteCloser
 	scanner      *bufio.Scanner
@@ -44,6 +68,19 @@ type PluginProcess struct {
 
 	// responseCh receives tool_result, command_result, and capabilities messages.
 	responseCh chan PluginMessage
+
+	// Auto-restart fields.
+	restartCfg   *RestartConfig // nil means no auto-restart
+	pluginCfg    PluginConfig   // saved for re-initialization on restart
+	restartCount int            // total restart attempts made
+	restarting   bool           // true while restart is in progress
+
+	// Supervisor fields (set when EnableAutoRestart is called).
+	supervised bool
+	ctx        context.Context
+	cancel     context.CancelFunc
+	stopped    chan struct{} // closed when supervisor exits
+	stopErr    error        // error from the last process exit
 }
 
 // startPlugin spawns a plugin subprocess and sets up JSONL communication pipes.
@@ -91,14 +128,22 @@ func startPlugin(name, path string) (*PluginProcess, error) {
 }
 
 // readLoop continuously reads JSONL messages from the plugin's stdout and
-// routes them to the appropriate channel.
+// routes them to the appropriate channel. It captures channel and scanner
+// references at entry so that a concurrent respawn does not cause it to
+// close the wrong channels.
 func (p *PluginProcess) readLoop() {
-	defer close(p.injectCh)
-	defer close(p.responseCh)
+	p.mu.Lock()
+	injectCh := p.injectCh
+	responseCh := p.responseCh
+	scanner := p.scanner
+	p.mu.Unlock()
 
-	for p.scanner.Scan() {
+	defer close(injectCh)
+	defer close(responseCh)
+
+	for scanner.Scan() {
 		var msg PluginMessage
-		if err := json.Unmarshal(p.scanner.Bytes(), &msg); err != nil {
+		if err := json.Unmarshal(scanner.Bytes(), &msg); err != nil {
 			log.Printf("plugin %s: skipping malformed JSON: %v", p.name, err)
 			continue
 		}
@@ -106,12 +151,12 @@ func (p *PluginProcess) readLoop() {
 		switch msg.Type {
 		case "inject_message", "log":
 			select {
-			case p.injectCh <- msg:
+			case injectCh <- msg:
 			default:
 				log.Printf("plugin %s: dropped %s message (channel full)", p.name, msg.Type)
 			}
 		case "capabilities", "tool_result", "command_result":
-			p.responseCh <- msg
+			responseCh <- msg
 		}
 	}
 }
@@ -140,11 +185,15 @@ func (p *PluginProcess) Send(msg HostMessage) error {
 
 // waitResponse waits for a response message on the response channel with a timeout.
 func (p *PluginProcess) waitResponse(timeout time.Duration) (PluginMessage, error) {
+	p.mu.Lock()
+	responseCh := p.responseCh
+	p.mu.Unlock()
+
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 
 	select {
-	case msg, ok := <-p.responseCh:
+	case msg, ok := <-responseCh:
 		if !ok {
 			return PluginMessage{}, fmt.Errorf("plugin %s: process exited", p.name)
 		}
@@ -155,7 +204,10 @@ func (p *PluginProcess) waitResponse(timeout time.Duration) (PluginMessage, erro
 }
 
 // Initialize sends the initialize message and waits for a capabilities response.
+// The config is saved for automatic re-initialization on restart.
 func (p *PluginProcess) Initialize(cfg PluginConfig) error {
+	p.pluginCfg = cfg
+
 	if err := p.Send(HostMessage{
 		Type:   "initialize",
 		Config: &cfg,
@@ -234,13 +286,18 @@ func (p *PluginProcess) SendEvent(event EventPayload) error {
 }
 
 // InjectMessages returns the channel for receiving inject_message and log
-// messages from the plugin.
+// messages from the plugin. Note: when a plugin restarts, this channel is
+// closed and a new one is created internally; callers that need inject
+// messages after restart should call InjectMessages() again.
 func (p *PluginProcess) InjectMessages() <-chan PluginMessage {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	return p.injectCh
 }
 
 // Stop sends a shutdown message and waits for the plugin process to exit.
 // If the process does not exit within shutdownTimeout, it is killed.
+// When auto-restart is enabled, Stop cancels any pending restarts first.
 func (p *PluginProcess) Stop() error {
 	p.mu.Lock()
 	if p.closed {
@@ -248,13 +305,25 @@ func (p *PluginProcess) Stop() error {
 		return nil
 	}
 	p.closed = true
+	supervised := p.supervised
 	p.mu.Unlock()
 
-	// Best-effort shutdown message.
-	_ = p.Send(HostMessage{Type: "shutdown"})
+	if supervised {
+		// Cancel pending restarts and signal the supervisor to stop.
+		p.cancel()
+
+		// Send shutdown to the current process.
+		p.shutdownCurrentProcess()
+
+		// Wait for the supervisor goroutine to finish.
+		<-p.stopped
+		return p.stopErr
+	}
+
+	// Unsupervised path (original behavior).
+	_ = p.sendShutdownDirect()
 	_ = p.stdin.Close()
 
-	// Wait for process exit with timeout.
 	done := make(chan error, 1)
 	go func() {
 		done <- p.cmd.Wait()
@@ -267,12 +336,36 @@ func (p *PluginProcess) Stop() error {
 	case err := <-done:
 		return err
 	case <-timer.C:
-		// Force kill.
 		if p.cmd.Process != nil {
 			_ = p.cmd.Process.Kill()
 		}
 		return fmt.Errorf("plugin %s: killed after shutdown timeout", p.name)
 	}
+}
+
+// sendShutdownDirect writes a shutdown message directly to stdin, bypassing
+// the Send method's closed check. Used during Stop when p.closed is already true.
+func (p *PluginProcess) sendShutdownDirect() error {
+	data, err := json.Marshal(HostMessage{Type: "shutdown"})
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	_, err = p.stdin.Write(data)
+	return err
+}
+
+// shutdownCurrentProcess sends a shutdown message and closes stdin for the
+// current process. Used by the supervised Stop path.
+func (p *PluginProcess) shutdownCurrentProcess() {
+	p.mu.Lock()
+	stdin := p.stdin
+	p.mu.Unlock()
+
+	data, _ := json.Marshal(HostMessage{Type: "shutdown"})
+	data = append(data, '\n')
+	_, _ = stdin.Write(data)
+	_ = stdin.Close()
 }
 
 // Name returns the plugin's display name.
@@ -285,9 +378,195 @@ func (p *PluginProcess) Commands() []CommandDef {
 	return p.commands
 }
 
-// Alive returns true if the plugin process has not been marked as closed.
+// Alive returns true if the plugin process is running and not in the middle
+// of a restart.
 func (p *PluginProcess) Alive() bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return !p.closed
+	return !p.closed && !p.restarting
+}
+
+// Restarting returns true if the plugin is currently restarting after a crash.
+func (p *PluginProcess) Restarting() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.restarting
+}
+
+// RestartCount returns the number of restart attempts that have been made.
+func (p *PluginProcess) RestartCount() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.restartCount
+}
+
+// EnableAutoRestart enables automatic restart with the given configuration.
+// A supervisor goroutine is started that monitors the process and handles
+// restarts with exponential backoff. Must be called after Initialize.
+func (p *PluginProcess) EnableAutoRestart(cfg RestartConfig) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	cfgCopy := cfg
+	p.restartCfg = &cfgCopy
+	p.supervised = true
+	p.ctx, p.cancel = context.WithCancel(context.Background())
+	p.stopped = make(chan struct{})
+
+	go p.waitAndSupervise()
+}
+
+// waitAndSupervise is the supervisor goroutine. It calls cmd.Wait() in a loop,
+// restarting the process on unexpected exit with exponential backoff. It is the
+// sole owner of cmd.Wait() — no other code should call it when supervised.
+func (p *PluginProcess) waitAndSupervise() {
+	defer close(p.stopped)
+
+	for {
+		p.mu.Lock()
+		cmd := p.cmd
+		p.mu.Unlock()
+
+		// Wait for the current process to exit.
+		waitErr := make(chan error, 1)
+		go func() {
+			waitErr <- cmd.Wait()
+		}()
+
+		select {
+		case err := <-waitErr:
+			// Process exited.
+			p.mu.Lock()
+			if p.closed {
+				// Clean shutdown — Stop() was called.
+				p.stopErr = err
+				p.mu.Unlock()
+				return
+			}
+
+			if p.restartCfg == nil {
+				p.closed = true
+				p.mu.Unlock()
+				return
+			}
+
+			p.restartCount++
+			count := p.restartCount
+			maxAttempts := p.restartCfg.MaxAttempts
+
+			if count > maxAttempts {
+				log.Printf("plugin %s: giving up after %d restart attempts", p.name, maxAttempts)
+				p.closed = true
+				p.restarting = false
+				p.mu.Unlock()
+				return
+			}
+
+			p.restarting = true
+
+			// Compute backoff: initialBackoff * 2^(count-1), capped at maxBackoff.
+			backoff := p.restartCfg.InitialBackoff * time.Duration(1<<uint(count-1))
+			if backoff > p.restartCfg.MaxBackoff {
+				backoff = p.restartCfg.MaxBackoff
+			}
+			p.mu.Unlock()
+
+			log.Printf("plugin %s: crashed (exit: %v), restarting in %v (attempt %d/%d)",
+				p.name, err, backoff, count, maxAttempts)
+
+			// Wait for backoff or cancellation.
+			select {
+			case <-time.After(backoff):
+			case <-p.ctx.Done():
+				p.mu.Lock()
+				p.restarting = false
+				p.mu.Unlock()
+				return
+			}
+
+			if err := p.respawn(); err != nil {
+				log.Printf("plugin %s: restart attempt %d failed: %v", p.name, count, err)
+				// Loop continues — restartCount already incremented, will try again
+				// or give up if max attempts reached.
+				continue
+			}
+
+			log.Printf("plugin %s: restarted successfully (attempt %d/%d)", p.name, count, maxAttempts)
+			p.mu.Lock()
+			p.restarting = false
+			p.mu.Unlock()
+			// Loop back to wait on the new process.
+
+		case <-p.ctx.Done():
+			// Stop requested while process is still running.
+			// Shutdown the current process and wait for it to exit.
+			p.shutdownCurrentProcess()
+
+			timer := time.NewTimer(shutdownTimeout)
+			select {
+			case err := <-waitErr:
+				timer.Stop()
+				p.stopErr = err
+			case <-timer.C:
+				timer.Stop()
+				p.mu.Lock()
+				cmd := p.cmd
+				p.mu.Unlock()
+				if cmd.Process != nil {
+					_ = cmd.Process.Kill()
+				}
+				p.stopErr = <-waitErr
+			}
+			return
+		}
+	}
+}
+
+// respawn creates a new plugin subprocess, sets up communication channels,
+// and re-initializes the plugin. The old channels must already be closed
+// (by readLoop exiting) before calling this.
+func (p *PluginProcess) respawn() error {
+	cmd := exec.Command(p.path, p.args...)
+	cmd.Env = p.env
+
+	stdinPipe, err := cmd.StdinPipe()
+	if err != nil {
+		return fmt.Errorf("creating stdin pipe: %w", err)
+	}
+
+	stdoutPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		stdinPipe.Close()
+		return fmt.Errorf("creating stdout pipe: %w", err)
+	}
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("starting plugin: %w", err)
+	}
+
+	scanner := bufio.NewScanner(stdoutPipe)
+	scanner.Buffer(make([]byte, maxScannerBuffer), maxScannerBuffer)
+
+	newInjectCh := make(chan PluginMessage, 64)
+	newResponseCh := make(chan PluginMessage, 16)
+
+	p.mu.Lock()
+	p.cmd = cmd
+	p.stdin = stdinPipe
+	p.scanner = scanner
+	p.injectCh = newInjectCh
+	p.responseCh = newResponseCh
+	p.closed = false // Allow Send to work again for initialization.
+	p.mu.Unlock()
+
+	go p.readLoop()
+
+	// Re-initialize the plugin with the saved config.
+	if err := p.Initialize(p.pluginCfg); err != nil {
+		_ = cmd.Process.Kill()
+		// Don't call Wait here — the supervisor loop handles it.
+		return fmt.Errorf("re-initialization failed: %w", err)
+	}
+
+	return nil
 }
