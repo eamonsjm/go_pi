@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/ejm/go_pi/pkg/agent"
+	"github.com/ejm/go_pi/pkg/ai"
 )
 
 // ---------------------------------------------------------------------------
@@ -740,5 +741,91 @@ func TestChatView_ErrorMessageWraps(t *testing.T) {
 	content := cv.View()
 	if content == "" {
 		t.Error("expected non-empty view content")
+	}
+}
+
+func TestRebuildChatFromMessages_ToolBlocks(t *testing.T) {
+	cv := NewChatView()
+	cv.SetSize(80, 24)
+
+	msgs := []ai.Message{
+		{Role: ai.RoleUser, Content: []ai.ContentBlock{
+			{Type: ai.ContentTypeText, Text: "List files"},
+		}},
+		{Role: ai.RoleAssistant, Content: []ai.ContentBlock{
+			{Type: ai.ContentTypeText, Text: "Let me check."},
+			{Type: ai.ContentTypeToolUse, ToolUseID: "tc-1", ToolName: "bash", Input: map[string]any{"command": "ls"}},
+		}},
+		{Role: ai.RoleUser, Content: []ai.ContentBlock{
+			{Type: ai.ContentTypeToolResult, ToolResultID: "tc-1", Content: "file1.go\nfile2.go"},
+		}},
+		{Role: ai.RoleAssistant, Content: []ai.ContentBlock{
+			{Type: ai.ContentTypeText, Text: "Here are the files."},
+		}},
+	}
+
+	rebuildChatFromMessages(cv, msgs)
+
+	var hasUser, hasText, hasTool bool
+	for _, b := range cv.blocks {
+		switch b.kind {
+		case blockUser:
+			hasUser = true
+		case blockAssistantText:
+			hasText = true
+		case blockToolCall:
+			hasTool = true
+			if b.toolName != "bash" {
+				t.Errorf("expected tool name %q, got %q", "bash", b.toolName)
+			}
+			if b.toolID != "tc-1" {
+				t.Errorf("expected tool ID %q, got %q", "tc-1", b.toolID)
+			}
+			if b.toolResult != "file1.go\nfile2.go" {
+				t.Errorf("expected tool result %q, got %q", "file1.go\nfile2.go", b.toolResult)
+			}
+		}
+	}
+
+	if !hasUser {
+		t.Error("expected user message block")
+	}
+	if !hasText {
+		t.Error("expected assistant text block")
+	}
+	if !hasTool {
+		t.Error("expected tool call block")
+	}
+}
+
+func TestRebuildChatFromMessages_ToolErrorBlock(t *testing.T) {
+	cv := NewChatView()
+	cv.SetSize(80, 24)
+
+	msgs := []ai.Message{
+		{Role: ai.RoleAssistant, Content: []ai.ContentBlock{
+			{Type: ai.ContentTypeToolUse, ToolUseID: "tc-err", ToolName: "read", Input: map[string]any{"path": "/missing"}},
+		}},
+		{Role: ai.RoleUser, Content: []ai.ContentBlock{
+			{Type: ai.ContentTypeToolResult, ToolResultID: "tc-err", Content: "file not found", IsError: true},
+		}},
+	}
+
+	rebuildChatFromMessages(cv, msgs)
+
+	var found bool
+	for _, b := range cv.blocks {
+		if b.kind == blockToolCall && b.toolID == "tc-err" {
+			found = true
+			if !b.toolError {
+				t.Error("expected toolError to be true")
+			}
+			if b.toolResult != "file not found" {
+				t.Errorf("expected tool result %q, got %q", "file not found", b.toolResult)
+			}
+		}
+	}
+	if !found {
+		t.Error("expected tool call block for error result")
 	}
 }

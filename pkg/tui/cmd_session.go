@@ -243,6 +243,24 @@ func rebuildChatFromMessages(chatView *ChatView, msgs []ai.Message) {
 						Type: agent.EventTurnEnd,
 					})
 				}
+			case ai.ContentTypeToolUse:
+				var args map[string]any
+				if m, ok := block.Input.(map[string]any); ok {
+					args = m
+				}
+				chatView.HandleEvent(agent.AgentEvent{
+					Type:       agent.EventToolExecStart,
+					ToolCallID: block.ToolUseID,
+					ToolName:   block.ToolName,
+					ToolArgs:   args,
+				})
+			case ai.ContentTypeToolResult:
+				chatView.HandleEvent(agent.AgentEvent{
+					Type:       agent.EventToolExecEnd,
+					ToolCallID: block.ToolResultID,
+					ToolResult: block.Content,
+					ToolError:  block.IsError,
+				})
 			}
 		}
 	}
