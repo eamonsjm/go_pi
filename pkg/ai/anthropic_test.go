@@ -325,6 +325,52 @@ func TestBuildRequestBody_NoSystemPrompt(t *testing.T) {
 	}
 }
 
+func TestBuildRequestBody_NilContentBecomesEmptyArray(t *testing.T) {
+	p := &AnthropicProvider{apiKey: "test"}
+
+	// Simulate a message with nil Content (the bug trigger).
+	req := StreamRequest{
+		Model: "test-model",
+		Messages: []Message{
+			NewTextMessage(RoleUser, "hello"),
+			{Role: RoleAssistant, Content: nil}, // nil content — would serialize as null
+			NewTextMessage(RoleUser, "continue"),
+		},
+	}
+
+	data, err := p.buildRequestBody(req)
+	if err != nil {
+		t.Fatalf("buildRequestBody failed: %v", err)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(data, &body); err != nil {
+		t.Fatalf("failed to parse JSON: %v", err)
+	}
+
+	msgs, ok := body["messages"].([]any)
+	if !ok {
+		t.Fatalf("expected messages array, got %T", body["messages"])
+	}
+	if len(msgs) != 3 {
+		t.Fatalf("expected 3 messages, got %d", len(msgs))
+	}
+
+	// The second message (nil Content) should have an empty array, not null.
+	assistantMsg := msgs[1].(map[string]any)
+	content := assistantMsg["content"]
+	if content == nil {
+		t.Fatal("content should not be null — Anthropic API rejects content:null")
+	}
+	contentArr, ok := content.([]any)
+	if !ok {
+		t.Fatalf("content should be an array, got %T", content)
+	}
+	if len(contentArr) != 0 {
+		t.Errorf("expected empty content array, got %d elements", len(contentArr))
+	}
+}
+
 // --- SSE stream parsing tests ---
 
 func newTestAnthropicServer(t *testing.T, ssePayload string) (*httptest.Server, *AnthropicProvider) {

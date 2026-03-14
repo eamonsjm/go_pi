@@ -293,7 +293,7 @@ func (a *AgentLoop) doTurn(ctx context.Context) (*ai.Message, error) {
 		return nil, fmt.Errorf("provider stream: %w", err)
 	}
 
-	assistantMsg := ai.Message{Role: ai.RoleAssistant}
+	assistantMsg := ai.Message{Role: ai.RoleAssistant, Content: []ai.ContentBlock{}}
 
 	// State for accumulating the current tool use input JSON.
 	type toolAccum struct {

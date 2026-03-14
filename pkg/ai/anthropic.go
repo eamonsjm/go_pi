@@ -239,12 +239,18 @@ func (p *AnthropicProvider) buildRequestBody(req StreamRequest) ([]byte, error) 
 		}
 	}
 
-	// Messages.
+	// Messages. Ensure every message has a non-nil content list — the
+	// Anthropic API rejects content:null with "should be a valid list".
 	body.Messages = make([]anthMessage, 0, len(req.Messages))
 	for _, m := range req.Messages {
 		am := anthMessage{Role: string(m.Role)}
-		for _, cb := range m.Content {
-			am.Content = append(am.Content, mapContentBlock(cb))
+		if len(m.Content) == 0 {
+			am.Content = []anthContent{}
+		} else {
+			am.Content = make([]anthContent, 0, len(m.Content))
+			for _, cb := range m.Content {
+				am.Content = append(am.Content, mapContentBlock(cb))
+			}
 		}
 		body.Messages = append(body.Messages, am)
 	}

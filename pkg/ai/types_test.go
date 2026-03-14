@@ -179,6 +179,31 @@ func TestNewRichToolResultMessage(t *testing.T) {
 	}
 }
 
+func TestEnsureContent_NilBecomesEmpty(t *testing.T) {
+	msg := Message{Role: RoleAssistant}
+	if msg.Content != nil {
+		t.Fatal("precondition: Content should be nil")
+	}
+	msg.EnsureContent()
+	if msg.Content == nil {
+		t.Fatal("EnsureContent should make Content non-nil")
+	}
+	if len(msg.Content) != 0 {
+		t.Errorf("expected empty slice, got %d elements", len(msg.Content))
+	}
+}
+
+func TestEnsureContent_NonNilUnchanged(t *testing.T) {
+	msg := NewTextMessage(RoleUser, "hello")
+	msg.EnsureContent()
+	if len(msg.Content) != 1 {
+		t.Errorf("expected 1 content block preserved, got %d", len(msg.Content))
+	}
+	if msg.Content[0].Text != "hello" {
+		t.Errorf("expected text preserved, got %q", msg.Content[0].Text)
+	}
+}
+
 func TestNewRichToolResultMessage_WithError(t *testing.T) {
 	blocks := []ContentBlock{
 		{Type: ContentTypeText, Text: "error occurred"},

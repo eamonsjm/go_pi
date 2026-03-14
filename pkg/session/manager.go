@@ -638,9 +638,10 @@ func (m *Manager) sessionPath(id string) string {
 // entryToMessage converts an Entry with type "message" into an ai.Message.
 // The Data field may be a MessageData struct (in-memory) or a map (from JSON).
 func entryToMessage(e Entry) (ai.Message, bool) {
+	var msg ai.Message
 	switch v := e.Data.(type) {
 	case MessageData:
-		return ai.Message{Role: v.Role, Content: v.Content}, true
+		msg = ai.Message{Role: v.Role, Content: v.Content}
 	case map[string]any:
 		// Re-marshal and unmarshal for entries loaded from JSON.
 		raw, err := json.Marshal(v)
@@ -651,9 +652,14 @@ func entryToMessage(e Entry) (ai.Message, bool) {
 		if err := json.Unmarshal(raw, &md); err != nil {
 			return ai.Message{}, false
 		}
-		return ai.Message{Role: md.Role, Content: md.Content}, true
+		msg = ai.Message{Role: md.Role, Content: md.Content}
+	default:
+		return ai.Message{}, false
 	}
-	return ai.Message{}, false
+	// Ensure Content is never nil — nil marshals to JSON null, which the
+	// Anthropic API rejects with "should be a valid list".
+	msg.EnsureContent()
+	return msg, true
 }
 
 // generateID creates a random 16-character hex ID.

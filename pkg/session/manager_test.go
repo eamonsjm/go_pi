@@ -1171,6 +1171,47 @@ func TestListSessionsShowsBranches(t *testing.T) {
 	}
 }
 
+func TestEntryToMessage_NilContentFromJSON(t *testing.T) {
+	// Simulate a JSON-deserialized entry where content was null.
+	e := Entry{
+		ID:   "test-nil",
+		Type: "message",
+		Data: map[string]any{
+			"role":    "assistant",
+			"content": nil, // null in JSON
+		},
+	}
+	msg, ok := entryToMessage(e)
+	if !ok {
+		t.Fatal("entryToMessage should succeed even with nil content")
+	}
+	if msg.Content == nil {
+		t.Fatal("Content should not be nil after entryToMessage — nil marshals to JSON null which the API rejects")
+	}
+	if len(msg.Content) != 0 {
+		t.Errorf("expected empty Content slice, got %d elements", len(msg.Content))
+	}
+}
+
+func TestEntryToMessage_NilContentFromMessageData(t *testing.T) {
+	// In-memory MessageData with nil Content.
+	e := Entry{
+		ID:   "test-nil-md",
+		Type: "message",
+		Data: MessageData{
+			Role:    ai.RoleAssistant,
+			Content: nil,
+		},
+	}
+	msg, ok := entryToMessage(e)
+	if !ok {
+		t.Fatal("entryToMessage should succeed")
+	}
+	if msg.Content == nil {
+		t.Fatal("Content should not be nil after entryToMessage")
+	}
+}
+
 // ids is a test helper that extracts entry IDs for debugging.
 func ids(entries []Entry) []string {
 	result := make([]string, len(entries))

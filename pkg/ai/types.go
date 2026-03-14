@@ -96,6 +96,15 @@ func NewRichToolResultMessage(toolUseID string, blocks []ContentBlock, isError b
 	}
 }
 
+// EnsureContent guarantees the Content slice is non-nil. In Go, a nil
+// []ContentBlock marshals to JSON null, which the Anthropic API rejects.
+// Call this before serialization or when constructing messages manually.
+func (m *Message) EnsureContent() {
+	if m.Content == nil {
+		m.Content = []ContentBlock{}
+	}
+}
+
 // GetText returns the concatenated text content of a message.
 func (m Message) GetText() string {
 	var text string
