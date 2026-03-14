@@ -51,7 +51,6 @@ func (t *WriteTool) Execute(ctx context.Context, params map[string]any) (string,
 		return "", fmt.Errorf("cannot create directory %s: %v", dir, err)
 	}
 
-	// Write the file.
 	data := []byte(content)
 	if err := os.WriteFile(filePath, data, 0644); err != nil {
 		return "", fmt.Errorf("cannot write file: %v", err)

@@ -58,7 +58,6 @@ func (t *EditTool) Execute(ctx context.Context, params map[string]any) (string, 
 		return "", fmt.Errorf("old_string and new_string are identical; no change needed")
 	}
 
-	// Read the file.
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return "", fmt.Errorf("cannot read file: %v", err)
@@ -98,7 +97,6 @@ func (t *EditTool) Execute(ctx context.Context, params map[string]any) (string, 
 		normNote = fmt.Sprintf("Note: exact match failed. Matched via %s.", normName)
 	}
 
-	// Perform the replacement.
 	newContent := strings.Replace(content, matchTarget, newString, 1)
 
 	// Restore CRLF line endings if the file originally used them.
@@ -120,7 +118,6 @@ func (t *EditTool) Execute(ctx context.Context, params map[string]any) (string, 
 		mode = info.Mode()
 	}
 
-	// Write the file back.
 	if err := os.WriteFile(filePath, output, mode); err != nil {
 		return "", fmt.Errorf("cannot write file: %v", err)
 	}

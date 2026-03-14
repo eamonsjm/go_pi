@@ -79,7 +79,6 @@ func (t *ReadTool) Execute(ctx context.Context, params map[string]any) (string, 
 		return "", fmt.Errorf("cannot read file: %v", err)
 	}
 
-	// Detect binary files.
 	if isBinary(data) {
 		return fmt.Sprintf("Binary file detected: %s (%d bytes). Cannot display binary content.", filePath, len(data)), nil
 	}
