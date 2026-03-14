@@ -1088,6 +1088,225 @@ func TestChatView_HasNewBelow_ClearedOnScrollToBottom(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Incremental rendering tests (gp-csy.4)
+// ---------------------------------------------------------------------------
+
+func TestChatView_IncrementalRender_ParagraphBoundary(t *testing.T) {
+	cv := NewChatView()
+	cv.SetSize(80, 24)
+
+	// Stream text with a paragraph boundary.
+	cv.HandleEvent(agent.AgentEvent{
+		Type:  agent.EventAssistantText,
+		Delta: "First paragraph.\n\nSecond paragraph start",
+	})
+	cv.rebuildContent()
+
+	blk := &cv.blocks[0]
+	if blk.prefixTextLen != len("First paragraph.\n\n") {
+		t.Errorf("expected prefixTextLen=%d, got %d", len("First paragraph.\n\n"), blk.prefixTextLen)
+	}
+	if blk.glamourPrefix == "" {
+		t.Error("expected glamourPrefix to be populated after paragraph boundary")
+	}
+}
+
+func TestChatView_IncrementalRender_NoBoundary(t *testing.T) {
+	cv := NewChatView()
+	cv.SetSize(80, 24)
+
+	// Stream text without paragraph boundary.
+	cv.HandleEvent(agent.AgentEvent{
+		Type:  agent.EventAssistantText,
+		Delta: "Just one paragraph of text",
+	})
+	cv.rebuildContent()
+
+	blk := &cv.blocks[0]
+	if blk.prefixTextLen != 0 {
+		t.Errorf("expected prefixTextLen=0 without boundary, got %d", blk.prefixTextLen)
+	}
+	if blk.glamourPrefix != "" {
+		t.Errorf("expected empty glamourPrefix without boundary, got %q", blk.glamourPrefix)
+	}
+}
+
+func TestChatView_IncrementalRender_MultipleParagraphs(t *testing.T) {
+	cv := NewChatView()
+	cv.SetSize(80, 24)
+
+	// First delta: one paragraph, no boundary yet.
+	cv.HandleEvent(agent.AgentEvent{
+		Type:  agent.EventAssistantText,
+		Delta: "Para one.",
+	})
+	cv.rebuildContent()
+	if cv.blocks[0].prefixTextLen != 0 {
+		t.Error("no boundary yet, prefixTextLen should be 0")
+	}
+
+	// Second delta: completes first paragraph.
+	cv.HandleEvent(agent.AgentEvent{
+		Type:  agent.EventAssistantText,
+		Delta: "\n\nPara two.",
+	})
+	cv.rebuildContent()
+	if cv.blocks[0].prefixTextLen != len("Para one.\n\n") {
+		t.Errorf("expected prefixTextLen=%d, got %d", len("Para one.\n\n"), cv.blocks[0].prefixTextLen)
+	}
+
+	// Third delta: completes second paragraph.
+	cv.HandleEvent(agent.AgentEvent{
+		Type:  agent.EventAssistantText,
+		Delta: "\n\nPara three.",
+	})
+	cv.rebuildContent()
+	expected := len("Para one.\n\nPara two.\n\n")
+	if cv.blocks[0].prefixTextLen != expected {
+		t.Errorf("expected prefixTextLen=%d, got %d", expected, cv.blocks[0].prefixTextLen)
+	}
+}
+
+func TestChatView_IncrementalRender_RefreshedOnResize(t *testing.T) {
+	cv := NewChatView()
+	cv.SetSize(80, 24)
+
+	cv.HandleEvent(agent.AgentEvent{
+		Type:  agent.EventAssistantText,
+		Delta: "First para.\n\nSecond",
+	})
+	cv.rebuildContent()
+
+	if cv.blocks[0].prefixTextLen == 0 {
+		t.Fatal("precondition: cache should be populated")
+	}
+	oldPrefix := cv.blocks[0].glamourPrefix
+
+	// Resize invalidates and then rebuilds the cache with the new renderer.
+	cv.SetSize(120, 40)
+	// Cache should be repopulated (same prefixTextLen, possibly different render).
+	if cv.blocks[0].prefixTextLen != len("First para.\n\n") {
+		t.Errorf("expected prefixTextLen=%d after resize, got %d",
+			len("First para.\n\n"), cv.blocks[0].prefixTextLen)
+	}
+	// The glamour prefix should be re-rendered (may differ due to new wrap width).
+	if cv.blocks[0].glamourPrefix == "" {
+		t.Error("expected glamourPrefix to be repopulated after resize")
+	}
+	_ = oldPrefix // prefix content may change due to different word-wrap width
+}
+
+func TestChatView_IncrementalRender_ClearedOnTurnEnd(t *testing.T) {
+	cv := NewChatView()
+	cv.SetSize(80, 24)
+
+	cv.HandleEvent(agent.AgentEvent{
+		Type:  agent.EventAssistantText,
+		Delta: "Para one.\n\nPara two.",
+	})
+	cv.rebuildContent()
+
+	if cv.blocks[0].prefixTextLen == 0 {
+		t.Fatal("precondition: cache should be populated")
+	}
+
+	// TurnEnd clears streaming and incremental cache.
+	cv.HandleEvent(agent.AgentEvent{Type: agent.EventTurnEnd})
+	if cv.blocks[0].glamourPrefix != "" {
+		t.Error("expected empty glamourPrefix after TurnEnd")
+	}
+	if cv.blocks[0].prefixTextLen != 0 {
+		t.Error("expected prefixTextLen=0 after TurnEnd")
+	}
+}
+
+func TestChatView_IncrementalRender_ClearedOnAgentEnd(t *testing.T) {
+	cv := NewChatView()
+	cv.SetSize(80, 24)
+
+	cv.HandleEvent(agent.AgentEvent{
+		Type:  agent.EventAssistantText,
+		Delta: "Para one.\n\nPara two.",
+	})
+	cv.rebuildContent()
+
+	if cv.blocks[0].prefixTextLen == 0 {
+		t.Fatal("precondition: cache should be populated")
+	}
+
+	// AgentEnd clears streaming and incremental cache.
+	cv.HandleEvent(agent.AgentEvent{Type: agent.EventAgentEnd})
+	if cv.blocks[0].glamourPrefix != "" {
+		t.Error("expected empty glamourPrefix after AgentEnd")
+	}
+	if cv.blocks[0].prefixTextLen != 0 {
+		t.Error("expected prefixTextLen=0 after AgentEnd")
+	}
+}
+
+func TestChatView_IncrementalRender_IdleToStreamingSnapshot(t *testing.T) {
+	cv := NewChatView()
+	cv.SetSize(80, 24)
+
+	// Stream some text.
+	cv.HandleEvent(agent.AgentEvent{
+		Type:  agent.EventAssistantText,
+		Delta: "**bold paragraph**",
+	})
+
+	// Simulate idle timeout — clears streaming and incremental cache.
+	cv.idleGlamourRender()
+	if cv.blocks[0].streaming {
+		t.Fatal("precondition: should be non-streaming after idle")
+	}
+
+	// Resume streaming — should snapshot the glamour prefix.
+	cv.HandleEvent(agent.AgentEvent{
+		Type:  agent.EventAssistantText,
+		Delta: " more text",
+	})
+
+	blk := &cv.blocks[0]
+	if blk.prefixTextLen == 0 {
+		t.Error("expected prefixTextLen > 0 after idle→streaming transition")
+	}
+	if blk.glamourPrefix == "" {
+		t.Error("expected glamourPrefix populated from snapshot")
+	}
+	// The prefix should cover the text before the new delta.
+	if blk.prefixTextLen != len("**bold paragraph**") {
+		t.Errorf("expected prefixTextLen=%d, got %d", len("**bold paragraph**"), blk.prefixTextLen)
+	}
+}
+
+func TestChatView_IncrementalRender_StyledOutput(t *testing.T) {
+	cv := NewChatView()
+	cv.SetSize(80, 24)
+
+	// Stream text with a heading in a completed paragraph.
+	cv.HandleEvent(agent.AgentEvent{
+		Type:  agent.EventAssistantText,
+		Delta: "# Heading\n\nIncomplete tail",
+	})
+	cv.rebuildContent()
+	view := cv.View()
+
+	// The heading should be present and the tail should be present.
+	if !strings.Contains(view, "Heading") {
+		t.Error("expected 'Heading' in view")
+	}
+	if !strings.Contains(view, "Incomplete tail") {
+		t.Error("expected 'Incomplete tail' in view")
+	}
+
+	// The glamour prefix should contain styled heading output (not raw markdown).
+	blk := &cv.blocks[0]
+	if strings.Contains(blk.glamourPrefix, "# Heading") {
+		t.Error("glamour prefix should not contain raw markdown '# Heading'")
+	}
+}
+
 func TestRebuildChatFromMessages_ToolErrorBlock(t *testing.T) {
 	cv := NewChatView()
 	cv.SetSize(80, 24)

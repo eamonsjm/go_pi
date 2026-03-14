@@ -56,6 +56,14 @@ type chatBlock struct {
 	// rendered caches the last rendered output for this block. Empty means
 	// the block needs re-rendering. Cleared whenever block content changes.
 	rendered string
+
+	// Incremental rendering cache (streaming assistant blocks only).
+	// glamourPrefix holds the glamour-rendered output for completed
+	// paragraphs (text[:prefixTextLen]). Updated when new paragraph
+	// boundaries (\n\n) are detected during streaming. Cleared on
+	// resize, theme change, or when streaming ends.
+	glamourPrefix string
+	prefixTextLen int
 }
 
 // ---------------------------------------------------------------------------
@@ -117,6 +125,8 @@ func (c *ChatView) idleGlamourRender() {
 		if c.blocks[i].kind == blockAssistantText && c.blocks[i].streaming {
 			c.blocks[i].streaming = false
 			c.blocks[i].rendered = ""
+			c.blocks[i].glamourPrefix = ""
+			c.blocks[i].prefixTextLen = 0
 		}
 	}
 	c.rebuildContent()
@@ -127,6 +137,8 @@ func (c *ChatView) idleGlamourRender() {
 func (c *ChatView) invalidateRenderCaches() {
 	for i := range c.blocks {
 		c.blocks[i].rendered = ""
+		c.blocks[i].glamourPrefix = ""
+		c.blocks[i].prefixTextLen = 0
 	}
 }
 
@@ -172,6 +184,15 @@ func (c *ChatView) HandleEvent(ev agent.AgentEvent) bool {
 	// ---- streaming text ----
 	case agent.EventAssistantText:
 		if blk := c.lastBlock(blockAssistantText); blk != nil {
+			// If transitioning from non-streaming (e.g., after idle
+			// timeout), snapshot the current text as the glamour prefix
+			// so incremental rendering continues without a styling flash.
+			if !blk.streaming && c.renderer != nil {
+				if md, err := c.renderer.Render(blk.text); err == nil {
+					blk.glamourPrefix = strings.TrimRight(md, "\n")
+					blk.prefixTextLen = len(blk.text)
+				}
+			}
 			blk.text += ev.Delta
 			blk.streaming = true
 			blk.rendered = ""
@@ -234,6 +255,8 @@ func (c *ChatView) HandleEvent(ev agent.AgentEvent) bool {
 			if c.blocks[i].kind == blockAssistantText && c.blocks[i].streaming {
 				c.blocks[i].streaming = false
 				c.blocks[i].rendered = ""
+				c.blocks[i].glamourPrefix = ""
+				c.blocks[i].prefixTextLen = 0
 			}
 		}
 		c.dirty = true
@@ -251,6 +274,8 @@ func (c *ChatView) HandleEvent(ev agent.AgentEvent) bool {
 			if c.blocks[i].kind == blockAssistantText && c.blocks[i].streaming {
 				c.blocks[i].streaming = false
 				c.blocks[i].rendered = ""
+				c.blocks[i].glamourPrefix = ""
+				c.blocks[i].prefixTextLen = 0
 				changed = true
 			}
 		}
@@ -431,6 +456,36 @@ func (c *ChatView) View() string {
 // Content rendering
 // ---------------------------------------------------------------------------
 
+// updateIncrementalCache checks for new paragraph boundaries (\n\n) in a
+// streaming assistant block's text and glamour-renders completed sections
+// into the block's glamourPrefix cache. Only the newly completed section
+// is rendered, giving O(section_length) cost per boundary instead of O(N).
+func (c *ChatView) updateIncrementalCache(blk *chatBlock) {
+	tail := blk.text[blk.prefixTextLen:]
+	boundary := strings.LastIndex(tail, "\n\n")
+	if boundary < 0 {
+		return
+	}
+	newSection := tail[:boundary+2]
+	if c.renderer == nil {
+		return
+	}
+	md, err := c.renderer.Render(newSection)
+	if err != nil {
+		return
+	}
+	rendered := strings.TrimRight(md, "\n")
+	if rendered == "" {
+		return
+	}
+	if blk.glamourPrefix != "" {
+		blk.glamourPrefix += "\n" + rendered
+	} else {
+		blk.glamourPrefix = rendered
+	}
+	blk.prefixTextLen += boundary + 2
+}
+
 // rebuildContent renders all blocks into a single string and pushes it into
 // the viewport. Auto-scrolls to the bottom only if the viewport was already
 // at the bottom (so manual scroll-back is preserved during streaming).
@@ -447,6 +502,10 @@ func (c *ChatView) rebuildContent() {
 	for i := range c.blocks {
 		blk := &c.blocks[i]
 		if blk.rendered == "" {
+			// Update incremental rendering cache for streaming blocks.
+			if blk.kind == blockAssistantText && blk.streaming {
+				c.updateIncrementalCache(blk)
+			}
 			var buf strings.Builder
 			if i > 0 {
 				buf.WriteString("\n")
@@ -505,9 +564,20 @@ func (c *ChatView) renderAssistant(sb *strings.Builder, blk chatBlock) {
 	sb.WriteString(label + "\n")
 
 	if blk.streaming {
-		// During streaming, skip expensive glamour.Render() and use
-		// plain text with basic lipgloss styling to avoid O(N²) cost.
-		sb.WriteString(AssistantMsgStyle.Render(blk.text))
+		// Incremental rendering: output glamour-rendered prefix of
+		// completed paragraphs plus plain-text tail for the incomplete
+		// paragraph. The cache is updated by updateIncrementalCache
+		// in rebuildContent before this function is called.
+		tail := blk.text[blk.prefixTextLen:]
+		if blk.glamourPrefix != "" {
+			sb.WriteString(blk.glamourPrefix)
+			if tail != "" {
+				sb.WriteString("\n")
+			}
+		}
+		if tail != "" {
+			sb.WriteString(AssistantMsgStyle.Render(tail))
+		}
 	} else {
 		rendered := blk.text
 		if c.renderer != nil {
