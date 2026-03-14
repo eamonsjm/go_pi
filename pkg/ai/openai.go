@@ -13,8 +13,7 @@ import (
 )
 
 const (
-	openaiAPIURL         = "https://api.openai.com/v1/chat/completions"
-	openaiDefaultMaxToks = 4096
+	openaiAPIURL = "https://api.openai.com/v1/chat/completions"
 )
 
 // OpenAIProvider implements the Provider interface for OpenAI's Chat Completions API.
@@ -134,7 +133,7 @@ type oaiToolFuncDef struct {
 func (p *OpenAIProvider) buildRequestBody(req StreamRequest) ([]byte, error) {
 	maxTokens := req.MaxTokens
 	if maxTokens == 0 {
-		maxTokens = openaiDefaultMaxToks
+		maxTokens = OpenAIDefaultMaxTokens
 	}
 
 	body := oaiRequestBody{

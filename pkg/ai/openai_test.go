@@ -130,8 +130,8 @@ func TestOpenAIBuildRequestBody_DefaultMaxTokens(t *testing.T) {
 		t.Fatalf("failed to parse JSON: %v", err)
 	}
 
-	if int(body["max_tokens"].(float64)) != openaiDefaultMaxToks {
-		t.Errorf("expected default max_tokens=%d, got %v", openaiDefaultMaxToks, body["max_tokens"])
+	if int(body["max_tokens"].(float64)) != OpenAIDefaultMaxTokens {
+		t.Errorf("expected default max_tokens=%d, got %v", OpenAIDefaultMaxTokens, body["max_tokens"])
 	}
 }
 

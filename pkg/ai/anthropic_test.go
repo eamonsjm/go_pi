@@ -119,8 +119,8 @@ func TestBuildRequestBody_DefaultMaxTokens(t *testing.T) {
 		t.Fatalf("failed to parse JSON: %v", err)
 	}
 
-	if int(body["max_tokens"].(float64)) != defaultMaxTokens {
-		t.Errorf("expected default max_tokens=%d, got %v", defaultMaxTokens, body["max_tokens"])
+	if int(body["max_tokens"].(float64)) != AnthropicDefaultMaxTokens {
+		t.Errorf("expected default max_tokens=%d, got %v", AnthropicDefaultMaxTokens, body["max_tokens"])
 	}
 }
 

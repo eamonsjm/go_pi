@@ -119,8 +119,8 @@ func TestGeminiBuildRequestBody_DefaultMaxTokens(t *testing.T) {
 	}
 
 	genCfg := body["generationConfig"].(map[string]any)
-	if int(genCfg["maxOutputTokens"].(float64)) != geminiDefaultMaxToks {
-		t.Errorf("expected default maxOutputTokens=%d, got %v", geminiDefaultMaxToks, genCfg["maxOutputTokens"])
+	if int(genCfg["maxOutputTokens"].(float64)) != GeminiDefaultMaxTokens {
+		t.Errorf("expected default maxOutputTokens=%d, got %v", GeminiDefaultMaxTokens, genCfg["maxOutputTokens"])
 	}
 }
 

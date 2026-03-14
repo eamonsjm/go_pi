@@ -199,6 +199,16 @@ type Usage struct {
 	CacheWrite   int `json:"cache_creation_input_tokens,omitempty"`
 }
 
+// Default max output tokens per provider. Each value reflects the provider's
+// recommended or most-common default; they differ intentionally.
+const (
+	AnthropicDefaultMaxTokens = 8192
+	OpenAIDefaultMaxTokens    = 4096
+	GeminiDefaultMaxTokens    = 8192
+	BedrockDefaultMaxTokens   = 4096
+	AzureDefaultMaxTokens     = 4096
+)
+
 // StreamRequest contains all parameters for a streaming LLM call.
 type StreamRequest struct {
 	Model         string

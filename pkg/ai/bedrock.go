@@ -11,8 +11,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
 )
 
-const bedrockDefaultMaxToks = 4096
-
 // BedrockProvider implements the Provider interface for AWS Bedrock's Converse Stream API.
 // It supports the standard AWS credential chain (environment variables, shared config,
 // IAM roles, instance profiles).
@@ -66,7 +64,7 @@ func (p *BedrockProvider) Stream(ctx context.Context, req StreamRequest) (<-chan
 func (p *BedrockProvider) buildConverseInput(req StreamRequest) (*bedrockruntime.ConverseStreamInput, error) {
 	maxTokens := int32(req.MaxTokens)
 	if maxTokens == 0 {
-		maxTokens = bedrockDefaultMaxToks
+		maxTokens = BedrockDefaultMaxTokens
 	}
 
 	input := &bedrockruntime.ConverseStreamInput{

@@ -15,8 +15,7 @@ import (
 )
 
 const (
-	geminiBaseURL        = "https://generativelanguage.googleapis.com/v1beta"
-	geminiDefaultMaxToks = 8192
+	geminiBaseURL = "https://generativelanguage.googleapis.com/v1beta"
 )
 
 // GeminiProvider implements the Provider interface for Google's Generative AI API.
@@ -156,7 +155,7 @@ type gemThinkConfig struct {
 func (p *GeminiProvider) buildRequestBody(req StreamRequest) ([]byte, error) {
 	maxTokens := req.MaxTokens
 	if maxTokens == 0 {
-		maxTokens = geminiDefaultMaxToks
+		maxTokens = GeminiDefaultMaxTokens
 	}
 
 	body := gemRequestBody{

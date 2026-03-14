@@ -18,7 +18,6 @@ import (
 const (
 	anthropicAPIURL     = "https://api.anthropic.com/v1/messages"
 	anthropicAPIVersion = "2023-06-01"
-	defaultMaxTokens    = 8192
 )
 
 // AnthropicProvider implements the Provider interface for Anthropic's Messages API.
@@ -219,7 +218,7 @@ type anthThinking struct {
 func (p *AnthropicProvider) buildRequestBody(req StreamRequest) ([]byte, error) {
 	maxTokens := req.MaxTokens
 	if maxTokens == 0 {
-		maxTokens = defaultMaxTokens
+		maxTokens = AnthropicDefaultMaxTokens
 	}
 
 	body := anthRequestBody{

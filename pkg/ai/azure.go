@@ -12,7 +12,6 @@ import (
 
 const (
 	azureDefaultAPIVersion = "2024-10-21"
-	azureDefaultMaxToks    = 4096
 )
 
 // AzureOpenAIProvider implements the Provider interface for Azure OpenAI deployments.

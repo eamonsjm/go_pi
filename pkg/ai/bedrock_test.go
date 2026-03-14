@@ -219,8 +219,8 @@ func TestBuildConverseInput_DefaultMaxTokens(t *testing.T) {
 		t.Fatalf("buildConverseInput failed: %v", err)
 	}
 
-	if *input.InferenceConfig.MaxTokens != bedrockDefaultMaxToks {
-		t.Errorf("expected default max tokens %d, got %d", bedrockDefaultMaxToks, *input.InferenceConfig.MaxTokens)
+	if *input.InferenceConfig.MaxTokens != BedrockDefaultMaxTokens {
+		t.Errorf("expected default max tokens %d, got %d", BedrockDefaultMaxTokens, *input.InferenceConfig.MaxTokens)
 	}
 }
 
