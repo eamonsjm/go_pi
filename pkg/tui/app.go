@@ -512,13 +512,13 @@ func (a *App) handleAction(action Action) tea.Cmd {
 	case ActionToggleThinking:
 		if a.agentRunning {
 			a.chat.ToggleThinking()
-			return func() tea.Msg { return nil }
+			return nil
 		}
 
 	case ActionToggleToolResult:
 		if a.agentRunning {
 			a.chat.ToggleToolResult()
-			return func() tea.Msg { return nil }
+			return nil
 		}
 
 	case ActionCycleThinking:
@@ -566,7 +566,7 @@ func (a *App) cycleThinking() tea.Cmd {
 
 	text := fmt.Sprintf("Thinking: %s", next)
 	a.chat.AddSystemMessage(text)
-	return func() tea.Msg { return nil }
+	return nil
 }
 
 // cycleModel switches to the next (or previous) model in the default list.
