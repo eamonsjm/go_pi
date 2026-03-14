@@ -182,6 +182,7 @@ func (c *ChatView) HandleEvent(ev agent.AgentEvent) bool {
 				streaming: true,
 			})
 		}
+		c.dirty = true
 		return true
 
 	// ---- thinking ----
@@ -196,6 +197,7 @@ func (c *ChatView) HandleEvent(ev agent.AgentEvent) bool {
 				collapsed: true,
 			})
 		}
+		c.dirty = true
 		return true
 
 	// ---- tool calls ----
@@ -206,6 +208,7 @@ func (c *ChatView) HandleEvent(ev agent.AgentEvent) bool {
 			toolName: ev.ToolName,
 			toolArgs: ev.ToolArgs,
 		})
+		c.dirty = true
 		return true
 
 	case agent.EventToolExecEnd:
@@ -220,6 +223,7 @@ func (c *ChatView) HandleEvent(ev agent.AgentEvent) bool {
 				break
 			}
 		}
+		c.dirty = true
 		return true
 
 	// ---- turn boundaries ----
@@ -232,6 +236,7 @@ func (c *ChatView) HandleEvent(ev agent.AgentEvent) bool {
 				c.blocks[i].rendered = ""
 			}
 		}
+		c.dirty = true
 		return true
 
 	// ---- compaction ----
@@ -241,6 +246,7 @@ func (c *ChatView) HandleEvent(ev agent.AgentEvent) bool {
 			text:      ev.Delta,
 			collapsed: true,
 		})
+		c.dirty = true
 		return true
 
 	// ---- auto-compaction ----
@@ -250,6 +256,7 @@ func (c *ChatView) HandleEvent(ev agent.AgentEvent) bool {
 			text:      "Context automatically compacted to free space.\n\n" + ev.Delta,
 			collapsed: true,
 		})
+		c.dirty = true
 		return true
 
 	// ---- errors ----
@@ -267,6 +274,7 @@ func (c *ChatView) HandleEvent(ev agent.AgentEvent) bool {
 			kind: blockError,
 			text: msg,
 		})
+		c.dirty = true
 		return true
 
 	default:
@@ -433,6 +441,7 @@ func (c *ChatView) rebuildContent() {
 	}
 
 	c.viewport.SetContent(sb.String())
+	c.dirty = false
 	if wasAtBottom {
 		c.viewport.GotoBottom()
 		c.hasNewBelow = false

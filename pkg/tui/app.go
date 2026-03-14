@@ -230,11 +230,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// ---- Agent events flowing in ----
 	case StreamEventMsg:
-		changed := a.chat.HandleEvent(msg.Event)
+		a.chat.HandleEvent(msg.Event)
 		a.handleStateTransition(msg.Event)
-		if changed {
-			a.chat.dirty = true
-		}
 		// On each text delta, schedule an idle-render tick. If no further
 		// deltas arrive within 100ms the tick triggers a glamour re-render
 		// of the streaming block for polished output during pauses.
@@ -247,7 +244,6 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case renderTickMsg:
 		if a.chat.dirty {
 			a.chat.rebuildContent()
-			a.chat.dirty = false
 		}
 		if a.agentRunning {
 			return a, tickRender()
@@ -268,7 +264,6 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.editor.Focus()
 		if a.chat.dirty {
 			a.chat.rebuildContent()
-			a.chat.dirty = false
 		}
 		return a, nil
 
@@ -281,7 +276,6 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			Error: msg.Err,
 		})
 		a.chat.rebuildContent()
-		a.chat.dirty = false
 		return a, nil
 
 	// ---- Editor actions ----

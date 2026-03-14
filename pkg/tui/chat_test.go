@@ -549,6 +549,57 @@ func TestChatView_HandleEvent_UnknownType(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// Dirty flag tests
+// ---------------------------------------------------------------------------
+
+func TestChatView_HandleEvent_SetsDirty(t *testing.T) {
+	cv := NewChatView()
+
+	// Starts clean.
+	if cv.dirty {
+		t.Fatal("expected dirty=false on fresh ChatView")
+	}
+
+	// Text delta sets dirty.
+	cv.HandleEvent(agent.AgentEvent{
+		Type:  agent.EventAssistantText,
+		Delta: "hello",
+	})
+	if !cv.dirty {
+		t.Error("expected dirty=true after EventAssistantText")
+	}
+
+	// rebuildContent clears dirty.
+	cv.rebuildContent()
+	if cv.dirty {
+		t.Error("expected dirty=false after rebuildContent")
+	}
+
+	// Thinking sets dirty.
+	cv.HandleEvent(agent.AgentEvent{
+		Type:  agent.EventAssistantThinking,
+		Delta: "hmm",
+	})
+	if !cv.dirty {
+		t.Error("expected dirty=true after EventAssistantThinking")
+	}
+	cv.rebuildContent()
+
+	// TurnEnd sets dirty.
+	cv.HandleEvent(agent.AgentEvent{Type: agent.EventTurnEnd})
+	if !cv.dirty {
+		t.Error("expected dirty=true after EventTurnEnd")
+	}
+	cv.rebuildContent()
+
+	// Unknown event does NOT set dirty.
+	cv.HandleEvent(agent.AgentEvent{Type: agent.EventUsageUpdate})
+	if cv.dirty {
+		t.Error("expected dirty=false after unknown event type")
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Toggle tests
 // ---------------------------------------------------------------------------
 
