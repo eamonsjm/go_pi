@@ -44,11 +44,6 @@ func (f *Footer) SetUsage(u ai.Usage) {
 	}
 }
 
-// SetMaxContext sets the model's maximum context window size.
-func (f *Footer) SetMaxContext(n int) {
-	f.maxContext = n
-}
-
 // Height returns 1 (always a single line).
 func (f *Footer) Height() int { return 1 }
 

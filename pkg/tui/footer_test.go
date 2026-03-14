@@ -119,14 +119,6 @@ func TestFooter_SetUsage(t *testing.T) {
 	}
 }
 
-func TestFooter_SetMaxContext(t *testing.T) {
-	f := &Footer{maxContext: 200_000}
-	f.SetMaxContext(100_000)
-	if f.maxContext != 100_000 {
-		t.Errorf("expected 100000, got %d", f.maxContext)
-	}
-}
-
 func TestFooter_Height(t *testing.T) {
 	f := &Footer{}
 	if h := f.Height(); h != 1 {

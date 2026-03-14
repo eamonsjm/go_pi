@@ -25,33 +25,13 @@ func (a *AgentLoop) Compact(ctx context.Context, instructions string) error {
 		return fmt.Errorf("no messages to compact")
 	}
 
-	// Build a transcript of the conversation for the compaction prompt.
-	var transcript strings.Builder
-	for _, msg := range msgs {
-		role := string(msg.Role)
-		text := msg.GetText()
-		if text != "" {
-			transcript.WriteString(fmt.Sprintf("[%s]: %s\n\n", role, text))
-		}
-		for _, c := range msg.Content {
-			switch c.Type {
-			case ai.ContentTypeToolUse:
-				transcript.WriteString(fmt.Sprintf("[tool_call]: %s\n", c.ToolName))
-			case ai.ContentTypeToolResult:
-				result := c.Content
-				if len(result) > 500 {
-					result = result[:500] + "..."
-				}
-				transcript.WriteString(fmt.Sprintf("[tool_result]: %s\n\n", result))
-			}
-		}
-	}
+	transcript := buildTranscript(msgs)
 
 	compactionPrompt := "Summarize the conversation so far, including key decisions, code changes made, files modified, and current state of the task. Be thorough but concise."
 	if instructions != "" {
 		compactionPrompt += "\n\nAdditional focus: " + instructions
 	}
-	compactionPrompt += "\n\n<conversation>\n" + transcript.String() + "</conversation>"
+	compactionPrompt += "\n\n<conversation>\n" + transcript + "</conversation>"
 
 	// Send as a one-shot request using Stream and collect all text.
 	compactionMsgs := []ai.Message{
@@ -154,30 +134,10 @@ func (a *AgentLoop) autoCompact(ctx context.Context) error {
 	olderMsgs := msgs[:cutIdx]
 	recentMsgs := msgs[cutIdx:]
 
-	// Build transcript of older messages for summarization.
-	var transcript strings.Builder
-	for _, msg := range olderMsgs {
-		role := string(msg.Role)
-		text := msg.GetText()
-		if text != "" {
-			transcript.WriteString(fmt.Sprintf("[%s]: %s\n\n", role, text))
-		}
-		for _, c := range msg.Content {
-			switch c.Type {
-			case ai.ContentTypeToolUse:
-				transcript.WriteString(fmt.Sprintf("[tool_call]: %s\n", c.ToolName))
-			case ai.ContentTypeToolResult:
-				result := c.Content
-				if len(result) > 500 {
-					result = result[:500] + "..."
-				}
-				transcript.WriteString(fmt.Sprintf("[tool_result]: %s\n\n", result))
-			}
-		}
-	}
+	transcript := buildTranscript(olderMsgs)
 
 	compactionPrompt := "Summarize the conversation so far, including key decisions, code changes made, files modified, and current state of the task. Be thorough but concise. The conversation will continue after this summary, so preserve all context needed for ongoing work."
-	compactionPrompt += "\n\n<conversation>\n" + transcript.String() + "</conversation>"
+	compactionPrompt += "\n\n<conversation>\n" + transcript + "</conversation>"
 
 	req := ai.StreamRequest{
 		Model:        model,
@@ -298,57 +258,30 @@ func adjustCutForToolPairs(msgs []ai.Message, cutIdx int) int {
 	return cutIdx
 }
 
-// SummarizeBranch generates a short summary of the given messages using the
-// LLM. Unlike Compact, it does not modify the agent loop's state — it simply
-// returns the summary string. This is used for branch summarization when the
-// user switches branches via /fork or /tree.
-func (a *AgentLoop) SummarizeBranch(ctx context.Context, msgs []ai.Message) (string, error) {
-	if len(msgs) == 0 {
-		return "", fmt.Errorf("no messages to summarize")
-	}
-
-	a.mu.Lock()
-	model := a.model
-	systemPrompt := a.systemPrompt
-	a.mu.Unlock()
-
-	var transcript strings.Builder
+// buildTranscript formats messages into a human-readable transcript string
+// for use in compaction prompts.
+func buildTranscript(msgs []ai.Message) string {
+	var b strings.Builder
 	for _, msg := range msgs {
+		role := string(msg.Role)
 		text := msg.GetText()
 		if text != "" {
-			transcript.WriteString(fmt.Sprintf("[%s]: %s\n\n", msg.Role, text))
+			b.WriteString(fmt.Sprintf("[%s]: %s\n\n", role, text))
+		}
+		for _, c := range msg.Content {
+			switch c.Type {
+			case ai.ContentTypeToolUse:
+				b.WriteString(fmt.Sprintf("[tool_call]: %s\n", c.ToolName))
+			case ai.ContentTypeToolResult:
+				result := c.Content
+				if len(result) > 500 {
+					result = result[:500] + "..."
+				}
+				b.WriteString(fmt.Sprintf("[tool_result]: %s\n\n", result))
+			}
 		}
 	}
-
-	prompt := "Generate a one-line summary (max 80 characters) of this conversation branch. Focus on the main topic or outcome. Do not use quotes or prefixes.\n\n<conversation>\n" + transcript.String() + "</conversation>"
-
-	req := ai.StreamRequest{
-		Model:        model,
-		SystemPrompt: systemPrompt,
-		Messages:     []ai.Message{ai.NewTextMessage(ai.RoleUser, prompt)},
-		MaxTokens:    200,
-	}
-
-	stream, err := a.provider.Stream(ctx, req)
-	if err != nil {
-		return "", fmt.Errorf("branch summary stream: %w", err)
-	}
-
-	var summary strings.Builder
-	for event := range stream {
-		switch event.Type {
-		case ai.EventTextDelta:
-			summary.WriteString(event.Delta)
-		case ai.EventError:
-			return "", fmt.Errorf("branch summary error: %w", event.Error)
-		}
-	}
-
-	result := strings.TrimSpace(summary.String())
-	if result == "" {
-		return "", fmt.Errorf("branch summary produced empty result")
-	}
-	return result, nil
+	return b.String()
 }
 
 // estimateMessageChars returns a rough character count for a message.

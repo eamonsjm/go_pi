@@ -435,24 +435,6 @@ func TestApp_HandleAgentEvent(t *testing.T) {
 	}
 }
 
-func TestSendDone(t *testing.T) {
-	msg := SendDone()
-	if _, ok := msg.(AgentDoneMsg); !ok {
-		t.Errorf("expected AgentDoneMsg, got %T", msg)
-	}
-}
-
-func TestSendError(t *testing.T) {
-	msg := SendError(errors.New("test"))
-	errMsg, ok := msg.(AgentErrorMsg)
-	if !ok {
-		t.Fatalf("expected AgentErrorMsg, got %T", msg)
-	}
-	if errMsg.Err.Error() != "test" {
-		t.Errorf("expected 'test' error, got %q", errMsg.Err.Error())
-	}
-}
-
 // ---------------------------------------------------------------------------
 // Layout
 // ---------------------------------------------------------------------------

@@ -428,7 +428,7 @@ func (p *AnthropicProvider) readSSEStream(ctx context.Context, body io.ReadClose
 		// Check for context cancellation.
 		select {
 		case <-ctx.Done():
-			p.send(ch, StreamEvent{Type: EventError, Error: ctx.Err()})
+			ch <- StreamEvent{Type: EventError, Error: ctx.Err()}
 			return
 		default:
 		}
@@ -448,13 +448,13 @@ func (p *AnthropicProvider) readSSEStream(ctx context.Context, body io.ReadClose
 		case "message_start":
 			var d anthMessageStartData
 			if err := json.Unmarshal(data, &d); err != nil {
-				p.send(ch, StreamEvent{Type: EventError, Error: fmt.Errorf("anthropic: failed to parse message_start: %w", err)})
+				ch <- StreamEvent{Type: EventError, Error: fmt.Errorf("anthropic: failed to parse message_start: %w", err)}
 				return
 			}
 			usage.InputTokens += d.Message.Usage.InputTokens
 			usage.CacheRead += d.Message.Usage.CacheReadInputTokens
 			usage.CacheWrite += d.Message.Usage.CacheCreationInputTokens
-			p.send(ch, StreamEvent{
+			ch <- StreamEvent{
 				Type: EventMessageStart,
 				Usage: &Usage{
 					InputTokens:  d.Message.Usage.InputTokens,
@@ -462,12 +462,12 @@ func (p *AnthropicProvider) readSSEStream(ctx context.Context, body io.ReadClose
 					CacheRead:    d.Message.Usage.CacheReadInputTokens,
 					CacheWrite:   d.Message.Usage.CacheCreationInputTokens,
 				},
-			})
+			}
 
 		case "content_block_start":
 			var d anthContentBlockStartData
 			if err := json.Unmarshal(data, &d); err != nil {
-				p.send(ch, StreamEvent{Type: EventError, Error: fmt.Errorf("anthropic: failed to parse content_block_start: %w", err)})
+				ch <- StreamEvent{Type: EventError, Error: fmt.Errorf("anthropic: failed to parse content_block_start: %w", err)}
 				return
 			}
 			bs := &blockState{blockType: d.ContentBlock.Type}
@@ -477,21 +477,21 @@ func (p *AnthropicProvider) readSSEStream(ctx context.Context, body io.ReadClose
 			case "tool_use":
 				bs.toolID = d.ContentBlock.ID
 				bs.toolName = d.ContentBlock.Name
-				p.send(ch, StreamEvent{
+				ch <- StreamEvent{
 					Type:       EventToolUseStart,
 					ToolCallID: d.ContentBlock.ID,
 					ToolName:   d.ContentBlock.Name,
-				})
+				}
 			case "text":
 				if d.ContentBlock.Text != "" {
-					p.send(ch, StreamEvent{Type: EventTextDelta, Delta: d.ContentBlock.Text})
+					ch <- StreamEvent{Type: EventTextDelta, Delta: d.ContentBlock.Text}
 				}
 			}
 
 		case "content_block_delta":
 			var d anthContentBlockDeltaData
 			if err := json.Unmarshal(data, &d); err != nil {
-				p.send(ch, StreamEvent{Type: EventError, Error: fmt.Errorf("anthropic: failed to parse content_block_delta: %w", err)})
+				ch <- StreamEvent{Type: EventError, Error: fmt.Errorf("anthropic: failed to parse content_block_delta: %w", err)}
 				return
 			}
 			bs := blocks[d.Index]
@@ -501,17 +501,17 @@ func (p *AnthropicProvider) readSSEStream(ctx context.Context, body io.ReadClose
 
 			switch d.Delta.Type {
 			case "text_delta":
-				p.send(ch, StreamEvent{Type: EventTextDelta, Delta: d.Delta.Text})
+				ch <- StreamEvent{Type: EventTextDelta, Delta: d.Delta.Text}
 			case "thinking_delta":
-				p.send(ch, StreamEvent{Type: EventThinkingDelta, Delta: d.Delta.Thinking})
+				ch <- StreamEvent{Type: EventThinkingDelta, Delta: d.Delta.Thinking}
 			case "input_json_delta":
 				bs.inputBuf.WriteString(d.Delta.PartialJSON)
-				p.send(ch, StreamEvent{
+				ch <- StreamEvent{
 					Type:         EventToolUseDelta,
 					ToolCallID:   bs.toolID,
 					ToolName:     bs.toolName,
 					PartialInput: d.Delta.PartialJSON,
-				})
+				}
 			}
 
 		case "content_block_stop":
@@ -520,44 +520,44 @@ func (p *AnthropicProvider) readSSEStream(ctx context.Context, body io.ReadClose
 				Index int `json:"index"`
 			}
 			if err := json.Unmarshal(data, &d); err != nil {
-				p.send(ch, StreamEvent{Type: EventError, Error: fmt.Errorf("anthropic: failed to parse content_block_stop: %w", err)})
+				ch <- StreamEvent{Type: EventError, Error: fmt.Errorf("anthropic: failed to parse content_block_stop: %w", err)}
 				return
 			}
 			bs := blocks[d.Index]
 			if bs != nil && bs.blockType == "tool_use" {
-				p.send(ch, StreamEvent{
+				ch <- StreamEvent{
 					Type:       EventToolUseEnd,
 					ToolCallID: bs.toolID,
 					ToolName:   bs.toolName,
-				})
+				}
 			}
 			delete(blocks, d.Index)
 
 		case "message_delta":
 			var d anthMessageDeltaData
 			if err := json.Unmarshal(data, &d); err != nil {
-				p.send(ch, StreamEvent{Type: EventError, Error: fmt.Errorf("anthropic: failed to parse message_delta: %w", err)})
+				ch <- StreamEvent{Type: EventError, Error: fmt.Errorf("anthropic: failed to parse message_delta: %w", err)}
 				return
 			}
 			usage.OutputTokens += d.Usage.OutputTokens
 
 		case "message_stop":
-			p.send(ch, StreamEvent{
+			ch <- StreamEvent{
 				Type:  EventMessageEnd,
 				Usage: &usage,
-			})
+			}
 			return
 
 		case "error":
 			var d anthErrorData
 			if err := json.Unmarshal(data, &d); err != nil {
-				p.send(ch, StreamEvent{Type: EventError, Error: fmt.Errorf("anthropic: unparseable error event: %s", string(data))})
+				ch <- StreamEvent{Type: EventError, Error: fmt.Errorf("anthropic: unparseable error event: %s", string(data))}
 			} else {
-				p.send(ch, StreamEvent{Type: EventError, Error: &APIError{
+				ch <- StreamEvent{Type: EventError, Error: &APIError{
 					ErrorType: d.Error.Type,
 					Message:   d.Error.Message,
 					Provider:  "anthropic",
-				}})
+				}}
 			}
 			return
 
@@ -567,10 +567,6 @@ func (p *AnthropicProvider) readSSEStream(ctx context.Context, body io.ReadClose
 	}
 
 	if err := scanner.Err(); err != nil {
-		p.send(ch, StreamEvent{Type: EventError, Error: fmt.Errorf("anthropic: stream read error: %w", err)})
+		ch <- StreamEvent{Type: EventError, Error: fmt.Errorf("anthropic: stream read error: %w", err)}
 	}
-}
-
-func (p *AnthropicProvider) send(ch chan<- StreamEvent, evt StreamEvent) {
-	ch <- evt
 }

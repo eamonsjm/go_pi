@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 	"fmt"
-	"log"
 	"strconv"
 	"strings"
 
@@ -76,26 +75,6 @@ func NewForkCommand(ctx context.Context, agentLoop *agent.AgentLoop, sessionMgr 
 			forkPointID := forkEntry.ParentID
 			if forkPointID == "" {
 				forkPointID = forkEntry.ID
-			}
-
-			// Summarize the branch we're leaving (best effort, async).
-			oldBranchLeaf := sessionMgr.ActiveBranch()
-			if oldBranchLeaf != "" && oldBranchLeaf != forkPointID {
-				go func() {
-					oldMsgs := sessionMgr.GetBranchMessages(oldBranchLeaf)
-					if len(oldMsgs) <= 1 {
-						return
-					}
-					summary, err := agentLoop.SummarizeBranch(ctx, oldMsgs)
-					if err != nil {
-						log.Printf("fork: branch summary failed: %v", err)
-						return
-					}
-					// Store summary as a branch_summary entry. We need to
-					// temporarily fork to add it, then restore, but that
-					// would be complex. Instead, just log it for now.
-					log.Printf("fork: branch summary for %s: %s", shortID(oldBranchLeaf), summary)
-				}()
 			}
 
 			// Set the fork point.

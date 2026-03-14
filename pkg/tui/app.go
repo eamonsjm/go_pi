@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/charmbracelet/bubbles/textarea"
@@ -499,16 +500,6 @@ func (a *App) HandleAgentEvent(event agent.AgentEvent) tea.Cmd {
 	}
 }
 
-// SendDone returns a Cmd that signals the agent loop is complete.
-func SendDone() tea.Msg {
-	return AgentDoneMsg{}
-}
-
-// SendError returns a Cmd that signals an agent error.
-func SendError(err error) tea.Msg {
-	return AgentErrorMsg{Err: err}
-}
-
 // ---------------------------------------------------------------------------
 // Keybinding action dispatch
 // ---------------------------------------------------------------------------
@@ -569,7 +560,9 @@ func (a *App) cycleThinking() tea.Cmd {
 	a.cfg.ThinkingLevel = next
 	a.agentLoop.SetThinking(level)
 	a.header.SetThinking(level)
-	_ = a.cfg.Save()
+	if err := a.cfg.Save(); err != nil {
+		log.Printf("config save: %v", err)
+	}
 
 	text := fmt.Sprintf("Thinking: %s", next)
 	a.chat.AddSystemMessage(text)
