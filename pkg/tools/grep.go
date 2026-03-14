@@ -12,7 +12,6 @@ import (
 
 const (
 	maxGrepMatches = 500
-	grepSampleSize = 512
 )
 
 // GrepTool searches file contents using regular expressions.
@@ -269,26 +268,3 @@ func matchInclude(name, pattern string) bool {
 	return matched
 }
 
-// isBinaryFile checks if a file appears to be binary by reading its first bytes.
-func isBinaryFile(path string) bool {
-	f, err := os.Open(path)
-	if err != nil {
-		return false
-	}
-	defer f.Close()
-
-	buf := make([]byte, grepSampleSize)
-	n, err := f.Read(buf)
-	if n == 0 {
-		return false
-	}
-	buf = buf[:n]
-
-	// Check for null bytes (strong indicator of binary).
-	for _, b := range buf {
-		if b == 0 {
-			return true
-		}
-	}
-	return false
-}

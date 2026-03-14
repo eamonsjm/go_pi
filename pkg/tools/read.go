@@ -5,14 +5,11 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"unicode/utf8"
 )
 
 const (
-	defaultReadLimit    = 2000
-	maxLineTruncateLen  = 2000
-	binarySampleSize    = 8192
-	binaryNullThreshold = 0.01 // if > 1% null bytes, consider binary
+	defaultReadLimit   = 2000
+	maxLineTruncateLen = 2000
 )
 
 // ReadTool reads file contents with line numbers.
@@ -123,35 +120,4 @@ func (t *ReadTool) Execute(ctx context.Context, params map[string]any) (string, 
 	return b.String(), nil
 }
 
-// isBinary returns true if the data appears to be binary content.
-func isBinary(data []byte) bool {
-	if len(data) == 0 {
-		return false
-	}
-
-	// Check a sample of the file.
-	sample := data
-	if len(sample) > binarySampleSize {
-		sample = sample[:binarySampleSize]
-	}
-
-	// Check if it's valid UTF-8 with a reasonable amount of null bytes.
-	nullCount := 0
-	for _, b := range sample {
-		if b == 0 {
-			nullCount++
-		}
-	}
-
-	if float64(nullCount)/float64(len(sample)) > binaryNullThreshold {
-		return true
-	}
-
-	// If it's not valid UTF-8, treat as binary.
-	if !utf8.Valid(sample) {
-		return true
-	}
-
-	return false
-}
 
