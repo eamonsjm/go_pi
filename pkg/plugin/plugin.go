@@ -91,6 +91,47 @@ type Manifest struct {
 	Description  string   `json:"description,omitempty"`
 	Executable   string   `json:"executable"`
 	Capabilities []string `json:"capabilities,omitempty"`
+
+	// Per-plugin timeout overrides (in seconds). Zero means use default.
+	InitTimeoutSecs    int `json:"init_timeout,omitempty"`
+	ToolTimeoutSecs    int `json:"tool_timeout,omitempty"`
+	CommandTimeoutSecs int `json:"command_timeout,omitempty"`
+
+	// Optional memory limit in megabytes. Enforced via OS-level rlimit
+	// on supported platforms (Linux). Zero means no limit.
+	MemoryLimitMB int64 `json:"memory_limit_mb,omitempty"`
+}
+
+// TimeoutConfig holds per-plugin timeout values. Zero values mean "use default".
+type TimeoutConfig struct {
+	InitTimeout    time.Duration
+	ToolTimeout    time.Duration
+	CommandTimeout time.Duration
+}
+
+// DefaultTimeoutConfig returns a TimeoutConfig with the default values.
+func DefaultTimeoutConfig() TimeoutConfig {
+	return TimeoutConfig{
+		InitTimeout:    initTimeout,
+		ToolTimeout:    toolTimeout,
+		CommandTimeout: commandTimeout,
+	}
+}
+
+// TimeoutConfigFromManifest builds a TimeoutConfig from manifest values,
+// falling back to defaults for any zero values.
+func TimeoutConfigFromManifest(m Manifest) TimeoutConfig {
+	cfg := DefaultTimeoutConfig()
+	if m.InitTimeoutSecs > 0 {
+		cfg.InitTimeout = time.Duration(m.InitTimeoutSecs) * time.Second
+	}
+	if m.ToolTimeoutSecs > 0 {
+		cfg.ToolTimeout = time.Duration(m.ToolTimeoutSecs) * time.Second
+	}
+	if m.CommandTimeoutSecs > 0 {
+		cfg.CommandTimeout = time.Duration(m.CommandTimeoutSecs) * time.Second
+	}
+	return cfg
 }
 
 // ToAIToolDef converts a plugin ToolDef to the ai.ToolDef used by the

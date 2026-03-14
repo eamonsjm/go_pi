@@ -16,8 +16,11 @@ const (
 	// initTimeout is how long to wait for a plugin to respond to initialize.
 	initTimeout = 10 * time.Second
 
-	// toolTimeout is the default timeout for a tool_call or command execution.
+	// toolTimeout is the default timeout for a tool_call execution.
 	toolTimeout = 30 * time.Second
+
+	// commandTimeout is the default timeout for a command execution.
+	commandTimeout = 10 * time.Second
 
 	// shutdownTimeout is how long to wait for a plugin to exit after shutdown.
 	shutdownTimeout = 5 * time.Second
@@ -93,6 +96,12 @@ type PluginProcess struct {
 	lastHeartbeatAck time.Time         // time of last successful heartbeat ack
 	lastHeartbeatStatus *HeartbeatStatus // status from last ack
 
+	// Per-plugin timeout configuration.
+	timeouts TimeoutConfig
+
+	// Memory limit in megabytes (0 = no limit).
+	memLimitMB int64
+
 	// Supervisor fields (set when EnableAutoRestart is called).
 	supervised bool
 	ctx        context.Context
@@ -139,12 +148,27 @@ func startPlugin(name, path string) (*PluginProcess, error) {
 		responseCh:  make(chan PluginMessage, 16),
 		heartbeatCh: make(chan PluginMessage, 4),
 		healthy:     true,
+		timeouts:    DefaultTimeoutConfig(),
 	}
 
 	// Start background reader that routes incoming messages.
 	go p.readLoop()
 
 	return p, nil
+}
+
+// applyMemoryLimit applies the configured memory limit to the running process.
+// Called after Start() for both initial spawn and respawn. No-op if memLimitMB
+// is zero or the platform does not support rlimit.
+func (p *PluginProcess) applyMemoryLimit() {
+	if p.memLimitMB <= 0 {
+		return
+	}
+	pid := p.cmd.Process.Pid
+	if err := setMemoryLimit(pid, p.memLimitMB); err != nil {
+		log.Printf("plugin %s: failed to set memory limit (%d MB): %v",
+			p.name, p.memLimitMB, err)
+	}
 }
 
 // readLoop continuously reads JSONL messages from the plugin's stdout and
@@ -215,6 +239,15 @@ func (p *PluginProcess) Send(msg HostMessage) error {
 	return nil
 }
 
+// timeoutError is returned by waitResponse when the timeout fires.
+type timeoutError struct {
+	plugin string
+}
+
+func (e *timeoutError) Error() string {
+	return fmt.Sprintf("plugin %s: timed out waiting for response", e.plugin)
+}
+
 // waitResponse waits for a response message on the response channel with a timeout.
 func (p *PluginProcess) waitResponse(timeout time.Duration) (PluginMessage, error) {
 	p.mu.Lock()
@@ -231,7 +264,7 @@ func (p *PluginProcess) waitResponse(timeout time.Duration) (PluginMessage, erro
 		}
 		return msg, nil
 	case <-timer.C:
-		return PluginMessage{}, fmt.Errorf("plugin %s: timed out waiting for response", p.name)
+		return PluginMessage{}, &timeoutError{plugin: p.name}
 	}
 }
 
@@ -247,7 +280,7 @@ func (p *PluginProcess) Initialize(cfg PluginConfig) error {
 		return err
 	}
 
-	msg, err := p.waitResponse(initTimeout)
+	msg, err := p.waitResponse(p.timeouts.InitTimeout)
 	if err != nil {
 		return fmt.Errorf("plugin %s: initialization failed: %w", p.name, err)
 	}
@@ -263,6 +296,7 @@ func (p *PluginProcess) Initialize(cfg PluginConfig) error {
 
 // ExecuteTool sends a tool_call message and waits for the tool_result response.
 // Returns the result content, whether it was an error, and any communication error.
+// If the plugin exceeds the configured tool timeout, the process is killed.
 func (p *PluginProcess) ExecuteTool(id, name string, params map[string]any) (string, bool, error) {
 	if err := p.Send(HostMessage{
 		Type:   "tool_call",
@@ -273,8 +307,11 @@ func (p *PluginProcess) ExecuteTool(id, name string, params map[string]any) (str
 		return "", true, err
 	}
 
-	msg, err := p.waitResponse(toolTimeout)
+	msg, err := p.waitResponse(p.timeouts.ToolTimeout)
 	if err != nil {
+		if isTimeout(err) {
+			p.handleTimeout("tool_call", name, p.timeouts.ToolTimeout)
+		}
 		return "", true, err
 	}
 
@@ -287,6 +324,7 @@ func (p *PluginProcess) ExecuteTool(id, name string, params map[string]any) (str
 
 // ExecuteCommand sends a command message and waits for the command_result response.
 // Returns the result text, whether it was an error, and any communication error.
+// If the plugin exceeds the configured command timeout, the process is killed.
 func (p *PluginProcess) ExecuteCommand(name, args string) (string, bool, error) {
 	if err := p.Send(HostMessage{
 		Type: "command",
@@ -296,8 +334,11 @@ func (p *PluginProcess) ExecuteCommand(name, args string) (string, bool, error) 
 		return "", true, err
 	}
 
-	msg, err := p.waitResponse(toolTimeout)
+	msg, err := p.waitResponse(p.timeouts.CommandTimeout)
 	if err != nil {
+		if isTimeout(err) {
+			p.handleTimeout("command", name, p.timeouts.CommandTimeout)
+		}
 		return "", true, err
 	}
 
@@ -462,6 +503,59 @@ func (p *PluginProcess) shutdownCurrentProcess() {
 	data = append(data, '\n')
 	_, _ = stdin.Write(data)
 	_ = stdin.Close()
+}
+
+// isTimeout returns true if the error is a timeout from waitResponse.
+func isTimeout(err error) bool {
+	_, ok := err.(*timeoutError)
+	return ok
+}
+
+// handleTimeout logs a timeout event and kills the plugin process. If
+// auto-restart is enabled, the supervisor will handle respawning.
+func (p *PluginProcess) handleTimeout(opType, opName string, timeout time.Duration) {
+	log.Printf("plugin %s: timeout after %v on %s %q — killing process",
+		p.name, timeout, opType, opName)
+
+	p.mu.Lock()
+	cmd := p.cmd
+	supervised := p.supervised
+	p.mu.Unlock()
+
+	if cmd == nil || cmd.Process == nil {
+		return
+	}
+
+	if supervised {
+		// Kill the process; the supervisor loop will detect the exit
+		// and handle restart.
+		_ = cmd.Process.Kill()
+		return
+	}
+
+	// Unsupervised: kill the process directly.
+	_ = cmd.Process.Kill()
+}
+
+// SetTimeouts configures per-plugin timeouts. Any zero-value field in cfg
+// keeps the current value.
+func (p *PluginProcess) SetTimeouts(cfg TimeoutConfig) {
+	if cfg.InitTimeout > 0 {
+		p.timeouts.InitTimeout = cfg.InitTimeout
+	}
+	if cfg.ToolTimeout > 0 {
+		p.timeouts.ToolTimeout = cfg.ToolTimeout
+	}
+	if cfg.CommandTimeout > 0 {
+		p.timeouts.CommandTimeout = cfg.CommandTimeout
+	}
+}
+
+// SetMemoryLimit sets the memory limit in MB for the plugin process. Must be
+// called before the process is started for it to take effect on spawn. On
+// restart, the limit is re-applied to the new process.
+func (p *PluginProcess) SetMemoryLimit(limitMB int64) {
+	p.memLimitMB = limitMB
 }
 
 // Name returns the plugin's display name.
@@ -659,6 +753,9 @@ func (p *PluginProcess) respawn() error {
 	p.mu.Unlock()
 
 	go p.readLoop()
+
+	// Re-apply memory limit on the new process.
+	p.applyMemoryLimit()
 
 	// Re-initialize the plugin with the saved config.
 	if err := p.Initialize(p.pluginCfg); err != nil {

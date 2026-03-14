@@ -88,6 +88,7 @@ func startIntegrationPlugin(t *testing.T, binPath, mode string) *PluginProcess {
 		responseCh:  make(chan PluginMessage, 16),
 		heartbeatCh: make(chan PluginMessage, 4),
 		healthy:     true,
+		timeouts:    DefaultTimeoutConfig(),
 	}
 
 	go p.readLoop()
@@ -406,6 +407,7 @@ func TestIntegration_InitTimeout(t *testing.T) {
 		responseCh:  make(chan PluginMessage, 16),
 		heartbeatCh: make(chan PluginMessage, 4),
 		healthy:     true,
+		timeouts:    DefaultTimeoutConfig(),
 	}
 
 	go p.readLoop()

@@ -107,7 +107,7 @@ func (m *Manager) loadFromDir(dir, defaultName string) error {
 			execPath = filepath.Join(dir, execPath)
 		}
 
-		return m.startAndRegister(name, execPath)
+		return m.startAndRegisterWithManifest(name, execPath, &manifest)
 	}
 
 	// No manifest -- look for executable matching directory name.
@@ -125,6 +125,12 @@ func (m *Manager) loadFromDir(dir, defaultName string) error {
 
 // startAndRegister spawns the plugin process and stores it for later initialization.
 func (m *Manager) startAndRegister(name, execPath string) error {
+	return m.startAndRegisterWithManifest(name, execPath, nil)
+}
+
+// startAndRegisterWithManifest spawns the plugin process, applies manifest
+// configuration (timeouts, memory limits), and stores it for initialization.
+func (m *Manager) startAndRegisterWithManifest(name, execPath string, manifest *Manifest) error {
 	// Verify the executable exists and is executable.
 	info, err := os.Stat(execPath)
 	if err != nil {
@@ -137,6 +143,14 @@ func (m *Manager) startAndRegister(name, execPath string) error {
 	proc, err := startPlugin(name, execPath)
 	if err != nil {
 		return err
+	}
+
+	if manifest != nil {
+		proc.SetTimeouts(TimeoutConfigFromManifest(*manifest))
+		if manifest.MemoryLimitMB > 0 {
+			proc.SetMemoryLimit(manifest.MemoryLimitMB)
+			proc.applyMemoryLimit()
+		}
 	}
 
 	m.plugins = append(m.plugins, proc)

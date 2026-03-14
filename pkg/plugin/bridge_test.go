@@ -109,6 +109,7 @@ func TestPluginTool_Execute_CommunicationError(t *testing.T) {
 		stdin:      discardWriteCloser{},
 		injectCh:   make(chan PluginMessage, 64),
 		responseCh: responseCh,
+		timeouts:   DefaultTimeoutConfig(),
 	}
 
 	pt := &PluginTool{
