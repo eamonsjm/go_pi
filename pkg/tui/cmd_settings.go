@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -145,16 +146,13 @@ func settingsUpdate(key, value string, cfg *config.Config, agentLoop *agent.Agen
 		return settingsError(fmt.Sprintf("use /theme %s to change the theme", value))
 
 	case "provider":
-		valid := map[string]bool{
-			"anthropic":  true,
-			"openrouter": true,
-			"openai":     true,
-			"gemini":     true,
-			"azure":      true,
-			"bedrock":    true,
-		}
-		if !valid[value] {
-			return settingsError(fmt.Sprintf("unknown provider %q — valid: anthropic, openrouter, openai, gemini, azure, bedrock", value))
+		if _, ok := config.ProviderEnvVars[value]; !ok {
+			names := make([]string, 0, len(config.ProviderEnvVars))
+			for k := range config.ProviderEnvVars {
+				names = append(names, k)
+			}
+			sort.Strings(names)
+			return settingsError(fmt.Sprintf("unknown provider %q — valid: %s", value, strings.Join(names, ", ")))
 		}
 		return settingsError(fmt.Sprintf("provider change to %q requires restart. Edit ~/.gi/settings.json and relaunch.", value))
 

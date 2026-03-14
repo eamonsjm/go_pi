@@ -4,12 +4,14 @@ import (
 	"fmt"
 	"os/exec"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/ejm/go_pi/pkg/auth"
+	"github.com/ejm/go_pi/pkg/config"
 )
 
 // openBrowser attempts to open the given URL in the user's default browser.
@@ -248,7 +250,11 @@ func NewAuthStatusCommand(store *auth.Store, resolver *auth.Resolver) *SlashComm
 				var sb strings.Builder
 				sb.WriteString("Authentication Status:\n")
 
-				providers := []string{"anthropic", "openrouter", "openai", "gemini", "azure"}
+				providers := make([]string, 0, len(config.ProviderEnvVars))
+				for k := range config.ProviderEnvVars {
+					providers = append(providers, k)
+				}
+				sort.Strings(providers)
 				for _, p := range providers {
 					key, _ := resolver.Resolve(p)
 					cred := store.Get(p)
