@@ -141,10 +141,7 @@ func TestAzureOpenAIProvider_StreamAuth(t *testing.T) {
 		deployment: "gpt-4o",
 		apiVersion: azureDefaultAPIVersion,
 		httpClient: server.Client(),
-		inner: &OpenAIProvider{
-			apiKey:     "test-azure-key",
-			httpClient: server.Client(),
-		},
+		inner: &OpenAIProvider{apiKey: "test-azure-key"},
 	}
 
 	ch, err := p.Stream(context.Background(), StreamRequest{
@@ -196,10 +193,7 @@ func TestAzureOpenAIProvider_StreamText(t *testing.T) {
 		deployment: "gpt-4o",
 		apiVersion: azureDefaultAPIVersion,
 		httpClient: server.Client(),
-		inner: &OpenAIProvider{
-			apiKey:     "test-key",
-			httpClient: server.Client(),
-		},
+		inner: &OpenAIProvider{apiKey: "test-key"},
 	}
 
 	ch, err := p.Stream(context.Background(), StreamRequest{
