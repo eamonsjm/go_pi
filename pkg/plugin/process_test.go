@@ -562,8 +562,7 @@ func startTestPlugin(t *testing.T, mode string) *PluginProcess {
 	p := &PluginProcess{
 		name:        "test-plugin",
 		path:        os.Args[0],
-		args:        []string{"-test.run=TestHelperPlugin"},
-		env:         cmd.Env,
+		spawnCmd:    func() *exec.Cmd { return helperPluginCmd(mode) },
 		cmd:         cmd,
 		stdin:       stdinPipe,
 		scanner:     scanner,
@@ -1090,12 +1089,9 @@ func TestAutoRestart_MaxAttemptsExhausted(t *testing.T) {
 		MaxBackoff:     20 * time.Millisecond,
 	})
 
-	// Switch the environment to exit_immediately so restarts fail.
+	// Switch the spawn command to exit_immediately so restarts fail.
 	p.mu.Lock()
-	p.env = append(os.Environ(),
-		"GO_PLUGIN_TEST_HELPER=1",
-		"PLUGIN_MODE=exit_immediately",
-	)
+	p.spawnCmd = func() *exec.Cmd { return helperPluginCmd("exit_immediately") }
 	p.mu.Unlock()
 
 	// Kill current process to trigger restart.

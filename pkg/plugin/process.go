@@ -64,11 +64,10 @@ func DefaultHeartbeatConfig() HeartbeatConfig {
 
 // PluginProcess manages a single plugin subprocess and its JSONL communication.
 type PluginProcess struct {
-	name         string
-	path         string
-	args         []string // arguments for subprocess (not including path)
-	env          []string // environment for subprocess (nil = inherit parent)
-	cmd          *exec.Cmd
+	name     string
+	path     string
+	spawnCmd func() *exec.Cmd // creates the exec.Cmd for (re)spawning
+	cmd      *exec.Cmd
 	stdin        io.WriteCloser
 	scanner      *bufio.Scanner
 	tools        []ToolDef
@@ -141,6 +140,7 @@ func startPlugin(name, path string) (*PluginProcess, error) {
 	p := &PluginProcess{
 		name:        name,
 		path:        path,
+		spawnCmd:    func() *exec.Cmd { return exec.Command(path) },
 		cmd:         cmd,
 		stdin:       stdinPipe,
 		scanner:     scanner,
@@ -432,6 +432,14 @@ func (p *PluginProcess) LastHeartbeatStatus() *HeartbeatStatus {
 	return p.lastHeartbeatStatus
 }
 
+// LastHeartbeatAck returns the time of the last successful heartbeat ack,
+// or the zero time if no heartbeat has been acknowledged yet.
+func (p *PluginProcess) LastHeartbeatAck() time.Time {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.lastHeartbeatAck
+}
+
 // Stop sends a shutdown message and waits for the plugin process to exit.
 // If the process does not exit within shutdownTimeout, it is killed.
 // When auto-restart is enabled, Stop cancels any pending restarts first.
@@ -716,8 +724,7 @@ func (p *PluginProcess) waitAndSupervise() {
 // and re-initializes the plugin. The old channels must already be closed
 // (by readLoop exiting) before calling this.
 func (p *PluginProcess) respawn() error {
-	cmd := exec.Command(p.path, p.args...)
-	cmd.Env = p.env
+	cmd := p.spawnCmd()
 
 	stdinPipe, err := cmd.StdinPipe()
 	if err != nil {
