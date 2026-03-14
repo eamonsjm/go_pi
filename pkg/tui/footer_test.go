@@ -77,6 +77,11 @@ func TestStripAnsi(t *testing.T) {
 		{"\x1b[1m\x1b[34mbold blue\x1b[0m", "bold blue"},
 		{"no escapes here", "no escapes here"},
 		{"\x1b[38;5;196mextended\x1b[0m", "extended"},
+		// 24-bit color with semicolons (the old hand-rolled stripper handled this,
+		// but the library approach is more robust for edge cases).
+		{"\x1b[38;2;255;0;0mtrue color\x1b[0m", "true color"},
+		// OSC hyperlink sequence (old code would fail here).
+		{"\x1b]8;;https://example.com\x07link\x1b]8;;\x07", "link"},
 	}
 	for _, tt := range tests {
 		got := stripAnsi(tt.input)

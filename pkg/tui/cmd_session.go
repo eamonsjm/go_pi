@@ -237,7 +237,6 @@ func rebuildChatFromMessages(chatView *ChatView, msgs []ai.Message) {
 						Type:  agent.EventAssistantText,
 						Delta: block.Text,
 					})
-					chatView.rebuildContent()
 					// Break text continuity so the next block starts fresh.
 					chatView.HandleEvent(agent.AgentEvent{
 						Type: agent.EventTurnEnd,
@@ -264,6 +263,9 @@ func rebuildChatFromMessages(chatView *ChatView, msgs []ai.Message) {
 			}
 		}
 	}
+	// Single rebuild after all blocks are replayed — avoids O(N²) cost of
+	// rebuilding after every individual assistant text block.
+	chatView.rebuildContent()
 }
 
 // shortID returns the first 12 characters of a session ID for display.

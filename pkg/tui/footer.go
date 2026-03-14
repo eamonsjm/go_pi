@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/ejm/go_pi/pkg/ai"
 )
 
@@ -126,26 +127,12 @@ func estimateCost(u ai.Usage) float64 {
 
 // lipglossWidth returns the visible (printed) width of a styled string.
 func lipglossWidth(s string) int {
-	return len(stripAnsi(s))
+	return ansi.StringWidth(s)
 }
 
-// stripAnsi is a minimal ANSI-escape stripper for width calculation.
+// stripAnsi removes all ANSI escape sequences from s, returning only the
+// printable content. Delegates to charmbracelet/x/ansi which correctly
+// handles CSI parameter bytes, OSC sequences, and other escape types.
 func stripAnsi(s string) string {
-	var b strings.Builder
-	b.Grow(len(s))
-	inEsc := false
-	for _, r := range s {
-		if inEsc {
-			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
-				inEsc = false
-			}
-			continue
-		}
-		if r == '\x1b' {
-			inEsc = true
-			continue
-		}
-		b.WriteRune(r)
-	}
-	return b.String()
+	return ansi.Strip(s)
 }
