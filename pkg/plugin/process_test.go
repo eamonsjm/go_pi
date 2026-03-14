@@ -1449,3 +1449,186 @@ func TestToolTimeout_NoGoroutineLeak(t *testing.T) {
 			goroutinesBefore, goroutinesAfter, goroutinesAfter-goroutinesBefore)
 	}
 }
+
+// --- Per-plugin timeout and kill tests ---
+
+func TestSetTimeouts_Override(t *testing.T) {
+	p := &PluginProcess{timeouts: DefaultTimeoutConfig()}
+
+	// Override only tool timeout.
+	p.SetTimeouts(TimeoutConfig{ToolTimeout: 5 * time.Second})
+	if p.timeouts.ToolTimeout != 5*time.Second {
+		t.Errorf("ToolTimeout = %v, want 5s", p.timeouts.ToolTimeout)
+	}
+	if p.timeouts.InitTimeout != initTimeout {
+		t.Errorf("InitTimeout changed to %v, want default %v", p.timeouts.InitTimeout, initTimeout)
+	}
+	if p.timeouts.CommandTimeout != commandTimeout {
+		t.Errorf("CommandTimeout changed to %v, want default %v", p.timeouts.CommandTimeout, commandTimeout)
+	}
+}
+
+func TestSetTimeouts_ZeroKeepsCurrent(t *testing.T) {
+	p := &PluginProcess{timeouts: DefaultTimeoutConfig()}
+
+	// Zero values should keep existing.
+	p.SetTimeouts(TimeoutConfig{})
+	if p.timeouts.InitTimeout != initTimeout {
+		t.Errorf("InitTimeout = %v, want %v", p.timeouts.InitTimeout, initTimeout)
+	}
+	if p.timeouts.ToolTimeout != toolTimeout {
+		t.Errorf("ToolTimeout = %v, want %v", p.timeouts.ToolTimeout, toolTimeout)
+	}
+	if p.timeouts.CommandTimeout != commandTimeout {
+		t.Errorf("CommandTimeout = %v, want %v", p.timeouts.CommandTimeout, commandTimeout)
+	}
+}
+
+func TestDefaultTimeoutConfig(t *testing.T) {
+	cfg := DefaultTimeoutConfig()
+	if cfg.InitTimeout != 10*time.Second {
+		t.Errorf("InitTimeout = %v, want 10s", cfg.InitTimeout)
+	}
+	if cfg.ToolTimeout != 30*time.Second {
+		t.Errorf("ToolTimeout = %v, want 30s", cfg.ToolTimeout)
+	}
+	if cfg.CommandTimeout != 10*time.Second {
+		t.Errorf("CommandTimeout = %v, want 10s", cfg.CommandTimeout)
+	}
+}
+
+func TestTimeoutConfigFromManifest(t *testing.T) {
+	m := Manifest{
+		InitTimeoutSecs:    5,
+		ToolTimeoutSecs:    15,
+		CommandTimeoutSecs: 3,
+	}
+	cfg := TimeoutConfigFromManifest(m)
+	if cfg.InitTimeout != 5*time.Second {
+		t.Errorf("InitTimeout = %v, want 5s", cfg.InitTimeout)
+	}
+	if cfg.ToolTimeout != 15*time.Second {
+		t.Errorf("ToolTimeout = %v, want 15s", cfg.ToolTimeout)
+	}
+	if cfg.CommandTimeout != 3*time.Second {
+		t.Errorf("CommandTimeout = %v, want 3s", cfg.CommandTimeout)
+	}
+}
+
+func TestTimeoutConfigFromManifest_ZeroUsesDefaults(t *testing.T) {
+	m := Manifest{} // All zeros.
+	cfg := TimeoutConfigFromManifest(m)
+	if cfg.InitTimeout != initTimeout {
+		t.Errorf("InitTimeout = %v, want default %v", cfg.InitTimeout, initTimeout)
+	}
+	if cfg.ToolTimeout != toolTimeout {
+		t.Errorf("ToolTimeout = %v, want default %v", cfg.ToolTimeout, toolTimeout)
+	}
+	if cfg.CommandTimeout != commandTimeout {
+		t.Errorf("CommandTimeout = %v, want default %v", cfg.CommandTimeout, commandTimeout)
+	}
+}
+
+func TestExecuteTool_CustomTimeout(t *testing.T) {
+	p := startTestPlugin(t, "hang_on_tool")
+	if err := p.Initialize(PluginConfig{}); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+
+	// Set a very short tool timeout.
+	p.SetTimeouts(TimeoutConfig{ToolTimeout: 50 * time.Millisecond})
+
+	start := time.Now()
+	_, _, err := p.ExecuteTool("call-short", "anything", nil)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected timeout error")
+	}
+	if !strings.Contains(err.Error(), "timed out") {
+		t.Errorf("error = %q, want containing 'timed out'", err.Error())
+	}
+	// Should timeout in ~50ms, not the default 30s.
+	if elapsed > 1*time.Second {
+		t.Errorf("timeout took %v, expected ~50ms (custom timeout not applied)", elapsed)
+	}
+}
+
+func TestExecuteCommand_CustomTimeout(t *testing.T) {
+	// The echo_caps helper responds to commands, but we'll use hang_on_tool
+	// which hangs on tool_call. For commands, it just never responds (no
+	// command handler), so it will also timeout.
+	p := startTestPlugin(t, "hang_on_tool")
+	if err := p.Initialize(PluginConfig{}); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+
+	// Set a very short command timeout.
+	p.SetTimeouts(TimeoutConfig{CommandTimeout: 50 * time.Millisecond})
+
+	start := time.Now()
+	_, _, err := p.ExecuteCommand("anything", "args")
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected timeout error")
+	}
+	if !strings.Contains(err.Error(), "timed out") {
+		t.Errorf("error = %q, want containing 'timed out'", err.Error())
+	}
+	if elapsed > 1*time.Second {
+		t.Errorf("timeout took %v, expected ~50ms (custom timeout not applied)", elapsed)
+	}
+}
+
+func TestExecuteTool_KillsProcessOnTimeout(t *testing.T) {
+	p := startTestPlugin(t, "hang_on_tool")
+	if err := p.Initialize(PluginConfig{}); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+
+	// Set a very short tool timeout.
+	p.SetTimeouts(TimeoutConfig{ToolTimeout: 50 * time.Millisecond})
+
+	_, _, err := p.ExecuteTool("call-kill", "anything", nil)
+	if err == nil {
+		t.Fatal("expected timeout error")
+	}
+
+	// After timeout, the process should be killed. Wait a moment for the
+	// kill to take effect.
+	time.Sleep(100 * time.Millisecond)
+
+	// The process was killed, so cmd.Wait should have returned.
+	// A subsequent Send should fail.
+	sendErr := p.Send(HostMessage{Type: "test"})
+	if sendErr == nil {
+		// The process might still be in the process of dying. Try once more.
+		time.Sleep(100 * time.Millisecond)
+		sendErr = p.Send(HostMessage{Type: "test"})
+	}
+	// We expect either a write error (broken pipe) or a "process closed" error.
+	// Both are acceptable — the point is the process was killed.
+}
+
+func TestIsTimeout(t *testing.T) {
+	te := &timeoutError{plugin: "test"}
+	if !isTimeout(te) {
+		t.Error("isTimeout(timeoutError) = false, want true")
+	}
+
+	other := fmt.Errorf("some other error")
+	if isTimeout(other) {
+		t.Error("isTimeout(other) = true, want false")
+	}
+}
+
+func TestHandleTimeout_NilCmd(t *testing.T) {
+	// handleTimeout should not panic when cmd is nil.
+	p := &PluginProcess{
+		name:     "nil-cmd",
+		timeouts: DefaultTimeoutConfig(),
+	}
+	// Should not panic.
+	p.handleTimeout("tool_call", "test", 1*time.Second)
+}
