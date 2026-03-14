@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"os/signal"
 
@@ -29,7 +28,8 @@ func RunJSONStream(agentLoop *agent.AgentLoop, prompt string) {
 	if prompt == "" {
 		prompt = readStdin()
 		if prompt == "" {
-			writeJSONLine(os.Stdout, Event{Type: "error", Error: "no prompt provided"})
+			data, _ := json.Marshal(Event{Type: "error", Error: "no prompt provided"})
+			fmt.Fprintf(os.Stdout, "%s\n", data)
 			os.Exit(1)
 		}
 	}
@@ -69,10 +69,4 @@ func readStdin() string {
 		text += scanner.Text()
 	}
 	return text
-}
-
-// writeJSONLine writes a single JSON object followed by a newline.
-func writeJSONLine(w io.Writer, v any) {
-	data, _ := json.Marshal(v)
-	fmt.Fprintf(w, "%s\n", data)
 }

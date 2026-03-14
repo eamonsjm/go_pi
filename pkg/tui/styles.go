@@ -39,12 +39,6 @@ var (
 			Padding(0, 1)
 )
 
-// Chat viewport.
-var (
-	ChatStyle = lipgloss.NewStyle().
-			Padding(0, 1)
-)
-
 // Editor (textarea wrapper).
 var (
 	EditorStyle = lipgloss.NewStyle().

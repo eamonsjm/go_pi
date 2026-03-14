@@ -180,9 +180,6 @@ func applyTheme(t Theme) {
 		Background(headerBg).
 		Padding(0, 1)
 
-	ChatStyle = lipgloss.NewStyle().
-		Padding(0, 1)
-
 	EditorStyle = lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(ColorBorder).

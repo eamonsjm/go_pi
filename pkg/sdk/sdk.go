@@ -341,11 +341,6 @@ func (s *Session) Registry() *tools.Registry {
 	return s.registry
 }
 
-// SessionManager returns the underlying session manager for advanced usage.
-func (s *Session) SessionManager() *session.Manager {
-	return s.sessionMgr
-}
-
 // Close performs any cleanup needed when the session is done.
 // Currently a no-op but reserved for future use (e.g. plugin shutdown).
 func (s *Session) Close() error {
