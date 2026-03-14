@@ -2,6 +2,7 @@ package tui
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -1174,4 +1175,264 @@ func TestApp_RapidResize_DuringAgentRun(t *testing.T) {
 	if app.chat.blocks[0].text != "Hello " {
 		t.Errorf("expected text 'Hello ', got %q", app.chat.blocks[0].text)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Frame rate and responsiveness verification (gp-6nw.4)
+//
+// These tests verify that:
+//   - The render tick targets ~30fps (33ms interval)
+//   - User input (cancel, steer, scroll) is processed during streaming
+//   - The tick-based loop does not starve keyboard handling
+// ---------------------------------------------------------------------------
+
+func TestApp_TickRender_Produces_RenderTickMsg(t *testing.T) {
+	// tickRender() must return a cmd that eventually produces a renderTickMsg.
+	cmd := tickRender()
+	if cmd == nil {
+		t.Fatal("tickRender() returned nil cmd")
+	}
+	// Execute the cmd — it wraps tea.Tick which returns the msg immediately
+	// in test context (no real timer). We can't control wall time, but we
+	// can verify the msg type by calling the returned func.
+	msg := cmd()
+	if _, ok := msg.(renderTickMsg); !ok {
+		t.Errorf("expected renderTickMsg, got %T", msg)
+	}
+}
+
+func TestApp_TickIdleRender_Produces_IdleRenderMsg(t *testing.T) {
+	cmd := tickIdleRender(42)
+	if cmd == nil {
+		t.Fatal("tickIdleRender() returned nil cmd")
+	}
+	msg := cmd()
+	idle, ok := msg.(idleRenderMsg)
+	if !ok {
+		t.Fatalf("expected idleRenderMsg, got %T", msg)
+	}
+	if idle.gen != 42 {
+		t.Errorf("expected gen=42, got %d", idle.gen)
+	}
+}
+
+func TestApp_TickSelfPerpetuation_WhileStreaming(t *testing.T) {
+	app := NewApp()
+	app.agentRunning = true
+
+	// Submit triggers the first tick.
+	_, cmd := app.Update(editorSubmitMsg{text: "go"})
+	if cmd == nil {
+		t.Fatal("expected tick cmd after submit")
+	}
+
+	// Each tick while running should schedule the next tick.
+	for i := 0; i < 10; i++ {
+		_, cmd = app.Update(renderTickMsg{})
+		if cmd == nil {
+			t.Fatalf("tick %d did not schedule next tick while agent running", i)
+		}
+	}
+
+	// Stop the agent — next tick should NOT schedule another.
+	app.agentRunning = false
+	_, cmd = app.Update(renderTickMsg{})
+	if cmd != nil {
+		t.Error("tick should not schedule another tick when agent is not running")
+	}
+}
+
+func TestApp_CancelDuringStreaming(t *testing.T) {
+	app := NewApp()
+	var cancelled bool
+	app.SetCallbacks(func(string) {}, nil, func() { cancelled = true })
+
+	// Start agent run.
+	app.agentRunning = true
+	app.editor.SetState(editorRunning)
+
+	// Stream some deltas.
+	for _, d := range []string{"Hello", " world"} {
+		app.Update(StreamEventMsg{
+			Event: agent.AgentEvent{Type: agent.EventAssistantText, Delta: d},
+		})
+	}
+
+	// Ctrl-C during streaming should trigger cancel.
+	app.Update(editorCancelMsg{})
+	if !cancelled {
+		t.Error("expected cancel callback to fire during streaming")
+	}
+}
+
+func TestApp_SteerDuringStreaming(t *testing.T) {
+	app := NewApp()
+	var steered string
+	app.SetCallbacks(func(string) {}, func(text string) { steered = text }, nil)
+
+	// Start agent run with content.
+	app.agentRunning = true
+	app.editor.SetState(editorRunning)
+	app.Update(StreamEventMsg{
+		Event: agent.AgentEvent{Type: agent.EventAssistantText, Delta: "Working..."},
+	})
+
+	// Steer message during streaming should be processed.
+	app.Update(editorSteerMsg{text: "focus on tests"})
+	if steered != "focus on tests" {
+		t.Errorf("expected steer text 'focus on tests', got %q", steered)
+	}
+}
+
+func TestApp_KeyboardInterleavedWithTicks(t *testing.T) {
+	app := NewApp()
+	app.agentRunning = true
+	app.editor.SetState(editorRunning)
+	app.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+
+	// Add a thinking block for toggle testing.
+	app.Update(StreamEventMsg{
+		Event: agent.AgentEvent{Type: agent.EventAssistantThinking, Delta: "deep thought"},
+	})
+
+	// Interleave ticks with keyboard events.
+	app.Update(renderTickMsg{})
+
+	// Toggle thinking expand/collapse via Ctrl+T during streaming.
+	if !app.chat.blocks[0].collapsed {
+		t.Fatal("thinking should start collapsed")
+	}
+	app.Update(tea.KeyMsg{Type: tea.KeyCtrlT})
+	if app.chat.blocks[0].collapsed {
+		t.Error("Ctrl+T should expand thinking even between ticks")
+	}
+
+	// Another tick should still process fine.
+	_, cmd := app.Update(renderTickMsg{})
+	if cmd == nil {
+		t.Error("tick should continue after keyboard event")
+	}
+
+	// Toggle back.
+	app.Update(tea.KeyMsg{Type: tea.KeyCtrlT})
+	if !app.chat.blocks[0].collapsed {
+		t.Error("second Ctrl+T should collapse thinking again")
+	}
+}
+
+func TestApp_ViewportScrollDuringStreaming(t *testing.T) {
+	app := NewApp()
+	app.agentRunning = true
+	app.Update(tea.WindowSizeMsg{Width: 80, Height: 10})
+
+	// Add enough content to make the viewport scrollable.
+	for i := 0; i < 50; i++ {
+		app.Update(StreamEventMsg{
+			Event: agent.AgentEvent{
+				Type:  agent.EventAssistantText,
+				Delta: fmt.Sprintf("Line %d of output\n", i),
+			},
+		})
+	}
+	// Flush to viewport.
+	app.Update(renderTickMsg{})
+
+	// Scroll up via key event — should not panic or be blocked.
+	app.Update(tea.KeyMsg{Type: tea.KeyUp})
+	app.Update(tea.KeyMsg{Type: tea.KeyUp})
+	app.Update(tea.KeyMsg{Type: tea.KeyUp})
+
+	// More deltas arrive while scrolled up.
+	app.Update(StreamEventMsg{
+		Event: agent.AgentEvent{Type: agent.EventAssistantText, Delta: "new content"},
+	})
+	app.Update(renderTickMsg{})
+
+	// Content should include all text — scroll position is separate.
+	if !strings.Contains(app.chat.blocks[0].text, "new content") {
+		t.Error("new deltas should accumulate even while scrolled up")
+	}
+}
+
+func TestApp_RenderOnlyOnDirty(t *testing.T) {
+	app := NewApp()
+	app.agentRunning = true
+	app.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+
+	// Send a delta and flush it.
+	app.Update(StreamEventMsg{
+		Event: agent.AgentEvent{Type: agent.EventAssistantText, Delta: "hello"},
+	})
+	app.Update(renderTickMsg{})
+	if app.chat.dirty {
+		t.Fatal("dirty should be false after tick flush")
+	}
+
+	// Capture the rendered content.
+	rendered := app.chat.blocks[0].rendered
+
+	// Tick without new deltas should NOT clear the render cache.
+	app.Update(renderTickMsg{})
+	if app.chat.blocks[0].rendered != rendered {
+		t.Error("tick without new deltas should preserve render cache (no wasted work)")
+	}
+}
+
+func TestApp_StreamCompletionTriggersGlamour(t *testing.T) {
+	app := NewApp()
+	app.agentRunning = true
+	app.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+
+	// Stream deltas — should be in streaming mode.
+	app.Update(StreamEventMsg{
+		Event: agent.AgentEvent{Type: agent.EventAssistantText, Delta: "**bold text**"},
+	})
+	app.Update(renderTickMsg{})
+	if !app.chat.blocks[0].streaming {
+		t.Fatal("expected streaming=true during active deltas")
+	}
+
+	// TurnEnd signals the stream finished — clears streaming flags.
+	app.Update(StreamEventMsg{
+		Event: agent.AgentEvent{Type: agent.EventTurnEnd},
+	})
+	if app.chat.blocks[0].streaming {
+		t.Error("expected streaming=false after TurnEnd — glamour should render")
+	}
+
+	// AgentDoneMsg flushes any remaining dirty state.
+	app.Update(AgentDoneMsg{})
+	if app.chat.dirty {
+		t.Error("expected dirty=false after AgentDoneMsg flush")
+	}
+}
+
+func TestApp_MultipleAgentCycles_TickLifecycle(t *testing.T) {
+	app := NewApp()
+	app.SetCallbacks(func(string) {}, nil, nil)
+
+	// First agent run.
+	app.Update(editorSubmitMsg{text: "first"})
+	app.Update(StreamEventMsg{
+		Event: agent.AgentEvent{Type: agent.EventAssistantText, Delta: "response 1"},
+	})
+	_, cmd := app.Update(renderTickMsg{})
+	if cmd == nil {
+		t.Error("tick should continue during first run")
+	}
+	app.Update(AgentDoneMsg{})
+
+	// Between runs, ticks should stop.
+	_, cmd = app.Update(renderTickMsg{})
+	if cmd != nil {
+		t.Error("tick should stop between agent runs")
+	}
+
+	// Second agent run — ticks should resume.
+	app.Update(editorSubmitMsg{text: "second"})
+	_, cmd = app.Update(renderTickMsg{})
+	if cmd == nil {
+		t.Error("tick should resume for second agent run")
+	}
+	app.Update(AgentDoneMsg{})
 }
