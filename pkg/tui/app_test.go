@@ -683,6 +683,307 @@ func TestApp_Update_IdleRenderMsg_StaleGen(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// Delta coalescing between frames (gp-6nw.3)
+//
+// Between render ticks, multiple StreamEventMsg may arrive. The App must:
+//   - Accumulate all text deltas into the block text (no data loss)
+//   - Set dirty=true on each delta
+//   - Call rebuildContent() at most once per tick (on renderTickMsg)
+// ---------------------------------------------------------------------------
+
+func TestApp_DeltaCoalescing_MultipleTextDeltas(t *testing.T) {
+	app := NewApp()
+	app.agentRunning = true
+
+	// Simulate 5 text deltas arriving between ticks.
+	deltas := []string{"Hello", " ", "world", "! ", "How are you?"}
+	for _, d := range deltas {
+		app.Update(StreamEventMsg{
+			Event: agent.AgentEvent{
+				Type:  agent.EventAssistantText,
+				Delta: d,
+			},
+		})
+	}
+
+	// All deltas should accumulate in one block.
+	if len(app.chat.blocks) != 1 {
+		t.Fatalf("expected 1 block, got %d", len(app.chat.blocks))
+	}
+	want := "Hello world! How are you?"
+	if app.chat.blocks[0].text != want {
+		t.Errorf("expected %q, got %q", want, app.chat.blocks[0].text)
+	}
+	if !app.chat.dirty {
+		t.Error("expected dirty=true before tick")
+	}
+
+	// A single tick should flush all accumulated deltas.
+	app.Update(renderTickMsg{})
+	if app.chat.dirty {
+		t.Error("expected dirty=false after tick")
+	}
+}
+
+func TestApp_DeltaCoalescing_MultipleThinkingDeltas(t *testing.T) {
+	app := NewApp()
+	app.agentRunning = true
+
+	// Simulate thinking deltas arriving between ticks.
+	deltas := []string{"Let me ", "think about ", "this..."}
+	for _, d := range deltas {
+		app.Update(StreamEventMsg{
+			Event: agent.AgentEvent{
+				Type:  agent.EventAssistantThinking,
+				Delta: d,
+			},
+		})
+	}
+
+	if len(app.chat.blocks) != 1 {
+		t.Fatalf("expected 1 block, got %d", len(app.chat.blocks))
+	}
+	want := "Let me think about this..."
+	if app.chat.blocks[0].text != want {
+		t.Errorf("expected %q, got %q", want, app.chat.blocks[0].text)
+	}
+	if app.chat.blocks[0].kind != blockThinking {
+		t.Error("expected blockThinking")
+	}
+}
+
+func TestApp_DeltaCoalescing_NoDeltaLoss(t *testing.T) {
+	app := NewApp()
+	app.agentRunning = true
+
+	// Send a large number of deltas to stress-test accumulation.
+	const n = 100
+	for i := 0; i < n; i++ {
+		app.Update(StreamEventMsg{
+			Event: agent.AgentEvent{
+				Type:  agent.EventAssistantText,
+				Delta: "x",
+			},
+		})
+	}
+
+	if len(app.chat.blocks) != 1 {
+		t.Fatalf("expected 1 block, got %d", len(app.chat.blocks))
+	}
+	if len(app.chat.blocks[0].text) != n {
+		t.Errorf("expected %d chars, got %d — deltas were lost", n, len(app.chat.blocks[0].text))
+	}
+}
+
+func TestApp_DeltaCoalescing_DirtyFlagLifecycle(t *testing.T) {
+	app := NewApp()
+	app.agentRunning = true
+
+	// Initially not dirty.
+	if app.chat.dirty {
+		t.Error("expected dirty=false initially")
+	}
+
+	// First delta sets dirty.
+	app.Update(StreamEventMsg{
+		Event: agent.AgentEvent{Type: agent.EventAssistantText, Delta: "a"},
+	})
+	if !app.chat.dirty {
+		t.Error("expected dirty=true after first delta")
+	}
+
+	// More deltas keep dirty=true.
+	app.Update(StreamEventMsg{
+		Event: agent.AgentEvent{Type: agent.EventAssistantText, Delta: "b"},
+	})
+	if !app.chat.dirty {
+		t.Error("expected dirty=true after second delta")
+	}
+
+	// Tick clears dirty.
+	app.Update(renderTickMsg{})
+	if app.chat.dirty {
+		t.Error("expected dirty=false after tick")
+	}
+
+	// No-change tick: dirty stays false.
+	app.Update(renderTickMsg{})
+	if app.chat.dirty {
+		t.Error("expected dirty=false when no new deltas")
+	}
+
+	// New delta after tick sets dirty again.
+	app.Update(StreamEventMsg{
+		Event: agent.AgentEvent{Type: agent.EventAssistantText, Delta: "c"},
+	})
+	if !app.chat.dirty {
+		t.Error("expected dirty=true after new delta")
+	}
+}
+
+func TestApp_DeltaCoalescing_AgentDoneFlushesDirty(t *testing.T) {
+	app := NewApp()
+	app.agentRunning = true
+
+	// Send deltas without any tick.
+	app.Update(StreamEventMsg{
+		Event: agent.AgentEvent{Type: agent.EventAssistantText, Delta: "final"},
+	})
+	if !app.chat.dirty {
+		t.Fatal("expected dirty=true before AgentDoneMsg")
+	}
+
+	// AgentDoneMsg should flush remaining dirty state.
+	app.Update(AgentDoneMsg{})
+	if app.chat.dirty {
+		t.Error("expected dirty=false after AgentDoneMsg flushes")
+	}
+	// Text should still be intact.
+	if app.chat.blocks[0].text != "final" {
+		t.Errorf("expected 'final', got %q", app.chat.blocks[0].text)
+	}
+}
+
+func TestApp_DeltaCoalescing_MixedEventTypes(t *testing.T) {
+	app := NewApp()
+	app.agentRunning = true
+
+	// Thinking deltas.
+	app.Update(StreamEventMsg{
+		Event: agent.AgentEvent{Type: agent.EventAssistantThinking, Delta: "hmm "},
+	})
+	app.Update(StreamEventMsg{
+		Event: agent.AgentEvent{Type: agent.EventAssistantThinking, Delta: "interesting"},
+	})
+
+	// Text deltas.
+	app.Update(StreamEventMsg{
+		Event: agent.AgentEvent{Type: agent.EventAssistantText, Delta: "Here's "},
+	})
+	app.Update(StreamEventMsg{
+		Event: agent.AgentEvent{Type: agent.EventAssistantText, Delta: "the answer"},
+	})
+
+	// Tool event.
+	app.Update(StreamEventMsg{
+		Event: agent.AgentEvent{Type: agent.EventToolExecStart, ToolCallID: "tc-1", ToolName: "bash"},
+	})
+
+	// All should accumulate before tick.
+	if len(app.chat.blocks) != 3 {
+		t.Fatalf("expected 3 blocks, got %d", len(app.chat.blocks))
+	}
+	if app.chat.blocks[0].text != "hmm interesting" {
+		t.Errorf("thinking: expected 'hmm interesting', got %q", app.chat.blocks[0].text)
+	}
+	if app.chat.blocks[1].text != "Here's the answer" {
+		t.Errorf("text: expected 'Here's the answer', got %q", app.chat.blocks[1].text)
+	}
+	if app.chat.blocks[2].kind != blockToolCall {
+		t.Error("expected third block to be blockToolCall")
+	}
+
+	// One tick flushes everything.
+	if !app.chat.dirty {
+		t.Error("expected dirty=true before tick")
+	}
+	app.Update(renderTickMsg{})
+	if app.chat.dirty {
+		t.Error("expected dirty=false after tick")
+	}
+}
+
+func TestApp_DeltaCoalescing_TickStopsWhenNotRunning(t *testing.T) {
+	app := NewApp()
+	app.agentRunning = false
+
+	// Tick when not running should not schedule another tick.
+	_, cmd := app.Update(renderTickMsg{})
+	if cmd != nil {
+		t.Error("expected nil cmd when agent is not running")
+	}
+}
+
+func TestApp_DeltaCoalescing_TickContinuesWhileRunning(t *testing.T) {
+	app := NewApp()
+	app.agentRunning = true
+
+	// Tick while running should schedule another tick.
+	_, cmd := app.Update(renderTickMsg{})
+	if cmd == nil {
+		t.Error("expected non-nil cmd (next tick) while agent is running")
+	}
+}
+
+func TestApp_DeltaCoalescing_StreamEventNoImmediateRebuild(t *testing.T) {
+	app := NewApp()
+	app.agentRunning = true
+
+	// Text delta returns a cmd (idle-render timer), but NOT an immediate
+	// rebuildContent call — the dirty flag defers rendering to the next tick.
+	app.Update(StreamEventMsg{
+		Event: agent.AgentEvent{Type: agent.EventAssistantText, Delta: "test"},
+	})
+	// The block text should have the delta but rendered cache should be empty
+	// (no rebuildContent was called inline).
+	if app.chat.blocks[0].rendered != "" {
+		t.Error("expected empty rendered cache — no inline rebuildContent")
+	}
+	if !app.chat.dirty {
+		t.Error("expected dirty=true — rebuild deferred to tick")
+	}
+
+	// Non-text events should still return nil cmd.
+	_, cmd := app.Update(StreamEventMsg{
+		Event: agent.AgentEvent{Type: agent.EventAssistantThinking, Delta: "hmm"},
+	})
+	if cmd != nil {
+		t.Error("non-text StreamEventMsg should return nil cmd")
+	}
+}
+
+func TestApp_DeltaCoalescing_TurnEndResetsStreaming(t *testing.T) {
+	app := NewApp()
+	app.agentRunning = true
+
+	// Stream text deltas.
+	app.Update(StreamEventMsg{
+		Event: agent.AgentEvent{Type: agent.EventAssistantText, Delta: "hello"},
+	})
+	if !app.chat.blocks[0].streaming {
+		t.Error("expected streaming=true during deltas")
+	}
+
+	// TurnEnd should mark streaming=false.
+	app.Update(StreamEventMsg{
+		Event: agent.AgentEvent{Type: agent.EventTurnEnd},
+	})
+	if app.chat.blocks[0].streaming {
+		t.Error("expected streaming=false after TurnEnd")
+	}
+	// dirty should be true so the tick triggers a glamour re-render.
+	if !app.chat.dirty {
+		t.Error("expected dirty=true after TurnEnd")
+	}
+}
+
+func TestApp_DeltaCoalescing_NonChangingEventNoDirty(t *testing.T) {
+	app := NewApp()
+	app.agentRunning = true
+
+	// UsageUpdate doesn't produce block changes — dirty should stay false.
+	app.Update(StreamEventMsg{
+		Event: agent.AgentEvent{
+			Type:  agent.EventUsageUpdate,
+			Usage: &ai.Usage{InputTokens: 100},
+		},
+	})
+	if app.chat.dirty {
+		t.Error("expected dirty=false for non-content-changing event")
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Keyboard shortcuts at app level
 // ---------------------------------------------------------------------------
 
