@@ -59,11 +59,12 @@ type BranchSummaryData struct {
 // Manager handles session persistence using JSONL files.
 // All exported methods are safe for concurrent use.
 type Manager struct {
-	mu           sync.RWMutex
-	dir          string // root directory, e.g. ~/.gi/sessions/
-	current      string // active session ID
-	entries      []Entry
-	activeBranch string // leaf entry ID of the current branch
+	mu              sync.RWMutex
+	dir             string // root directory, e.g. ~/.gi/sessions/
+	current         string // active session ID
+	entries         []Entry
+	activeBranch    string          // leaf entry ID of the current branch
+	skippedToolUses map[string]bool // tool_use IDs skipped by dedup (transient, not persisted)
 }
 
 // NewManager creates a new session manager rooted at the given directory.
@@ -378,8 +379,31 @@ func RepairOrphanedToolUse(msgs []ai.Message) []ai.Message {
 }
 
 // SaveMessage is a convenience method that wraps an ai.Message as an Entry
-// and appends it.
+// and appends it. Duplicate assistant tool_use messages are detected and
+// silently skipped to prevent session bloat from model retries (e.g. after
+// crash recovery where RepairOrphanedToolUse injects synthetic errors).
 func (m *Manager) SaveMessage(msg ai.Message) error {
+	// Skip tool_result messages that reference deduplicated tool_use IDs.
+	if msg.Role == ai.RoleUser && m.shouldSkipToolResult(msg) {
+		return nil
+	}
+
+	// Skip assistant messages whose tool_use blocks are content-identical
+	// to those in the most recent assistant entry.
+	if msg.Role == ai.RoleAssistant {
+		if skippedIDs := m.findDuplicateToolUseIDs(msg); len(skippedIDs) > 0 {
+			m.mu.Lock()
+			if m.skippedToolUses == nil {
+				m.skippedToolUses = make(map[string]bool)
+			}
+			for _, id := range skippedIDs {
+				m.skippedToolUses[id] = true
+			}
+			m.mu.Unlock()
+			return nil
+		}
+	}
+
 	entry := Entry{
 		ID:        generateID(),
 		Timestamp: time.Now().UTC(),
@@ -390,6 +414,106 @@ func (m *Manager) SaveMessage(msg ai.Message) error {
 		},
 	}
 	return m.AppendEntry(entry)
+}
+
+// findDuplicateToolUseIDs checks if an assistant message's tool_use blocks
+// are content-identical (same name and input, ignoring API-generated IDs) to
+// those in the most recent assistant entry. Returns the new message's tool_use
+// IDs if duplicate, nil otherwise.
+func (m *Manager) findDuplicateToolUseIDs(msg ai.Message) []string {
+	newCalls := msg.GetToolCalls()
+	if len(newCalls) == 0 {
+		return nil
+	}
+
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	// Walk backwards to find the last assistant message with tool_use blocks.
+	for i := len(m.entries) - 1; i >= 0 && i >= len(m.entries)-20; i-- {
+		e := m.entries[i]
+		if e.Type != "message" {
+			continue
+		}
+		prevMsg, ok := entryToMessage(e)
+		if !ok || prevMsg.Role != ai.RoleAssistant {
+			continue
+		}
+		prevCalls := prevMsg.GetToolCalls()
+		if len(prevCalls) == 0 {
+			return nil // last assistant had no tool calls — not a dup
+		}
+		if toolCallsContentEqual(newCalls, prevCalls) {
+			ids := make([]string, len(newCalls))
+			for j, tc := range newCalls {
+				ids[j] = tc.ToolUseID
+			}
+			return ids
+		}
+		return nil // last assistant had different tool calls — not a dup
+	}
+
+	return nil
+}
+
+// shouldSkipToolResult returns true if every tool_result block in msg
+// references a tool_use ID that was previously skipped by dedup. When true,
+// the matched IDs are removed from the skip set.
+func (m *Manager) shouldSkipToolResult(msg ai.Message) bool {
+	var resultIDs []string
+	for _, cb := range msg.Content {
+		if cb.Type == ai.ContentTypeToolResult {
+			resultIDs = append(resultIDs, cb.ToolResultID)
+		}
+	}
+	if len(resultIDs) == 0 {
+		return false
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if len(m.skippedToolUses) == 0 {
+		return false
+	}
+	for _, id := range resultIDs {
+		if !m.skippedToolUses[id] {
+			return false
+		}
+	}
+
+	// All tool_results reference skipped IDs — clean up and skip.
+	for _, id := range resultIDs {
+		delete(m.skippedToolUses, id)
+	}
+	return true
+}
+
+// toolCallsContentEqual returns true if two sets of tool_use blocks have
+// identical tool names and inputs, ignoring API-generated tool_use IDs.
+func toolCallsContentEqual(a, b []ai.ContentBlock) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].ToolName != b[i].ToolName {
+			return false
+		}
+		if !jsonEqual(a[i].Input, b[i].Input) {
+			return false
+		}
+	}
+	return true
+}
+
+// jsonEqual compares two values by their JSON representation.
+func jsonEqual(a, b any) bool {
+	aj, aerr := json.Marshal(a)
+	bj, berr := json.Marshal(b)
+	if aerr != nil || berr != nil {
+		return false
+	}
+	return string(aj) == string(bj)
 }
 
 // ActiveBranch returns the leaf entry ID of the current branch.

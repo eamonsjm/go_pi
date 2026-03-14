@@ -1212,6 +1212,313 @@ func TestEntryToMessage_NilContentFromMessageData(t *testing.T) {
 	}
 }
 
+// --- Duplicate tool_use dedup tests ------------------------------------------
+
+func TestSaveMessage_DedupAssistantToolUse(t *testing.T) {
+	dir := t.TempDir()
+	m := NewManager(dir)
+	id := m.NewSession()
+
+	// Save user message.
+	m.SaveMessage(ai.NewTextMessage(ai.RoleUser, "write a file"))
+
+	// Save assistant message with text + tool_use.
+	original := ai.Message{
+		Role: ai.RoleAssistant,
+		Content: []ai.ContentBlock{
+			{Type: ai.ContentTypeText, Text: "I'll write that file for you."},
+			{Type: ai.ContentTypeToolUse, ToolUseID: "tu-A", ToolName: "write",
+				Input: map[string]any{"path": "/tmp/foo.md", "content": "hello world"}},
+		},
+	}
+	if err := m.SaveMessage(original); err != nil {
+		t.Fatalf("SaveMessage(original): %v", err)
+	}
+
+	// Save tool_result for original.
+	m.SaveMessage(ai.NewToolResultMessage("tu-A", "File written", false))
+
+	// Save duplicate assistant message — same tool name and input, different ID.
+	dup := ai.Message{
+		Role: ai.RoleAssistant,
+		Content: []ai.ContentBlock{
+			{Type: ai.ContentTypeToolUse, ToolUseID: "tu-B", ToolName: "write",
+				Input: map[string]any{"path": "/tmp/foo.md", "content": "hello world"}},
+		},
+	}
+	if err := m.SaveMessage(dup); err != nil {
+		t.Fatalf("SaveMessage(dup): %v", err)
+	}
+
+	// The duplicate's tool_result should also be skipped.
+	m.SaveMessage(ai.NewToolResultMessage("tu-B", "File written", false))
+
+	// Verify: only 3 entries on disk (user, assistant, tool_result for tu-A).
+	path := filepath.Join(dir, id+".jsonl")
+	diskCount := countJSONLLines(t, path)
+	if diskCount != 3 {
+		t.Errorf("expected 3 entries on disk (dup skipped), got %d", diskCount)
+	}
+
+	// In-memory should also have 3.
+	entries := m.GetEntries()
+	if len(entries) != 3 {
+		t.Errorf("expected 3 in-memory entries, got %d", len(entries))
+	}
+}
+
+func TestSaveMessage_DedupMultipleToolUse(t *testing.T) {
+	dir := t.TempDir()
+	m := NewManager(dir)
+	m.NewSession()
+
+	m.SaveMessage(ai.NewTextMessage(ai.RoleUser, "do two things"))
+
+	// Original with two tool_use blocks.
+	original := ai.Message{
+		Role: ai.RoleAssistant,
+		Content: []ai.ContentBlock{
+			{Type: ai.ContentTypeToolUse, ToolUseID: "tu-1", ToolName: "read",
+				Input: map[string]any{"path": "/a"}},
+			{Type: ai.ContentTypeToolUse, ToolUseID: "tu-2", ToolName: "read",
+				Input: map[string]any{"path": "/b"}},
+		},
+	}
+	m.SaveMessage(original)
+
+	// Duplicate with same names and inputs, different IDs.
+	dup := ai.Message{
+		Role: ai.RoleAssistant,
+		Content: []ai.ContentBlock{
+			{Type: ai.ContentTypeToolUse, ToolUseID: "tu-3", ToolName: "read",
+				Input: map[string]any{"path": "/a"}},
+			{Type: ai.ContentTypeToolUse, ToolUseID: "tu-4", ToolName: "read",
+				Input: map[string]any{"path": "/b"}},
+		},
+	}
+	m.SaveMessage(dup)
+
+	// Both tool_results for the dup should be skipped.
+	m.SaveMessage(ai.NewToolResultMessage("tu-3", "content-a", false))
+	m.SaveMessage(ai.NewToolResultMessage("tu-4", "content-b", false))
+
+	entries := m.GetEntries()
+	if len(entries) != 2 { // user + original assistant
+		t.Errorf("expected 2 entries (dup + results skipped), got %d", len(entries))
+	}
+}
+
+func TestSaveMessage_NoDedupDifferentInput(t *testing.T) {
+	dir := t.TempDir()
+	m := NewManager(dir)
+	m.NewSession()
+
+	m.SaveMessage(ai.NewTextMessage(ai.RoleUser, "write a file"))
+
+	original := ai.Message{
+		Role: ai.RoleAssistant,
+		Content: []ai.ContentBlock{
+			{Type: ai.ContentTypeToolUse, ToolUseID: "tu-A", ToolName: "write",
+				Input: map[string]any{"path": "/tmp/foo.md", "content": "version 1"}},
+		},
+	}
+	m.SaveMessage(original)
+
+	// Different input — should NOT be deduped.
+	different := ai.Message{
+		Role: ai.RoleAssistant,
+		Content: []ai.ContentBlock{
+			{Type: ai.ContentTypeToolUse, ToolUseID: "tu-B", ToolName: "write",
+				Input: map[string]any{"path": "/tmp/foo.md", "content": "version 2"}},
+		},
+	}
+	m.SaveMessage(different)
+
+	entries := m.GetEntries()
+	if len(entries) != 3 { // user + original + different
+		t.Errorf("expected 3 entries (different input not deduped), got %d", len(entries))
+	}
+}
+
+func TestSaveMessage_NoDedupDifferentToolName(t *testing.T) {
+	dir := t.TempDir()
+	m := NewManager(dir)
+	m.NewSession()
+
+	m.SaveMessage(ai.NewTextMessage(ai.RoleUser, "do something"))
+
+	original := ai.Message{
+		Role: ai.RoleAssistant,
+		Content: []ai.ContentBlock{
+			{Type: ai.ContentTypeToolUse, ToolUseID: "tu-A", ToolName: "read",
+				Input: map[string]any{"path": "/tmp/foo.md"}},
+		},
+	}
+	m.SaveMessage(original)
+
+	// Same input but different tool name — should NOT be deduped.
+	different := ai.Message{
+		Role: ai.RoleAssistant,
+		Content: []ai.ContentBlock{
+			{Type: ai.ContentTypeToolUse, ToolUseID: "tu-B", ToolName: "write",
+				Input: map[string]any{"path": "/tmp/foo.md"}},
+		},
+	}
+	m.SaveMessage(different)
+
+	entries := m.GetEntries()
+	if len(entries) != 3 {
+		t.Errorf("expected 3 entries (different tool name not deduped), got %d", len(entries))
+	}
+}
+
+func TestSaveMessage_NoDedupTextOnly(t *testing.T) {
+	dir := t.TempDir()
+	m := NewManager(dir)
+	m.NewSession()
+
+	// Text-only assistant messages should never be deduped, even if identical.
+	m.SaveMessage(ai.NewTextMessage(ai.RoleUser, "hello"))
+	m.SaveMessage(ai.NewTextMessage(ai.RoleAssistant, "hi"))
+	m.SaveMessage(ai.NewTextMessage(ai.RoleAssistant, "hi"))
+
+	entries := m.GetEntries()
+	if len(entries) != 3 {
+		t.Errorf("expected 3 entries (text-only never deduped), got %d", len(entries))
+	}
+}
+
+func TestSaveMessage_NoDedupDifferentCount(t *testing.T) {
+	dir := t.TempDir()
+	m := NewManager(dir)
+	m.NewSession()
+
+	m.SaveMessage(ai.NewTextMessage(ai.RoleUser, "do things"))
+
+	// Original with one tool_use.
+	original := ai.Message{
+		Role: ai.RoleAssistant,
+		Content: []ai.ContentBlock{
+			{Type: ai.ContentTypeToolUse, ToolUseID: "tu-1", ToolName: "read",
+				Input: map[string]any{"path": "/a"}},
+		},
+	}
+	m.SaveMessage(original)
+
+	// New message with two tool_use blocks (one matching, one new).
+	different := ai.Message{
+		Role: ai.RoleAssistant,
+		Content: []ai.ContentBlock{
+			{Type: ai.ContentTypeToolUse, ToolUseID: "tu-2", ToolName: "read",
+				Input: map[string]any{"path": "/a"}},
+			{Type: ai.ContentTypeToolUse, ToolUseID: "tu-3", ToolName: "read",
+				Input: map[string]any{"path": "/b"}},
+		},
+	}
+	m.SaveMessage(different)
+
+	entries := m.GetEntries()
+	if len(entries) != 3 {
+		t.Errorf("expected 3 entries (different count not deduped), got %d", len(entries))
+	}
+}
+
+func TestSaveMessage_DedupToolResultNotSkippedForNonDup(t *testing.T) {
+	dir := t.TempDir()
+	m := NewManager(dir)
+	m.NewSession()
+
+	m.SaveMessage(ai.NewTextMessage(ai.RoleUser, "run"))
+
+	assistant := ai.Message{
+		Role: ai.RoleAssistant,
+		Content: []ai.ContentBlock{
+			{Type: ai.ContentTypeToolUse, ToolUseID: "tu-1", ToolName: "bash",
+				Input: map[string]any{"cmd": "ls"}},
+		},
+	}
+	m.SaveMessage(assistant)
+
+	// Normal tool_result — should be saved (not in skipped set).
+	m.SaveMessage(ai.NewToolResultMessage("tu-1", "file1 file2", false))
+
+	entries := m.GetEntries()
+	if len(entries) != 3 {
+		t.Errorf("expected 3 entries (normal result saved), got %d", len(entries))
+	}
+}
+
+func TestToolCallsContentEqual(t *testing.T) {
+	tests := []struct {
+		name string
+		a, b []ai.ContentBlock
+		want bool
+	}{
+		{
+			name: "identical",
+			a: []ai.ContentBlock{
+				{ToolName: "write", Input: map[string]any{"path": "/a", "content": "x"}},
+			},
+			b: []ai.ContentBlock{
+				{ToolName: "write", Input: map[string]any{"path": "/a", "content": "x"}},
+			},
+			want: true,
+		},
+		{
+			name: "different_input",
+			a: []ai.ContentBlock{
+				{ToolName: "write", Input: map[string]any{"path": "/a"}},
+			},
+			b: []ai.ContentBlock{
+				{ToolName: "write", Input: map[string]any{"path": "/b"}},
+			},
+			want: false,
+		},
+		{
+			name: "different_name",
+			a: []ai.ContentBlock{
+				{ToolName: "read", Input: map[string]any{"path": "/a"}},
+			},
+			b: []ai.ContentBlock{
+				{ToolName: "write", Input: map[string]any{"path": "/a"}},
+			},
+			want: false,
+		},
+		{
+			name: "different_length",
+			a: []ai.ContentBlock{
+				{ToolName: "read", Input: map[string]any{"path": "/a"}},
+			},
+			b: []ai.ContentBlock{
+				{ToolName: "read", Input: map[string]any{"path": "/a"}},
+				{ToolName: "read", Input: map[string]any{"path": "/b"}},
+			},
+			want: false,
+		},
+		{
+			name: "both_empty",
+			a:    []ai.ContentBlock{},
+			b:    []ai.ContentBlock{},
+			want: true,
+		},
+		{
+			name: "nil_inputs",
+			a:    []ai.ContentBlock{{ToolName: "bash", Input: nil}},
+			b:    []ai.ContentBlock{{ToolName: "bash", Input: nil}},
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := toolCallsContentEqual(tt.a, tt.b)
+			if got != tt.want {
+				t.Errorf("toolCallsContentEqual = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 // ids is a test helper that extracts entry IDs for debugging.
 func ids(entries []Entry) []string {
 	result := make([]string, len(entries))
