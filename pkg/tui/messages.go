@@ -33,6 +33,13 @@ type CommandResultMsg struct {
 // re-render only when content has actually changed.
 type renderTickMsg struct{}
 
+// idleRenderMsg fires 100ms after the last text delta. If no new deltas
+// arrived (gen still matches App.deltaGen), the active streaming block is
+// switched to glamour rendering for a polished view during natural pauses.
+type idleRenderMsg struct {
+	gen uint64
+}
+
 // PluginInjectMsg carries an inject_message or log message from a plugin
 // process into the TUI for display or agent injection.
 type PluginInjectMsg struct {

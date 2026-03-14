@@ -107,6 +107,21 @@ func NewChatView() *ChatView {
 	}
 }
 
+// idleGlamourRender switches any actively streaming assistant block to
+// non-streaming mode, triggering a glamour re-render on the next rebuild.
+// Called when no text deltas arrive for 100ms during a streaming pause.
+// The block's streaming flag is restored to true on the next delta
+// (HandleEvent sets streaming=true on EventAssistantText).
+func (c *ChatView) idleGlamourRender() {
+	for i := range c.blocks {
+		if c.blocks[i].kind == blockAssistantText && c.blocks[i].streaming {
+			c.blocks[i].streaming = false
+			c.blocks[i].rendered = ""
+		}
+	}
+	c.rebuildContent()
+}
+
 // invalidateRenderCaches clears all cached block renders (e.g. on resize or
 // theme change where every block must be re-rendered with new parameters).
 func (c *ChatView) invalidateRenderCaches() {

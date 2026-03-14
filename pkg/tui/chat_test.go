@@ -258,6 +258,60 @@ func TestChatView_HandleEvent_AssistantText(t *testing.T) {
 	}
 }
 
+func TestChatView_IdleGlamourRender(t *testing.T) {
+	cv := NewChatView()
+	cv.SetSize(80, 24)
+
+	// Stream some markdown content.
+	cv.HandleEvent(agent.AgentEvent{
+		Type:  agent.EventAssistantText,
+		Delta: "**bold text**",
+	})
+	if !cv.blocks[0].streaming {
+		t.Fatal("expected streaming=true during text deltas")
+	}
+
+	// Simulate idle timeout — should switch to glamour rendering.
+	cv.idleGlamourRender()
+	if cv.blocks[0].streaming {
+		t.Error("expected streaming=false after idleGlamourRender")
+	}
+
+	idleView := cv.View()
+
+	// New delta should restore streaming mode.
+	cv.HandleEvent(agent.AgentEvent{
+		Type:  agent.EventAssistantText,
+		Delta: " more text",
+	})
+	if !cv.blocks[0].streaming {
+		t.Error("expected streaming=true after new delta")
+	}
+
+	cv.rebuildContent()
+	streamingView := cv.View()
+
+	// The idle (glamour) and streaming (plain) renders should differ.
+	if idleView == streamingView {
+		t.Error("expected idle glamour render to differ from streaming plain render")
+	}
+}
+
+func TestChatView_IdleGlamourRender_NoStreamingBlocks(t *testing.T) {
+	cv := NewChatView()
+	cv.SetSize(80, 24)
+
+	// No blocks at all — should not panic.
+	cv.idleGlamourRender()
+
+	// Only non-streaming blocks — should not change anything.
+	cv.AddUserMessage("hello")
+	cv.idleGlamourRender()
+	if len(cv.blocks) != 1 {
+		t.Errorf("expected 1 block, got %d", len(cv.blocks))
+	}
+}
+
 func TestChatView_StreamingRenderSkipsGlamour(t *testing.T) {
 	cv := NewChatView()
 	cv.SetSize(80, 24)

@@ -609,6 +609,79 @@ func TestApp_Update_StreamEventMsg(t *testing.T) {
 	}
 }
 
+func TestApp_Update_StreamEventMsg_IncrementsGen(t *testing.T) {
+	app := NewApp()
+	app.agentRunning = true
+
+	// Each text delta should increment deltaGen.
+	app.Update(StreamEventMsg{
+		Event: agent.AgentEvent{Type: agent.EventAssistantText, Delta: "a"},
+	})
+	if app.deltaGen != 1 {
+		t.Errorf("expected deltaGen=1 after first delta, got %d", app.deltaGen)
+	}
+
+	app.Update(StreamEventMsg{
+		Event: agent.AgentEvent{Type: agent.EventAssistantText, Delta: "b"},
+	})
+	if app.deltaGen != 2 {
+		t.Errorf("expected deltaGen=2 after second delta, got %d", app.deltaGen)
+	}
+
+	// Non-text events should not increment deltaGen.
+	app.Update(StreamEventMsg{
+		Event: agent.AgentEvent{Type: agent.EventAssistantThinking, Delta: "hmm"},
+	})
+	if app.deltaGen != 2 {
+		t.Errorf("expected deltaGen=2 after thinking event, got %d", app.deltaGen)
+	}
+}
+
+func TestApp_Update_IdleRenderMsg_MatchingGen(t *testing.T) {
+	app := NewApp()
+	app.agentRunning = true
+	app.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+
+	// Send a text delta to create a streaming block.
+	app.Update(StreamEventMsg{
+		Event: agent.AgentEvent{Type: agent.EventAssistantText, Delta: "**bold**"},
+	})
+	// Force render so we can compare.
+	app.Update(renderTickMsg{})
+
+	if !app.chat.blocks[0].streaming {
+		t.Fatal("expected streaming=true")
+	}
+
+	// Send idle render with matching gen — should trigger glamour.
+	app.Update(idleRenderMsg{gen: app.deltaGen})
+	if app.chat.blocks[0].streaming {
+		t.Error("expected streaming=false after idle render with matching gen")
+	}
+}
+
+func TestApp_Update_IdleRenderMsg_StaleGen(t *testing.T) {
+	app := NewApp()
+	app.agentRunning = true
+
+	// Send a text delta.
+	app.Update(StreamEventMsg{
+		Event: agent.AgentEvent{Type: agent.EventAssistantText, Delta: "text"},
+	})
+	staleGen := app.deltaGen
+
+	// Send another delta — gen advances.
+	app.Update(StreamEventMsg{
+		Event: agent.AgentEvent{Type: agent.EventAssistantText, Delta: " more"},
+	})
+
+	// Idle render with stale gen should be ignored.
+	app.Update(idleRenderMsg{gen: staleGen})
+	if !app.chat.blocks[0].streaming {
+		t.Error("expected streaming=true — stale idle render should be ignored")
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Keyboard shortcuts at app level
 // ---------------------------------------------------------------------------

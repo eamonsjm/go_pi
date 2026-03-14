@@ -64,6 +64,12 @@ type App struct {
 
 	// initialized is set after the first WindowSizeMsg to defer editor focus.
 	initialized bool
+
+	// deltaGen is incremented on each assistant text delta. The idle-render
+	// tick carries the generation at scheduling time; if they still match
+	// when the tick fires, no new deltas arrived and we trigger a glamour
+	// re-render of the streaming block.
+	deltaGen uint64
 }
 
 // NewApp creates a fully initialised App ready to be passed to tea.NewProgram.
@@ -229,6 +235,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if changed {
 			a.chat.dirty = true
 		}
+		// On each text delta, schedule an idle-render tick. If no further
+		// deltas arrive within 100ms the tick triggers a glamour re-render
+		// of the streaming block for polished output during pauses.
+		if msg.Event.Type == agent.EventAssistantText {
+			a.deltaGen++
+			return a, tickIdleRender(a.deltaGen)
+		}
 		return a, nil
 
 	case renderTickMsg:
@@ -238,6 +251,14 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if a.agentRunning {
 			return a, tickRender()
+		}
+		return a, nil
+
+	case idleRenderMsg:
+		// If deltaGen still matches, no new deltas arrived in 100ms.
+		// Switch the streaming block to glamour rendering.
+		if msg.gen == a.deltaGen {
+			a.chat.idleGlamourRender()
 		}
 		return a, nil
 
@@ -591,6 +612,15 @@ func (a *App) cycleModel(direction int) tea.Cmd {
 func tickRender() tea.Cmd {
 	return tea.Tick(33*time.Millisecond, func(time.Time) tea.Msg {
 		return renderTickMsg{}
+	})
+}
+
+// tickIdleRender returns a tea.Cmd that fires an idleRenderMsg after 100ms.
+// The gen parameter is compared against App.deltaGen when the tick fires;
+// if they match, no new text deltas arrived and a glamour re-render is safe.
+func tickIdleRender(gen uint64) tea.Cmd {
+	return tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg {
+		return idleRenderMsg{gen: gen}
 	})
 }
 
