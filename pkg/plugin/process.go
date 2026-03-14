@@ -156,7 +156,11 @@ func (p *PluginProcess) readLoop() {
 				log.Printf("plugin %s: dropped %s message (channel full)", p.name, msg.Type)
 			}
 		case "capabilities", "tool_result", "command_result":
-			responseCh <- msg
+			select {
+			case responseCh <- msg:
+			default:
+				log.Printf("plugin %s: dropped %s response (channel full)", p.name, msg.Type)
+			}
 		}
 	}
 }

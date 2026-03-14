@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -75,18 +76,22 @@ func TestReadLoop_InjectMessagesDelivered(t *testing.T) {
 	}
 }
 
-func TestReadLoop_CriticalMessageBlocksUntilConsumed(t *testing.T) {
-	// Use a responseCh with buffer size 1 so second message must block.
-	input := `{"type":"tool_result","content":"first"}` + "\n" +
-		`{"type":"tool_result","content":"second"}` + "\n"
+func TestReadLoop_ResponseDroppedWhenFull(t *testing.T) {
+	// When responseCh buffer is full, readLoop drops excess messages instead
+	// of blocking. This prevents goroutine leaks when callers abandon the
+	// channel (e.g. after a tool timeout).
+	var lines string
+	for i := 0; i < 5; i++ {
+		lines += fmt.Sprintf(`{"type":"tool_result","content":"msg%d"}`, i) + "\n"
+	}
 
-	scanner := bufio.NewScanner(strings.NewReader(input))
+	scanner := bufio.NewScanner(strings.NewReader(lines))
 	scanner.Buffer(make([]byte, maxScannerBuffer), maxScannerBuffer)
 	p := &PluginProcess{
-		name:       "test-blocking",
+		name:       "test-drop-response",
 		scanner:    scanner,
 		injectCh:   make(chan PluginMessage, 64),
-		responseCh: make(chan PluginMessage, 1), // only 1 slot
+		responseCh: make(chan PluginMessage, 2), // small buffer
 	}
 
 	done := make(chan struct{})
@@ -95,31 +100,23 @@ func TestReadLoop_CriticalMessageBlocksUntilConsumed(t *testing.T) {
 		close(done)
 	}()
 
-	// First message should arrive quickly.
-	select {
-	case msg := <-p.responseCh:
-		if msg.Content != "first" {
-			t.Fatalf("expected first, got %q", msg.Content)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for first message")
-	}
-
-	// Second message should also arrive (readLoop blocks until channel has room).
-	select {
-	case msg := <-p.responseCh:
-		if msg.Content != "second" {
-			t.Fatalf("expected second, got %q", msg.Content)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for second message — readLoop may have dropped it")
-	}
-
-	// readLoop should finish after scanner exhausted.
+	// readLoop must complete without blocking, even though nobody is reading.
 	select {
 	case <-done:
 	case <-time.After(2 * time.Second):
-		t.Fatal("readLoop did not exit")
+		t.Fatal("readLoop blocked on full responseCh — goroutine would leak")
+	}
+
+	// At most 2 messages delivered (buffer size).
+	var count int
+	for range p.responseCh {
+		count++
+	}
+	if count > 2 {
+		t.Fatalf("expected at most 2 response messages (buffer size), got %d", count)
+	}
+	if count == 0 {
+		t.Fatal("expected at least some response messages to be delivered")
 	}
 }
 
@@ -397,6 +394,34 @@ func TestHelperPlugin(t *testing.T) {
 				}
 				d, _ := json.Marshal(r)
 				fmt.Fprintln(os.Stdout, string(d))
+			case "shutdown":
+				os.Exit(0)
+			}
+		}
+
+	case "slow_tool":
+		// Initialize normally, then respond to tool_call after a delay.
+		// Used to test goroutine leak on tool timeout.
+		if !scanner.Scan() {
+			os.Exit(1)
+		}
+		resp := PluginMessage{Type: "capabilities"}
+		data, _ := json.Marshal(resp)
+		fmt.Fprintln(os.Stdout, string(data))
+
+		for scanner.Scan() {
+			var req HostMessage
+			json.Unmarshal(scanner.Bytes(), &req)
+			switch req.Type {
+			case "tool_call":
+				time.Sleep(200 * time.Millisecond)
+				r := PluginMessage{
+					Type:    "tool_result",
+					ID:      req.ID,
+					Content: "late:" + req.Name,
+				}
+				data, _ := json.Marshal(r)
+				fmt.Fprintln(os.Stdout, string(data))
 			case "shutdown":
 				os.Exit(0)
 			}
@@ -1119,5 +1144,55 @@ func TestDefaultRestartConfig(t *testing.T) {
 	}
 	if cfg.MaxBackoff != 30*time.Second {
 		t.Errorf("MaxBackoff = %v, want 30s", cfg.MaxBackoff)
+	}
+}
+
+func TestToolTimeout_NoGoroutineLeak(t *testing.T) {
+	// Verify that tool timeouts don't leak goroutines. We send tool calls
+	// with a short timeout, let late responses accumulate in the buffer,
+	// then stop the plugin and verify goroutine count returns to baseline.
+	goroutinesBefore := runtime.NumGoroutine()
+
+	p := startTestPlugin(t, "slow_tool")
+	if err := p.Initialize(PluginConfig{}); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+
+	// Send tool calls and use a short timeout. The slow_tool helper takes
+	// 200ms to respond, so a 10ms timeout will fire first. Late responses
+	// accumulate in the responseCh buffer (nobody reads them).
+	timeouts := 0
+	for i := 0; i < 3; i++ {
+		_ = p.Send(HostMessage{
+			Type: "tool_call",
+			ID:   fmt.Sprintf("timeout-%d", i),
+			Name: "slow",
+		})
+		_, err := p.waitResponse(10 * time.Millisecond)
+		if err != nil {
+			timeouts++
+		}
+		// Wait for the slow response to arrive and fill the buffer.
+		time.Sleep(250 * time.Millisecond)
+	}
+
+	if timeouts == 0 {
+		t.Fatal("expected at least one timeout")
+	}
+
+	// Stop the plugin — this kills the process, causing readLoop's scanner
+	// to return false. Without the fix, readLoop would be blocked on a full
+	// responseCh send and never reach scanner.Scan(), leaking the goroutine.
+	p.Stop()
+
+	// Allow goroutines to wind down.
+	time.Sleep(200 * time.Millisecond)
+	runtime.GC()
+
+	goroutinesAfter := runtime.NumGoroutine()
+	// Allow margin of 3 for test infrastructure goroutines.
+	if goroutinesAfter > goroutinesBefore+3 {
+		t.Errorf("goroutine leak: before=%d, after=%d (diff=%d)",
+			goroutinesBefore, goroutinesAfter, goroutinesAfter-goroutinesBefore)
 	}
 }
