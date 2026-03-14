@@ -48,6 +48,11 @@ type chatBlock struct {
 	pluginName string
 	logLevel   string // "info", "warn", "error" — non-empty for log messages
 
+	// streaming is true while the assistant is actively receiving deltas.
+	// renderAssistant uses plain text with basic lipgloss styling instead
+	// of glamour.Render() when streaming to avoid O(N²) re-rendering.
+	streaming bool
+
 	// rendered caches the last rendered output for this block. Empty means
 	// the block needs re-rendering. Cleared whenever block content changes.
 	rendered string
@@ -148,11 +153,13 @@ func (c *ChatView) HandleEvent(ev agent.AgentEvent) bool {
 	case agent.EventAssistantText:
 		if blk := c.lastBlock(blockAssistantText); blk != nil {
 			blk.text += ev.Delta
+			blk.streaming = true
 			blk.rendered = ""
 		} else {
 			c.blocks = append(c.blocks, chatBlock{
-				kind: blockAssistantText,
-				text: ev.Delta,
+				kind:      blockAssistantText,
+				text:      ev.Delta,
+				streaming: true,
 			})
 		}
 		return true
@@ -197,9 +204,15 @@ func (c *ChatView) HandleEvent(ev agent.AgentEvent) bool {
 
 	// ---- turn boundaries ----
 	case agent.EventTurnEnd:
-		// A new assistant turn may follow; break text continuity by
-		// ensuring next text delta starts a fresh block.
-		return false
+		// Streaming is done — mark all assistant blocks as non-streaming
+		// so they get a full glamour render on the next rebuild.
+		for i := range c.blocks {
+			if c.blocks[i].kind == blockAssistantText && c.blocks[i].streaming {
+				c.blocks[i].streaming = false
+				c.blocks[i].rendered = ""
+			}
+		}
+		return true
 
 	// ---- compaction ----
 	case agent.EventCompaction:
@@ -445,13 +458,19 @@ func (c *ChatView) renderAssistant(sb *strings.Builder, blk chatBlock) {
 	label := AssistantRoleStyle.Render("Assistant:")
 	sb.WriteString(label + "\n")
 
-	rendered := blk.text
-	if c.renderer != nil {
-		if md, err := c.renderer.Render(blk.text); err == nil {
-			rendered = strings.TrimRight(md, "\n")
+	if blk.streaming {
+		// During streaming, skip expensive glamour.Render() and use
+		// plain text with basic lipgloss styling to avoid O(N²) cost.
+		sb.WriteString(AssistantMsgStyle.Render(blk.text))
+	} else {
+		rendered := blk.text
+		if c.renderer != nil {
+			if md, err := c.renderer.Render(blk.text); err == nil {
+				rendered = strings.TrimRight(md, "\n")
+			}
 		}
+		sb.WriteString(rendered)
 	}
-	sb.WriteString(rendered)
 	sb.WriteString("\n")
 }
 

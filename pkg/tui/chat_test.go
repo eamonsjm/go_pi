@@ -238,6 +238,9 @@ func TestChatView_HandleEvent_AssistantText(t *testing.T) {
 	if cv.blocks[0].kind != blockAssistantText {
 		t.Errorf("expected blockAssistantText, got %d", cv.blocks[0].kind)
 	}
+	if !cv.blocks[0].streaming {
+		t.Error("expected streaming=true on new assistant block")
+	}
 
 	// Second delta should append to same block.
 	cv.HandleEvent(agent.AgentEvent{
@@ -249,6 +252,33 @@ func TestChatView_HandleEvent_AssistantText(t *testing.T) {
 	}
 	if cv.blocks[0].text != "Hello world" {
 		t.Errorf("expected 'Hello world', got %q", cv.blocks[0].text)
+	}
+	if !cv.blocks[0].streaming {
+		t.Error("expected streaming=true after appending delta")
+	}
+}
+
+func TestChatView_StreamingRenderSkipsGlamour(t *testing.T) {
+	cv := NewChatView()
+	cv.SetSize(80, 24)
+
+	// During streaming, renderAssistant should use plain text styling.
+	cv.HandleEvent(agent.AgentEvent{
+		Type:  agent.EventAssistantText,
+		Delta: "**bold text**",
+	})
+	cv.rebuildContent()
+	streamingView := cv.View()
+
+	// After TurnEnd, renderAssistant should use glamour markdown rendering.
+	cv.HandleEvent(agent.AgentEvent{Type: agent.EventTurnEnd})
+	cv.rebuildContent()
+	finalView := cv.View()
+
+	// The two renders should differ — glamour processes markdown syntax,
+	// while streaming mode passes text through with lipgloss styling.
+	if streamingView == finalView {
+		t.Error("expected streaming and final renders to differ for markdown content")
 	}
 }
 
@@ -371,10 +401,16 @@ func TestChatView_HandleEvent_TurnEnd(t *testing.T) {
 		Type:  agent.EventAssistantText,
 		Delta: "hello",
 	})
+	if !cv.blocks[0].streaming {
+		t.Error("expected streaming=true during text deltas")
+	}
 
 	changed := cv.HandleEvent(agent.AgentEvent{Type: agent.EventTurnEnd})
-	if changed {
-		t.Error("TurnEnd should return false (no content change)")
+	if !changed {
+		t.Error("TurnEnd should return true (clears streaming, triggers re-render)")
+	}
+	if cv.blocks[0].streaming {
+		t.Error("expected streaming=false after TurnEnd")
 	}
 
 	// TurnEnd doesn't force a new block — lastBlock still matches the
