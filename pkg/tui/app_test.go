@@ -197,9 +197,9 @@ func TestApp_Update_EditorCommandMsg_Known(t *testing.T) {
 	})
 
 	app.Update(editorCommandMsg{name: "test", args: ""})
-	// Execute is called via the returned tea.Cmd, but we registered a non-nil
-	// Execute, so calling should work without error even if cmd is nil.
-	_ = called
+	if !called {
+		t.Error("expected Execute to be called for known command")
+	}
 }
 
 func TestApp_Update_EditorCommandMsg_Unknown(t *testing.T) {

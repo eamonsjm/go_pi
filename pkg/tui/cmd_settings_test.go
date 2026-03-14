@@ -193,7 +193,7 @@ func TestSettingsUpdate_Provider_Invalid(t *testing.T) {
 	cfg, a, h := newTestSettingsEnv(t)
 	cmd := NewSettingsCommand(cfg, a, h)
 
-	teaCmd := cmd.Execute("provider azure")
+	teaCmd := cmd.Execute("provider notreal")
 	msg := teaCmd()
 
 	errMsg, ok := msg.(CommandResultMsg)
@@ -201,7 +201,10 @@ func TestSettingsUpdate_Provider_Invalid(t *testing.T) {
 		t.Fatalf("expected CommandResultMsg, got %T", msg)
 	}
 	if !errMsg.IsError {
-		t.Error("expected IsError=true")
+		t.Error("expected IsError=true for invalid provider")
+	}
+	if !strings.Contains(errMsg.Text, "unknown provider") {
+		t.Errorf("expected 'unknown provider' in error, got %q", errMsg.Text)
 	}
 }
 
