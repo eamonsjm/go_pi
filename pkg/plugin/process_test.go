@@ -22,10 +22,12 @@ func newTestProcess(name, jsonl string) *PluginProcess {
 	scanner := bufio.NewScanner(strings.NewReader(jsonl))
 	scanner.Buffer(make([]byte, maxScannerBuffer), maxScannerBuffer)
 	return &PluginProcess{
-		name:       name,
-		scanner:    scanner,
-		injectCh:   make(chan PluginMessage, 64),
-		responseCh: make(chan PluginMessage, 16),
+		name:        name,
+		scanner:     scanner,
+		injectCh:    make(chan PluginMessage, 64),
+		responseCh:  make(chan PluginMessage, 16),
+		heartbeatCh: make(chan PluginMessage, 4),
+		healthy:     true,
 	}
 }
 
@@ -88,10 +90,12 @@ func TestReadLoop_ResponseDroppedWhenFull(t *testing.T) {
 	scanner := bufio.NewScanner(strings.NewReader(lines))
 	scanner.Buffer(make([]byte, maxScannerBuffer), maxScannerBuffer)
 	p := &PluginProcess{
-		name:       "test-drop-response",
-		scanner:    scanner,
-		injectCh:   make(chan PluginMessage, 64),
-		responseCh: make(chan PluginMessage, 2), // small buffer
+		name:        "test-drop-response",
+		scanner:     scanner,
+		injectCh:    make(chan PluginMessage, 64),
+		responseCh:  make(chan PluginMessage, 2), // small buffer
+		heartbeatCh: make(chan PluginMessage, 4),
+		healthy:     true,
 	}
 
 	done := make(chan struct{})
@@ -130,10 +134,12 @@ func TestReadLoop_InjectDroppedWhenFull(t *testing.T) {
 	scanner := bufio.NewScanner(strings.NewReader(lines))
 	scanner.Buffer(make([]byte, maxScannerBuffer), maxScannerBuffer)
 	p := &PluginProcess{
-		name:       "test-drop",
-		scanner:    scanner,
-		injectCh:   make(chan PluginMessage, 2), // small buffer
-		responseCh: make(chan PluginMessage, 16),
+		name:        "test-drop",
+		scanner:     scanner,
+		injectCh:    make(chan PluginMessage, 2), // small buffer
+		responseCh:  make(chan PluginMessage, 16),
+		heartbeatCh: make(chan PluginMessage, 4),
+		healthy:     true,
 	}
 
 	p.readLoop()
@@ -427,6 +433,93 @@ func TestHelperPlugin(t *testing.T) {
 			}
 		}
 
+	case "heartbeat_ack":
+		// Initialize normally, then respond to heartbeat with heartbeat_ack.
+		if !scanner.Scan() {
+			os.Exit(1)
+		}
+		resp := PluginMessage{Type: "capabilities"}
+		data, _ := json.Marshal(resp)
+		fmt.Fprintln(os.Stdout, string(data))
+
+		for scanner.Scan() {
+			var req HostMessage
+			json.Unmarshal(scanner.Bytes(), &req)
+			switch req.Type {
+			case "heartbeat":
+				r := PluginMessage{
+					Type: "heartbeat_ack",
+					Status: &HeartbeatStatus{
+						MemoryBytes: 1024000,
+						Goroutines:  5,
+						UptimeSecs:  42,
+					},
+				}
+				data, _ := json.Marshal(r)
+				fmt.Fprintln(os.Stdout, string(data))
+			case "tool_call":
+				r := PluginMessage{
+					Type:    "tool_result",
+					ID:      req.ID,
+					Content: "echoed:" + req.Name,
+				}
+				data, _ := json.Marshal(r)
+				fmt.Fprintln(os.Stdout, string(data))
+			case "shutdown":
+				os.Exit(0)
+			}
+		}
+
+	case "heartbeat_slow":
+		// Initialize normally, then respond to heartbeat after a delay.
+		// Used to test heartbeat timeout.
+		if !scanner.Scan() {
+			os.Exit(1)
+		}
+		resp := PluginMessage{Type: "capabilities"}
+		data, _ := json.Marshal(resp)
+		fmt.Fprintln(os.Stdout, string(data))
+
+		for scanner.Scan() {
+			var req HostMessage
+			json.Unmarshal(scanner.Bytes(), &req)
+			switch req.Type {
+			case "heartbeat":
+				time.Sleep(500 * time.Millisecond)
+				r := PluginMessage{
+					Type: "heartbeat_ack",
+					Status: &HeartbeatStatus{
+						MemoryBytes: 999,
+					},
+				}
+				data, _ := json.Marshal(r)
+				fmt.Fprintln(os.Stdout, string(data))
+			case "shutdown":
+				os.Exit(0)
+			}
+		}
+
+	case "heartbeat_ignore":
+		// Initialize normally, never responds to heartbeat.
+		// Simulates old plugin that doesn't understand heartbeat.
+		if !scanner.Scan() {
+			os.Exit(1)
+		}
+		resp := PluginMessage{Type: "capabilities"}
+		data, _ := json.Marshal(resp)
+		fmt.Fprintln(os.Stdout, string(data))
+
+		for scanner.Scan() {
+			var req HostMessage
+			json.Unmarshal(scanner.Bytes(), &req)
+			switch req.Type {
+			case "heartbeat":
+				// Silently ignore — simulates old plugin.
+			case "shutdown":
+				os.Exit(0)
+			}
+		}
+
 	default:
 		fmt.Fprintf(os.Stderr, "unknown PLUGIN_MODE: %s\n", mode)
 		os.Exit(2)
@@ -467,15 +560,17 @@ func startTestPlugin(t *testing.T, mode string) *PluginProcess {
 	scanner.Buffer(make([]byte, maxScannerBuffer), maxScannerBuffer)
 
 	p := &PluginProcess{
-		name:       "test-plugin",
-		path:       os.Args[0],
-		args:       []string{"-test.run=TestHelperPlugin"},
-		env:        cmd.Env,
-		cmd:        cmd,
-		stdin:      stdinPipe,
-		scanner:    scanner,
-		injectCh:   make(chan PluginMessage, 64),
-		responseCh: make(chan PluginMessage, 16),
+		name:        "test-plugin",
+		path:        os.Args[0],
+		args:        []string{"-test.run=TestHelperPlugin"},
+		env:         cmd.Env,
+		cmd:         cmd,
+		stdin:       stdinPipe,
+		scanner:     scanner,
+		injectCh:    make(chan PluginMessage, 64),
+		responseCh:  make(chan PluginMessage, 16),
+		heartbeatCh: make(chan PluginMessage, 4),
+		healthy:     true,
 	}
 
 	go p.readLoop()
@@ -1144,6 +1239,163 @@ func TestDefaultRestartConfig(t *testing.T) {
 	}
 	if cfg.MaxBackoff != 30*time.Second {
 		t.Errorf("MaxBackoff = %v, want 30s", cfg.MaxBackoff)
+	}
+}
+
+// --- Heartbeat tests ---
+
+func TestHeartbeat_Success(t *testing.T) {
+	p := startTestPlugin(t, "heartbeat_ack")
+	if err := p.Initialize(PluginConfig{}); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+
+	status, err := p.Heartbeat(5 * time.Second)
+	if err != nil {
+		t.Fatalf("Heartbeat: %v", err)
+	}
+
+	if status == nil {
+		t.Fatal("status is nil")
+	}
+	if status.MemoryBytes != 1024000 {
+		t.Errorf("MemoryBytes = %d, want 1024000", status.MemoryBytes)
+	}
+	if status.Goroutines != 5 {
+		t.Errorf("Goroutines = %d, want 5", status.Goroutines)
+	}
+	if status.UptimeSecs != 42 {
+		t.Errorf("UptimeSecs = %d, want 42", status.UptimeSecs)
+	}
+
+	if !p.Healthy() {
+		t.Error("Healthy() = false after successful heartbeat")
+	}
+
+	lastStatus := p.LastHeartbeatStatus()
+	if lastStatus == nil {
+		t.Fatal("LastHeartbeatStatus() is nil")
+	}
+	if lastStatus.MemoryBytes != 1024000 {
+		t.Errorf("LastHeartbeatStatus().MemoryBytes = %d, want 1024000", lastStatus.MemoryBytes)
+	}
+}
+
+func TestHeartbeat_Timeout(t *testing.T) {
+	p := startTestPlugin(t, "heartbeat_slow")
+	if err := p.Initialize(PluginConfig{}); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+
+	// The helper takes 500ms to respond; use a 50ms timeout.
+	_, err := p.Heartbeat(50 * time.Millisecond)
+	if err == nil {
+		t.Fatal("expected timeout error")
+	}
+	if !strings.Contains(err.Error(), "heartbeat timeout") {
+		t.Errorf("error = %q, want containing %q", err.Error(), "heartbeat timeout")
+	}
+
+	if p.Healthy() {
+		t.Error("Healthy() = true after heartbeat timeout")
+	}
+}
+
+func TestHeartbeat_OldPluginIgnores(t *testing.T) {
+	p := startTestPlugin(t, "heartbeat_ignore")
+	if err := p.Initialize(PluginConfig{}); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+
+	// Old plugin ignores heartbeat — should timeout.
+	_, err := p.Heartbeat(100 * time.Millisecond)
+	if err == nil {
+		t.Fatal("expected timeout error from old plugin")
+	}
+
+	// Before any heartbeat, plugin was healthy. After missed heartbeat, unhealthy.
+	if p.Healthy() {
+		t.Error("Healthy() = true after missed heartbeat")
+	}
+}
+
+func TestHeartbeat_ClosedProcess(t *testing.T) {
+	p := startTestPlugin(t, "heartbeat_ack")
+	if err := p.Initialize(PluginConfig{}); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	p.Stop()
+
+	_, err := p.Heartbeat(1 * time.Second)
+	if err == nil {
+		t.Fatal("expected error from heartbeat on closed process")
+	}
+	if !strings.Contains(err.Error(), "not running") {
+		t.Errorf("error = %q, want containing %q", err.Error(), "not running")
+	}
+}
+
+func TestHeartbeat_DoesNotInterfereWithTools(t *testing.T) {
+	p := startTestPlugin(t, "heartbeat_ack")
+	if err := p.Initialize(PluginConfig{}); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+
+	// Heartbeat first.
+	status, err := p.Heartbeat(5 * time.Second)
+	if err != nil {
+		t.Fatalf("Heartbeat: %v", err)
+	}
+	if status == nil {
+		t.Fatal("status is nil")
+	}
+
+	// Tool call should still work.
+	content, isError, err := p.ExecuteTool("call-1", "echo", nil)
+	if err != nil {
+		t.Fatalf("ExecuteTool: %v", err)
+	}
+	if isError {
+		t.Error("isError = true")
+	}
+	if content != "echoed:echo" {
+		t.Errorf("content = %q, want %q", content, "echoed:echo")
+	}
+}
+
+func TestHealthy_DefaultTrue(t *testing.T) {
+	p := &PluginProcess{healthy: true}
+	if !p.Healthy() {
+		t.Error("Healthy() = false for new process, want true")
+	}
+}
+
+func TestDefaultHeartbeatConfig(t *testing.T) {
+	cfg := DefaultHeartbeatConfig()
+	if cfg.Interval != 10*time.Second {
+		t.Errorf("Interval = %v, want 10s", cfg.Interval)
+	}
+	if cfg.Timeout != 5*time.Second {
+		t.Errorf("Timeout = %v, want 5s", cfg.Timeout)
+	}
+}
+
+func TestReadLoop_HeartbeatAckRouted(t *testing.T) {
+	input := `{"type":"heartbeat_ack","status":{"memory_bytes":42}}` + "\n"
+
+	p := newTestProcess("test-hb", input)
+	p.heartbeatCh = make(chan PluginMessage, 4)
+	p.readLoop()
+
+	msg, ok := <-p.heartbeatCh
+	if !ok {
+		t.Fatal("heartbeatCh closed before delivering message")
+	}
+	if msg.Type != "heartbeat_ack" {
+		t.Errorf("Type = %q, want %q", msg.Type, "heartbeat_ack")
+	}
+	if msg.Status == nil || msg.Status.MemoryBytes != 42 {
+		t.Errorf("Status = %+v, want MemoryBytes=42", msg.Status)
 	}
 }
 

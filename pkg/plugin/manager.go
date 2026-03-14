@@ -1,11 +1,13 @@
 package plugin
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/ejm/go_pi/pkg/agent"
 	"github.com/ejm/go_pi/pkg/tools"
@@ -17,7 +19,11 @@ import (
 type Manager struct {
 	plugins      []*PluginProcess
 	toolRegistry *tools.Registry
-	restartCfg   *RestartConfig // if set, enables auto-restart for plugins
+	restartCfg   *RestartConfig   // if set, enables auto-restart for plugins
+	heartbeatCfg *HeartbeatConfig // if set, enables periodic heartbeats
+
+	heartbeatCancel context.CancelFunc // cancels the heartbeat goroutine
+	heartbeatDone   chan struct{}       // closed when heartbeat goroutine exits
 }
 
 // NewManager creates a new plugin manager. The tool registry is used to register
@@ -195,8 +201,84 @@ func (m *Manager) initializePlugin(p *PluginProcess, cfg PluginConfig) (retErr e
 	return nil
 }
 
+// SetHeartbeatConfig sets the heartbeat configuration for the manager.
+// If cfg is nil, heartbeats are disabled.
+func (m *Manager) SetHeartbeatConfig(cfg *HeartbeatConfig) {
+	m.heartbeatCfg = cfg
+}
+
+// StartHeartbeats begins periodic heartbeat checks on all alive plugins.
+// Call this after Initialize. The goroutine runs until ctx is cancelled
+// or Shutdown is called.
+func (m *Manager) StartHeartbeats(ctx context.Context) {
+	if m.heartbeatCfg == nil {
+		return
+	}
+
+	ctx, cancel := context.WithCancel(ctx)
+	m.heartbeatCancel = cancel
+	m.heartbeatDone = make(chan struct{})
+
+	cfg := *m.heartbeatCfg
+
+	go func() {
+		defer close(m.heartbeatDone)
+
+		ticker := time.NewTicker(cfg.Interval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				m.heartbeatAll(cfg.Timeout)
+			}
+		}
+	}()
+}
+
+// heartbeatAll sends a heartbeat to each alive plugin and logs unhealthy ones.
+func (m *Manager) heartbeatAll(timeout time.Duration) {
+	for _, p := range m.plugins {
+		if !p.Alive() {
+			continue
+		}
+
+		status, err := p.Heartbeat(timeout)
+		if err != nil {
+			log.Printf("plugin %s: unhealthy: %v", p.name, err)
+			continue
+		}
+
+		if status != nil {
+			log.Printf("plugin %s: healthy (mem=%d goroutines=%d uptime=%ds)",
+				p.name, status.MemoryBytes, status.Goroutines, status.UptimeSecs)
+		}
+	}
+}
+
+// PluginHealthy returns true if the named plugin's last heartbeat succeeded.
+// Returns false if the plugin is not found.
+func (m *Manager) PluginHealthy(name string) bool {
+	for _, p := range m.plugins {
+		if p.name == name {
+			return p.Healthy()
+		}
+	}
+	return false
+}
+
 // Shutdown sends a shutdown message to all plugins and waits for them to exit.
+// If heartbeats are running, they are stopped first.
 func (m *Manager) Shutdown() error {
+	// Stop heartbeat goroutine if running.
+	if m.heartbeatCancel != nil {
+		m.heartbeatCancel()
+		<-m.heartbeatDone
+		m.heartbeatCancel = nil
+	}
+
 	var firstErr error
 	for _, p := range m.plugins {
 		if err := p.Stop(); err != nil && firstErr == nil {

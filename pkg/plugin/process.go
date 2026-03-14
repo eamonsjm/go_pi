@@ -29,6 +29,10 @@ const (
 	defaultMaxRestartAttempts    = 5
 	defaultInitialRestartBackoff = 1 * time.Second
 	defaultMaxRestartBackoff     = 30 * time.Second
+
+	// Default heartbeat configuration values.
+	defaultHeartbeatInterval = 10 * time.Second
+	defaultHeartbeatTimeout  = 5 * time.Second
 )
 
 // RestartConfig controls auto-restart behavior for crashed plugins.
@@ -44,6 +48,14 @@ func DefaultRestartConfig() RestartConfig {
 		MaxAttempts:    defaultMaxRestartAttempts,
 		InitialBackoff: defaultInitialRestartBackoff,
 		MaxBackoff:     defaultMaxRestartBackoff,
+	}
+}
+
+// DefaultHeartbeatConfig returns a HeartbeatConfig with default values.
+func DefaultHeartbeatConfig() HeartbeatConfig {
+	return HeartbeatConfig{
+		Interval: defaultHeartbeatInterval,
+		Timeout:  defaultHeartbeatTimeout,
 	}
 }
 
@@ -74,6 +86,12 @@ type PluginProcess struct {
 	pluginCfg    PluginConfig   // saved for re-initialization on restart
 	restartCount int            // total restart attempts made
 	restarting   bool           // true while restart is in progress
+
+	// Heartbeat fields.
+	heartbeatCh      chan PluginMessage // receives heartbeat_ack messages
+	healthy          bool              // true when last heartbeat succeeded or no heartbeat sent yet
+	lastHeartbeatAck time.Time         // time of last successful heartbeat ack
+	lastHeartbeatStatus *HeartbeatStatus // status from last ack
 
 	// Supervisor fields (set when EnableAutoRestart is called).
 	supervised bool
@@ -112,13 +130,15 @@ func startPlugin(name, path string) (*PluginProcess, error) {
 	scanner.Buffer(make([]byte, maxScannerBuffer), maxScannerBuffer)
 
 	p := &PluginProcess{
-		name:       name,
-		path:       path,
-		cmd:        cmd,
-		stdin:      stdinPipe,
-		scanner:    scanner,
-		injectCh:   make(chan PluginMessage, 64),
-		responseCh: make(chan PluginMessage, 16),
+		name:        name,
+		path:        path,
+		cmd:         cmd,
+		stdin:       stdinPipe,
+		scanner:     scanner,
+		injectCh:    make(chan PluginMessage, 64),
+		responseCh:  make(chan PluginMessage, 16),
+		heartbeatCh: make(chan PluginMessage, 4),
+		healthy:     true,
 	}
 
 	// Start background reader that routes incoming messages.
@@ -135,11 +155,13 @@ func (p *PluginProcess) readLoop() {
 	p.mu.Lock()
 	injectCh := p.injectCh
 	responseCh := p.responseCh
+	heartbeatCh := p.heartbeatCh
 	scanner := p.scanner
 	p.mu.Unlock()
 
 	defer close(injectCh)
 	defer close(responseCh)
+	defer close(heartbeatCh)
 
 	for scanner.Scan() {
 		var msg PluginMessage
@@ -160,6 +182,12 @@ func (p *PluginProcess) readLoop() {
 			case responseCh <- msg:
 			default:
 				log.Printf("plugin %s: dropped %s response (channel full)", p.name, msg.Type)
+			}
+		case "heartbeat_ack":
+			select {
+			case heartbeatCh <- msg:
+			default:
+				log.Printf("plugin %s: dropped heartbeat_ack (channel full)", p.name)
 			}
 		}
 	}
@@ -297,6 +325,70 @@ func (p *PluginProcess) InjectMessages() <-chan PluginMessage {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.injectCh
+}
+
+// Heartbeat sends a heartbeat message and waits for a heartbeat_ack within
+// the given timeout. If the plugin responds in time, health is marked true and
+// the status is stored. If the plugin does not respond, health is marked false.
+// Old plugins that don't recognize heartbeat simply won't respond; callers
+// should treat the first missed heartbeat as the signal to mark unhealthy
+// (the Manager handles backward compatibility by assuming healthy until the
+// first heartbeat is actually sent).
+func (p *PluginProcess) Heartbeat(timeout time.Duration) (*HeartbeatStatus, error) {
+	p.mu.Lock()
+	if p.closed || p.restarting {
+		p.mu.Unlock()
+		return nil, fmt.Errorf("plugin %s: not running", p.name)
+	}
+	heartbeatCh := p.heartbeatCh
+	p.mu.Unlock()
+
+	if err := p.Send(HostMessage{Type: "heartbeat"}); err != nil {
+		p.mu.Lock()
+		p.healthy = false
+		p.mu.Unlock()
+		return nil, err
+	}
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
+	select {
+	case msg, ok := <-heartbeatCh:
+		if !ok {
+			p.mu.Lock()
+			p.healthy = false
+			p.mu.Unlock()
+			return nil, fmt.Errorf("plugin %s: process exited", p.name)
+		}
+		p.mu.Lock()
+		p.healthy = true
+		p.lastHeartbeatAck = time.Now()
+		p.lastHeartbeatStatus = msg.Status
+		p.mu.Unlock()
+		return msg.Status, nil
+	case <-timer.C:
+		p.mu.Lock()
+		p.healthy = false
+		p.mu.Unlock()
+		return nil, fmt.Errorf("plugin %s: heartbeat timeout", p.name)
+	}
+}
+
+// Healthy returns whether the plugin's last heartbeat succeeded. A plugin
+// that has never been heartbeated is considered healthy.
+func (p *PluginProcess) Healthy() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.healthy
+}
+
+// LastHeartbeatStatus returns the status from the last successful heartbeat ack,
+// or nil if no heartbeat has been acknowledged yet.
+func (p *PluginProcess) LastHeartbeatStatus() *HeartbeatStatus {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.lastHeartbeatStatus
 }
 
 // Stop sends a shutdown message and waits for the plugin process to exit.
@@ -553,6 +645,7 @@ func (p *PluginProcess) respawn() error {
 
 	newInjectCh := make(chan PluginMessage, 64)
 	newResponseCh := make(chan PluginMessage, 16)
+	newHeartbeatCh := make(chan PluginMessage, 4)
 
 	p.mu.Lock()
 	p.cmd = cmd
@@ -560,6 +653,8 @@ func (p *PluginProcess) respawn() error {
 	p.scanner = scanner
 	p.injectCh = newInjectCh
 	p.responseCh = newResponseCh
+	p.heartbeatCh = newHeartbeatCh
+	p.healthy = true // Reset health on restart.
 	p.closed = false // Allow Send to work again for initialization.
 	p.mu.Unlock()
 

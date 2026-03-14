@@ -79,13 +79,15 @@ func startIntegrationPlugin(t *testing.T, binPath, mode string) *PluginProcess {
 	scanner.Buffer(make([]byte, maxScannerBuffer), maxScannerBuffer)
 
 	p := &PluginProcess{
-		name:       "testplugin",
-		path:       binPath,
-		cmd:        cmd,
-		stdin:      stdinPipe,
-		scanner:    scanner,
-		injectCh:   make(chan PluginMessage, 64),
-		responseCh: make(chan PluginMessage, 16),
+		name:        "testplugin",
+		path:        binPath,
+		cmd:         cmd,
+		stdin:       stdinPipe,
+		scanner:     scanner,
+		injectCh:    make(chan PluginMessage, 64),
+		responseCh:  make(chan PluginMessage, 16),
+		heartbeatCh: make(chan PluginMessage, 4),
+		healthy:     true,
 	}
 
 	go p.readLoop()
@@ -395,13 +397,15 @@ func TestIntegration_InitTimeout(t *testing.T) {
 	scanner.Buffer(make([]byte, maxScannerBuffer), maxScannerBuffer)
 
 	p := &PluginProcess{
-		name:       "testplugin-slow",
-		path:       bin,
-		cmd:        cmd,
-		stdin:      stdinPipe,
-		scanner:    scanner,
-		injectCh:   make(chan PluginMessage, 64),
-		responseCh: make(chan PluginMessage, 16),
+		name:        "testplugin-slow",
+		path:        bin,
+		cmd:         cmd,
+		stdin:       stdinPipe,
+		scanner:     scanner,
+		injectCh:    make(chan PluginMessage, 64),
+		responseCh:  make(chan PluginMessage, 16),
+		heartbeatCh: make(chan PluginMessage, 4),
+		healthy:     true,
 	}
 
 	go p.readLoop()

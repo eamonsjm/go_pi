@@ -3,7 +3,11 @@
 // enabling language-agnostic extensibility.
 package plugin
 
-import "github.com/ejm/go_pi/pkg/ai"
+import (
+	"time"
+
+	"github.com/ejm/go_pi/pkg/ai"
+)
 
 // --- Host -> Plugin message types ---
 
@@ -51,6 +55,20 @@ type PluginMessage struct {
 	Role     string       `json:"role,omitempty"`
 	Level    string       `json:"level,omitempty"`
 	Message  string       `json:"message,omitempty"`
+	Status   *HeartbeatStatus `json:"status,omitempty"`
+}
+
+// HeartbeatStatus carries plugin health metrics returned in a heartbeat_ack.
+type HeartbeatStatus struct {
+	MemoryBytes int64 `json:"memory_bytes,omitempty"`
+	Goroutines  int   `json:"goroutines,omitempty"`
+	UptimeSecs  int64 `json:"uptime_seconds,omitempty"`
+}
+
+// HeartbeatConfig controls periodic health checking of plugins.
+type HeartbeatConfig struct {
+	Interval time.Duration // How often to send heartbeats (default 10s).
+	Timeout  time.Duration // How long to wait for an ack (default 5s).
 }
 
 // ToolDef describes a tool provided by a plugin.

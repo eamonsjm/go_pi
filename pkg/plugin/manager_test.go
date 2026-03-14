@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 
 	"github.com/ejm/go_pi/pkg/agent"
 	"github.com/ejm/go_pi/pkg/tools"
@@ -538,6 +539,103 @@ func TestInitialize_StopsPluginOnRegistrationPanic(t *testing.T) {
 	// The plugin process should have been stopped (not leaked).
 	if p.Alive() {
 		t.Error("plugin process still alive after registration panic")
+	}
+}
+
+func TestStartHeartbeats_SendsPeriodicHeartbeats(t *testing.T) {
+	p := startTestPlugin(t, "heartbeat_ack")
+	if err := p.Initialize(PluginConfig{}); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+
+	reg := tools.NewRegistry()
+	m := NewManager(reg)
+	m.plugins = []*PluginProcess{p}
+
+	cfg := HeartbeatConfig{
+		Interval: 100 * time.Millisecond,
+		Timeout:  2 * time.Second,
+	}
+	m.SetHeartbeatConfig(&cfg)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	m.StartHeartbeats(ctx)
+
+	// Wait for at least one heartbeat to complete.
+	deadline := time.After(3 * time.Second)
+	for {
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for heartbeat")
+		default:
+		}
+		if p.LastHeartbeatStatus() != nil {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	if !p.Healthy() {
+		t.Error("plugin not healthy after heartbeat")
+	}
+
+	status := p.LastHeartbeatStatus()
+	if status.MemoryBytes != 1024000 {
+		t.Errorf("MemoryBytes = %d, want 1024000", status.MemoryBytes)
+	}
+}
+
+func TestPluginHealthy_UnknownPlugin(t *testing.T) {
+	reg := tools.NewRegistry()
+	m := NewManager(reg)
+
+	if m.PluginHealthy("nonexistent") {
+		t.Error("PluginHealthy returned true for unknown plugin")
+	}
+}
+
+func TestShutdown_StopsHeartbeats(t *testing.T) {
+	p := startTestPlugin(t, "heartbeat_ack")
+	if err := p.Initialize(PluginConfig{}); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+
+	reg := tools.NewRegistry()
+	m := NewManager(reg)
+	m.plugins = []*PluginProcess{p}
+
+	cfg := HeartbeatConfig{
+		Interval: 100 * time.Millisecond,
+		Timeout:  2 * time.Second,
+	}
+	m.SetHeartbeatConfig(&cfg)
+
+	m.StartHeartbeats(context.Background())
+
+	// Shutdown should stop heartbeats and plugins.
+	err := m.Shutdown()
+	if err != nil {
+		t.Fatalf("Shutdown: %v", err)
+	}
+
+	if len(m.plugins) != 0 {
+		t.Errorf("plugins = %d, want 0", len(m.plugins))
+	}
+}
+
+func TestSetHeartbeatConfig_Nil(t *testing.T) {
+	reg := tools.NewRegistry()
+	m := NewManager(reg)
+
+	m.SetHeartbeatConfig(nil)
+
+	// StartHeartbeats should be a no-op when config is nil.
+	m.StartHeartbeats(context.Background())
+
+	if m.heartbeatDone != nil {
+		t.Error("heartbeat goroutine started with nil config")
 	}
 }
 
