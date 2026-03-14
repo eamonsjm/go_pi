@@ -686,10 +686,11 @@ func TestApp_Update_IdleRenderMsg_StaleGen(t *testing.T) {
 // ---------------------------------------------------------------------------
 // Delta coalescing between frames (gp-6nw.3)
 //
-// Between render ticks, multiple StreamEventMsg may arrive. The App must:
+// StreamEventMsg handling: deltas trigger immediate rebuild so each token
+// appears in the viewport without waiting for the next render tick. The App must:
 //   - Accumulate all text deltas into the block text (no data loss)
-//   - Set dirty=true on each delta
-//   - Call rebuildContent() at most once per tick (on renderTickMsg)
+//   - Call rebuildContent() immediately when content changes
+//   - Keep render ticks as a safety-net fallback
 // ---------------------------------------------------------------------------
 
 func TestApp_DeltaCoalescing_MultipleTextDeltas(t *testing.T) {
@@ -715,11 +716,12 @@ func TestApp_DeltaCoalescing_MultipleTextDeltas(t *testing.T) {
 	if app.chat.blocks[0].text != want {
 		t.Errorf("expected %q, got %q", want, app.chat.blocks[0].text)
 	}
-	if !app.chat.dirty {
-		t.Error("expected dirty=true before tick")
+	// Each delta triggers an immediate rebuildContent, so dirty is false.
+	if app.chat.dirty {
+		t.Error("expected dirty=false — immediate rebuild clears it")
 	}
 
-	// A single tick should flush all accumulated deltas.
+	// Tick is a no-op since dirty is already false.
 	app.Update(renderTickMsg{})
 	if app.chat.dirty {
 		t.Error("expected dirty=false after tick")
@@ -785,23 +787,23 @@ func TestApp_DeltaCoalescing_DirtyFlagLifecycle(t *testing.T) {
 		t.Error("expected dirty=false initially")
 	}
 
-	// First delta sets dirty.
+	// First delta triggers immediate rebuild, clearing dirty.
 	app.Update(StreamEventMsg{
 		Event: agent.AgentEvent{Type: agent.EventAssistantText, Delta: "a"},
 	})
-	if !app.chat.dirty {
-		t.Error("expected dirty=true after first delta")
+	if app.chat.dirty {
+		t.Error("expected dirty=false — immediate rebuild clears it")
 	}
 
-	// More deltas keep dirty=true.
+	// More deltas also rebuild immediately.
 	app.Update(StreamEventMsg{
 		Event: agent.AgentEvent{Type: agent.EventAssistantText, Delta: "b"},
 	})
-	if !app.chat.dirty {
-		t.Error("expected dirty=true after second delta")
+	if app.chat.dirty {
+		t.Error("expected dirty=false after second delta")
 	}
 
-	// Tick clears dirty.
+	// Tick is a no-op since dirty is already false.
 	app.Update(renderTickMsg{})
 	if app.chat.dirty {
 		t.Error("expected dirty=false after tick")
@@ -813,12 +815,12 @@ func TestApp_DeltaCoalescing_DirtyFlagLifecycle(t *testing.T) {
 		t.Error("expected dirty=false when no new deltas")
 	}
 
-	// New delta after tick sets dirty again.
+	// New delta after tick: rebuilt immediately, dirty cleared.
 	app.Update(StreamEventMsg{
 		Event: agent.AgentEvent{Type: agent.EventAssistantText, Delta: "c"},
 	})
-	if !app.chat.dirty {
-		t.Error("expected dirty=true after new delta")
+	if app.chat.dirty {
+		t.Error("expected dirty=false after new delta (immediate rebuild)")
 	}
 }
 
@@ -826,18 +828,18 @@ func TestApp_DeltaCoalescing_AgentDoneFlushesDirty(t *testing.T) {
 	app := NewApp()
 	app.agentRunning = true
 
-	// Send deltas without any tick.
+	// Send deltas — immediate rebuild clears dirty.
 	app.Update(StreamEventMsg{
 		Event: agent.AgentEvent{Type: agent.EventAssistantText, Delta: "final"},
 	})
-	if !app.chat.dirty {
-		t.Fatal("expected dirty=true before AgentDoneMsg")
+	if app.chat.dirty {
+		t.Fatal("expected dirty=false — immediate rebuild already flushed")
 	}
 
-	// AgentDoneMsg should flush remaining dirty state.
+	// AgentDoneMsg should still work cleanly.
 	app.Update(AgentDoneMsg{})
 	if app.chat.dirty {
-		t.Error("expected dirty=false after AgentDoneMsg flushes")
+		t.Error("expected dirty=false after AgentDoneMsg")
 	}
 	// Text should still be intact.
 	if app.chat.blocks[0].text != "final" {
@@ -870,7 +872,7 @@ func TestApp_DeltaCoalescing_MixedEventTypes(t *testing.T) {
 		Event: agent.AgentEvent{Type: agent.EventToolExecStart, ToolCallID: "tc-1", ToolName: "bash"},
 	})
 
-	// All should accumulate before tick.
+	// All should accumulate correctly.
 	if len(app.chat.blocks) != 3 {
 		t.Fatalf("expected 3 blocks, got %d", len(app.chat.blocks))
 	}
@@ -884,9 +886,9 @@ func TestApp_DeltaCoalescing_MixedEventTypes(t *testing.T) {
 		t.Error("expected third block to be blockToolCall")
 	}
 
-	// One tick flushes everything.
-	if !app.chat.dirty {
-		t.Error("expected dirty=true before tick")
+	// Each event triggers immediate rebuild, so dirty is already false.
+	if app.chat.dirty {
+		t.Error("expected dirty=false — immediate rebuild clears it")
 	}
 	app.Update(renderTickMsg{})
 	if app.chat.dirty {
@@ -916,22 +918,21 @@ func TestApp_DeltaCoalescing_TickContinuesWhileRunning(t *testing.T) {
 	}
 }
 
-func TestApp_DeltaCoalescing_StreamEventNoImmediateRebuild(t *testing.T) {
+func TestApp_DeltaCoalescing_StreamEventImmediateRebuild(t *testing.T) {
 	app := NewApp()
 	app.agentRunning = true
 
-	// Text delta returns a cmd (idle-render timer), but NOT an immediate
-	// rebuildContent call — the dirty flag defers rendering to the next tick.
+	// Text delta triggers immediate rebuildContent so the viewport is
+	// updated before the next View() call — eliminating chunky rendering.
 	app.Update(StreamEventMsg{
 		Event: agent.AgentEvent{Type: agent.EventAssistantText, Delta: "test"},
 	})
-	// The block text should have the delta but rendered cache should be empty
-	// (no rebuildContent was called inline).
-	if app.chat.blocks[0].rendered != "" {
-		t.Error("expected empty rendered cache — no inline rebuildContent")
+	// The block should have a populated rendered cache from the immediate rebuild.
+	if app.chat.blocks[0].rendered == "" {
+		t.Error("expected non-empty rendered cache — immediate rebuildContent")
 	}
-	if !app.chat.dirty {
-		t.Error("expected dirty=true — rebuild deferred to tick")
+	if app.chat.dirty {
+		t.Error("expected dirty=false — immediate rebuild clears it")
 	}
 
 	// Non-text events should still return nil cmd.
@@ -955,16 +956,16 @@ func TestApp_DeltaCoalescing_TurnEndResetsStreaming(t *testing.T) {
 		t.Error("expected streaming=true during deltas")
 	}
 
-	// TurnEnd should mark streaming=false.
+	// TurnEnd should mark streaming=false and trigger immediate rebuild.
 	app.Update(StreamEventMsg{
 		Event: agent.AgentEvent{Type: agent.EventTurnEnd},
 	})
 	if app.chat.blocks[0].streaming {
 		t.Error("expected streaming=false after TurnEnd")
 	}
-	// dirty should be true so the tick triggers a glamour re-render.
-	if !app.chat.dirty {
-		t.Error("expected dirty=true after TurnEnd")
+	// Immediate rebuild clears dirty.
+	if app.chat.dirty {
+		t.Error("expected dirty=false — immediate rebuild after TurnEnd")
 	}
 }
 

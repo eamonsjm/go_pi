@@ -230,8 +230,14 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// ---- Agent events flowing in ----
 	case StreamEventMsg:
-		a.chat.HandleEvent(msg.Event)
+		changed := a.chat.HandleEvent(msg.Event)
 		a.handleStateTransition(msg.Event)
+		// Rebuild immediately when content changes so each delta is
+		// visible in the next View() call. Without this, deltas
+		// accumulate until the next renderTickMsg and appear as chunks.
+		if changed {
+			a.chat.rebuildContent()
+		}
 		// On each text delta, schedule an idle-render tick. If no further
 		// deltas arrive within 100ms the tick triggers a glamour re-render
 		// of the streaming block for polished output during pauses.
