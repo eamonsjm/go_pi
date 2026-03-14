@@ -119,7 +119,7 @@ func (p *AnthropicProvider) Stream(ctx context.Context, req StreamRequest) (<-ch
 
 // parseHTTPError parses a non-200 HTTP response into an APIError.
 func parseHTTPError(statusCode int, header http.Header, body []byte) *APIError {
-	apiErr := &APIError{StatusCode: statusCode}
+	apiErr := &APIError{StatusCode: statusCode, Provider: "anthropic"}
 
 	// Try to parse retry-after header.
 	if ra := header.Get("Retry-After"); ra != "" {
@@ -550,6 +550,7 @@ func (p *AnthropicProvider) readSSEStream(ctx context.Context, body io.ReadClose
 				p.send(ch, StreamEvent{Type: EventError, Error: &APIError{
 					ErrorType: d.Error.Type,
 					Message:   d.Error.Message,
+					Provider:  "anthropic",
 				}})
 			}
 			return

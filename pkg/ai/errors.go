@@ -14,13 +14,18 @@ type APIError struct {
 	ErrorType  string // e.g., "invalid_request_error", "rate_limit_error"
 	Message    string // The raw error message from the API
 	RetryAfter int    // Seconds to wait before retrying (0 if not set)
+	Provider   string // e.g., "anthropic", "gemini"
 }
 
 func (e *APIError) Error() string {
-	if e.ErrorType != "" {
-		return fmt.Sprintf("anthropic: %s: %s", e.ErrorType, e.Message)
+	prefix := e.Provider
+	if prefix == "" {
+		prefix = "api"
 	}
-	return fmt.Sprintf("anthropic: API error %d: %s", e.StatusCode, e.Message)
+	if e.ErrorType != "" {
+		return fmt.Sprintf("%s: %s: %s", prefix, e.ErrorType, e.Message)
+	}
+	return fmt.Sprintf("%s: API error %d: %s", prefix, e.StatusCode, e.Message)
 }
 
 var promptTooLongRe = regexp.MustCompile(`(\d+)\s*tokens?\s*>\s*(\d+)\s*max`)

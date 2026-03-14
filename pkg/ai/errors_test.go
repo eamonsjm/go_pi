@@ -106,18 +106,21 @@ func TestAPIError_IsRetryable(t *testing.T) {
 }
 
 func TestAPIError_Error(t *testing.T) {
-	err := &APIError{ErrorType: "invalid_request_error", Message: "bad request"}
-	if !strings.Contains(err.Error(), "invalid_request_error") {
-		t.Errorf("Error() = %q, want to contain error type", err.Error())
-	}
-	if !strings.Contains(err.Error(), "bad request") {
-		t.Errorf("Error() = %q, want to contain message", err.Error())
+	err := &APIError{ErrorType: "invalid_request_error", Message: "bad request", Provider: "anthropic"}
+	if got := err.Error(); got != "anthropic: invalid_request_error: bad request" {
+		t.Errorf("Error() = %q, want %q", got, "anthropic: invalid_request_error: bad request")
 	}
 
-	// Without error type, should show status code.
+	// Gemini provider should show "gemini:" prefix.
+	errG := &APIError{StatusCode: 429, Message: "quota exceeded", Provider: "gemini"}
+	if got := errG.Error(); got != "gemini: API error 429: quota exceeded" {
+		t.Errorf("Error() = %q, want %q", got, "gemini: API error 429: quota exceeded")
+	}
+
+	// Without provider, should fall back to "api:" prefix.
 	err2 := &APIError{StatusCode: 500, Message: "internal"}
-	if !strings.Contains(err2.Error(), "500") {
-		t.Errorf("Error() = %q, want to contain status code", err2.Error())
+	if got := err2.Error(); got != "api: API error 500: internal" {
+		t.Errorf("Error() = %q, want %q", got, "api: API error 500: internal")
 	}
 }
 

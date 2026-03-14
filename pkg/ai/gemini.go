@@ -90,6 +90,7 @@ func (p *GeminiProvider) Stream(ctx context.Context, req StreamRequest) (<-chan 
 		return nil, &APIError{
 			StatusCode: resp.StatusCode,
 			Message:    strings.TrimSpace(string(errBody)),
+			Provider:   "gemini",
 		}
 	}
 }

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"encoding/json"
 	"fmt"
 	"html"
 	"os"
@@ -79,12 +80,15 @@ func renderSessionHTML(sessionID string, msgs []ai.Message) string {
 				))
 
 			case ai.ContentTypeToolUse:
-				inputStr := fmt.Sprintf("%v", block.Input)
+				inputJSON, err := json.MarshalIndent(block.Input, "", "  ")
+				if err != nil {
+					inputJSON = []byte(fmt.Sprintf("%v", block.Input))
+				}
 				body.WriteString(fmt.Sprintf(
 					"<div class=\"message tool\"><div class=\"role\">tool_use</div>"+
 						"<details><summary>%s</summary><pre><code>%s</code></pre></details></div>\n",
 					html.EscapeString(block.ToolName),
-					html.EscapeString(inputStr),
+					html.EscapeString(string(inputJSON)),
 				))
 
 			case ai.ContentTypeToolResult:

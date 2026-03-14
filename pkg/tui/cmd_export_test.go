@@ -113,4 +113,13 @@ func TestRenderSessionHTML_ToolUseAndThinking(t *testing.T) {
 	if !strings.Contains(html, "file.go") {
 		t.Error("HTML should contain tool result")
 	}
+
+	// Tool input should be rendered as JSON, not Go map syntax.
+	if strings.Contains(html, "map[cmd:ls]") {
+		t.Error("tool input should be JSON, not Go map syntax")
+	}
+	// JSON keys are HTML-escaped in the output.
+	if !strings.Contains(html, `&#34;cmd&#34;`) {
+		t.Error("tool input should contain JSON key (HTML-escaped)")
+	}
 }
