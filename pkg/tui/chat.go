@@ -239,6 +239,23 @@ func (c *ChatView) HandleEvent(ev agent.AgentEvent) bool {
 		c.dirty = true
 		return true
 
+	// ---- agent lifecycle ----
+	case agent.EventAgentEnd:
+		// Safety net: finalize any blocks still marked as streaming.
+		// In the normal case EventTurnEnd already cleared them, but if
+		// the stream errored before EventTurnEnd fired, blocks may still
+		// have streaming=true. Clear them so the next rebuildContent()
+		// uses glamour.Render() for the final styled output.
+		changed := false
+		for i := range c.blocks {
+			if c.blocks[i].kind == blockAssistantText && c.blocks[i].streaming {
+				c.blocks[i].streaming = false
+				c.blocks[i].rendered = ""
+				changed = true
+			}
+		}
+		return changed
+
 	// ---- compaction ----
 	case agent.EventCompaction:
 		c.blocks = append(c.blocks, chatBlock{

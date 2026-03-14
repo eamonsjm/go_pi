@@ -534,6 +534,67 @@ func TestChatView_HandleEvent_AgentError_Nil(t *testing.T) {
 	}
 }
 
+func TestChatView_HandleEvent_AgentEnd_ClearsStreaming(t *testing.T) {
+	cv := NewChatView()
+	cv.SetSize(80, 24)
+
+	// Simulate streaming text without a TurnEnd (e.g. error during stream).
+	cv.HandleEvent(agent.AgentEvent{Type: agent.EventAssistantText, Delta: "partial"})
+	if !cv.blocks[0].streaming {
+		t.Fatal("precondition: block should be streaming")
+	}
+
+	changed := cv.HandleEvent(agent.AgentEvent{Type: agent.EventAgentEnd})
+	if !changed {
+		t.Error("AgentEnd should return true when streaming blocks are finalized")
+	}
+	if cv.blocks[0].streaming {
+		t.Error("expected streaming=false after AgentEnd")
+	}
+	if cv.blocks[0].rendered != "" {
+		t.Error("expected rendered cache cleared after AgentEnd")
+	}
+}
+
+func TestChatView_HandleEvent_AgentEnd_NoopAfterTurnEnd(t *testing.T) {
+	cv := NewChatView()
+
+	cv.HandleEvent(agent.AgentEvent{Type: agent.EventAssistantText, Delta: "hello"})
+	cv.HandleEvent(agent.AgentEvent{Type: agent.EventTurnEnd})
+
+	// AgentEnd after TurnEnd should be a no-op (streaming already cleared).
+	changed := cv.HandleEvent(agent.AgentEvent{Type: agent.EventAgentEnd})
+	if changed {
+		t.Error("AgentEnd should return false when no streaming blocks remain")
+	}
+}
+
+func TestChatView_HandleEvent_AgentEnd_GlamourAfterError(t *testing.T) {
+	cv := NewChatView()
+	cv.SetSize(80, 24)
+
+	// Stream markdown text, then error without TurnEnd.
+	cv.HandleEvent(agent.AgentEvent{Type: agent.EventAssistantText, Delta: "**bold text**"})
+	cv.HandleEvent(agent.AgentEvent{
+		Type:  agent.EventAgentError,
+		Error: errors.New("stream failed"),
+	})
+
+	// Streaming render (before AgentEnd).
+	cv.rebuildContent()
+	streamingView := cv.View()
+
+	// AgentEnd finalizes streaming blocks for glamour.
+	cv.HandleEvent(agent.AgentEvent{Type: agent.EventAgentEnd})
+	cv.rebuildContent()
+	finalView := cv.View()
+
+	// After AgentEnd, glamour should process the markdown differently.
+	if streamingView == finalView {
+		t.Error("expected streaming and final renders to differ after AgentEnd")
+	}
+}
+
 func TestChatView_HandleEvent_UnknownType(t *testing.T) {
 	cv := NewChatView()
 
