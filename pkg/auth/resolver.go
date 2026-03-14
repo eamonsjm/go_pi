@@ -115,31 +115,34 @@ func (r *Resolver) resolveOAuth(provider string, cred *Credential) (string, erro
 		return "", fmt.Errorf("provider %q: OAuth token expired and no provider registered for refresh", provider)
 	}
 
-	if err := r.store.Lock(); err != nil {
+	var key string
+	if err := r.store.WithLock(func() error {
+		// Re-read store inside lock — another process may have refreshed already.
+		if err := r.store.Load(); err != nil {
+			return fmt.Errorf("token refresh load: %w", err)
+		}
+		fresh := r.store.Get(provider)
+		if fresh != nil && !fresh.IsExpired() {
+			*cred = *fresh // update caller's view
+			key = p.GetAPIKey(cred)
+			return nil
+		}
+
+		// Still expired — do the refresh.
+		refreshed, err := p.RefreshToken(cred)
+		if err != nil {
+			return fmt.Errorf("token refresh: %w", err)
+		}
+
+		r.store.Set(provider, refreshed)
+		if err := r.store.Save(); err != nil {
+			return fmt.Errorf("save refreshed token: %w", err)
+		}
+		*cred = *refreshed
+		key = p.GetAPIKey(cred)
+		return nil
+	}); err != nil {
 		return "", fmt.Errorf("token refresh lock: %w", err)
 	}
-	defer r.store.Unlock()
-
-	// Re-read store inside lock — another process may have refreshed already.
-	if err := r.store.Load(); err != nil {
-		return "", fmt.Errorf("token refresh load: %w", err)
-	}
-	fresh := r.store.Get(provider)
-	if fresh != nil && !fresh.IsExpired() {
-		*cred = *fresh // update caller's view
-		return p.GetAPIKey(cred), nil
-	}
-
-	// Still expired — do the refresh.
-	refreshed, err := p.RefreshToken(cred)
-	if err != nil {
-		return "", fmt.Errorf("token refresh: %w", err)
-	}
-
-	r.store.Set(provider, refreshed)
-	if err := r.store.Save(); err != nil {
-		return "", fmt.Errorf("save refreshed token: %w", err)
-	}
-	*cred = *refreshed
-	return p.GetAPIKey(cred), nil
+	return key, nil
 }
