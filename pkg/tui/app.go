@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
@@ -226,7 +227,17 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		changed := a.chat.HandleEvent(msg.Event)
 		a.handleStateTransition(msg.Event)
 		if changed {
+			a.chat.dirty = true
+		}
+		return a, nil
+
+	case renderTickMsg:
+		if a.chat.dirty {
 			a.chat.rebuildContent()
+			a.chat.dirty = false
+		}
+		if a.agentRunning {
+			return a, tickRender()
 		}
 		return a, nil
 
@@ -234,6 +245,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.agentRunning = false
 		a.editor.SetState(editorIdle)
 		a.editor.Focus()
+		if a.chat.dirty {
+			a.chat.rebuildContent()
+			a.chat.dirty = false
+		}
 		return a, nil
 
 	case AgentErrorMsg:
@@ -245,6 +260,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			Error: msg.Err,
 		})
 		a.chat.rebuildContent()
+		a.chat.dirty = false
 		return a, nil
 
 	// ---- Editor actions ----
@@ -264,7 +280,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if a.onSubmit != nil {
 			a.onSubmit(msg.text)
 		}
-		return a, nil
+		return a, tickRender()
 
 	case editorCommandMsg:
 		cmd, ok := a.commands.Get(msg.name)
@@ -565,6 +581,17 @@ func (a *App) cycleModel(direction int) tea.Cmd {
 	return func() tea.Msg {
 		return modelSelectedMsg{provider: opt.Provider, model: opt.Model}
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Render tick
+// ---------------------------------------------------------------------------
+
+// tickRender returns a tea.Cmd that fires a renderTickMsg after ~33ms (~30fps).
+func tickRender() tea.Cmd {
+	return tea.Tick(33*time.Millisecond, func(time.Time) tea.Msg {
+		return renderTickMsg{}
+	})
 }
 
 // ---------------------------------------------------------------------------

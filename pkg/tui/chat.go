@@ -69,6 +69,11 @@ type ChatView struct {
 	width    int
 	height   int
 
+	// dirty is set when block content changes during streaming. The App's
+	// tick-based render loop checks this flag and calls rebuildContent()
+	// at ~30fps instead of on every delta.
+	dirty bool
+
 	// Markdown renderer (created once, re-used).
 	renderer *glamour.TermRenderer
 

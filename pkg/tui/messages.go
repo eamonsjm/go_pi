@@ -28,6 +28,11 @@ type CommandResultMsg struct {
 	IsError bool
 }
 
+// renderTickMsg is sent by the tick-based render loop (~30fps) during
+// streaming. On each tick the App checks ChatView.dirty and flushes a
+// re-render only when content has actually changed.
+type renderTickMsg struct{}
+
 // PluginInjectMsg carries an inject_message or log message from a plugin
 // process into the TUI for display or agent injection.
 type PluginInjectMsg struct {
