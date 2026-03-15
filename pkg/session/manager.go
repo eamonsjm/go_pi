@@ -516,6 +516,16 @@ func jsonEqual(a, b any) bool {
 	return string(aj) == string(bj)
 }
 
+// FilePath returns the file path of the current session, or empty if none.
+func (m *Manager) FilePath() string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.current == "" {
+		return ""
+	}
+	return m.sessionPath(m.current)
+}
+
 // ActiveBranch returns the leaf entry ID of the current branch.
 func (m *Manager) ActiveBranch() string {
 	m.mu.RLock()

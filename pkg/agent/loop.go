@@ -112,6 +112,16 @@ func (a *AgentLoop) SetMaxTokens(n int) {
 	a.maxTokens = n
 }
 
+// ProviderName returns the name of the current AI provider, or empty if none.
+func (a *AgentLoop) ProviderName() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.provider != nil {
+		return a.provider.Name()
+	}
+	return ""
+}
+
 // SetProvider replaces the AI provider used for subsequent LLM calls.
 // This is used to wire up a provider after login when the app started
 // without one.

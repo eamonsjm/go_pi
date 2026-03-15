@@ -71,6 +71,12 @@ type App struct {
 	// when the tick fires, no new deltas arrived and we trigger a glamour
 	// re-render of the streaming block.
 	deltaGen uint64
+
+	// Session-level usage accumulator and provider info for /session command.
+	sessionMgr     *session.Manager
+	providerInfo   ProviderInfo
+	sessionUsage   ai.Usage
+	sessionUsageID string // session ID this usage belongs to
 }
 
 // NewApp creates a fully initialised App ready to be passed to tea.NewProgram.
@@ -172,12 +178,36 @@ func (a *App) RegisterBuiltinCommands(ctx context.Context, agentLoop *agent.Agen
 	// Store dependencies needed for keybinding actions.
 	a.cfg = cfg
 	a.agentLoop = agentLoop
+	a.sessionMgr = sessionMgr
+
+	// Build provider info for /session display.
+	provName := agentLoop.ProviderName()
+	a.providerInfo = ProviderInfo{
+		Name:     provName,
+		Model:    cfg.DefaultModel,
+		API:      providerAPIType(provName),
+		Endpoint: providerEndpoint(provName),
+	}
+	if authResolver != nil && authResolver.IsOAuthToken(provName) {
+		a.providerInfo.Auth = "oauth"
+	} else if authStore != nil && authStore.Get(provName) != nil {
+		a.providerInfo.Auth = "api_key"
+	} else if provName != "" {
+		a.providerInfo.Auth = "env"
+	}
 
 	a.RegisterCommand(NewCompactCommand(ctx, agentLoop))
 	a.RegisterCommand(NewSettingsCommand(cfg, agentLoop, a.header))
 	a.RegisterCommand(NewNewSessionCommand(agentLoop, sessionMgr, a.chat, a.header))
 	a.RegisterCommand(NewResumeCommand(agentLoop, sessionMgr, a.chat, a.header))
-	a.RegisterCommand(NewSessionInfoCommand(sessionMgr, a.chat))
+	a.RegisterCommand(NewSessionInfoCommand(sessionMgr, a.chat,
+		func() ProviderInfo {
+			info := a.providerInfo
+			info.Model = cfg.DefaultModel // pick up runtime model changes
+			return info
+		},
+		func() ai.Usage { return a.sessionUsage },
+	))
 	a.RegisterCommand(NewNameCommand(sessionMgr, a.header, a.chat))
 	a.RegisterCommand(NewForkCommand(ctx, agentLoop, sessionMgr, a.chat, a.header))
 	a.RegisterCommand(NewTreeCommand(agentLoop, sessionMgr, a.chat, a.header))
@@ -670,6 +700,17 @@ func (a *App) handleStateTransition(ev agent.AgentEvent) {
 	case agent.EventUsageUpdate:
 		if ev.Usage != nil {
 			a.footer.SetUsage(*ev.Usage)
+			// Accumulate session-level usage. Reset if session changed.
+			if a.sessionMgr != nil {
+				if id := a.sessionMgr.CurrentID(); id != a.sessionUsageID {
+					a.sessionUsage = ai.Usage{}
+					a.sessionUsageID = id
+				}
+			}
+			a.sessionUsage.InputTokens += ev.Usage.InputTokens
+			a.sessionUsage.OutputTokens += ev.Usage.OutputTokens
+			a.sessionUsage.CacheRead += ev.Usage.CacheRead
+			a.sessionUsage.CacheWrite += ev.Usage.CacheWrite
 		}
 	}
 }
