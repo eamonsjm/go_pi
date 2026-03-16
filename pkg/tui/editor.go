@@ -129,10 +129,19 @@ func (e *Editor) SetCommands(reg *CommandRegistry) {
 	e.commands = reg
 }
 
-// Height returns the outer height (including border).
+// Height returns the outer height (including border and any visible hint lines).
 func (e *Editor) Height() int {
 	// textarea lines + 2 for top/bottom border
-	return e.textarea.Height() + 2
+	h := e.textarea.Height() + 2
+
+	hint := e.fileCompletionHint()
+	if hint == "" {
+		hint = e.commandHint()
+	}
+	if hint != "" {
+		h += strings.Count(hint, "\n") + 1 // hint lines + newline separator
+	}
+	return h
 }
 
 // ---------------------------------------------------------------------------
@@ -455,7 +464,7 @@ func (e *Editor) commandHint() string {
 	for _, cmd := range matches {
 		parts = append(parts, fmt.Sprintf("/%s — %s", cmd.Name, cmd.Description))
 	}
-	return MutedStyle.Render(strings.Join(parts, "  "))
+	return MutedStyle.Render(strings.Join(parts, "\n"))
 }
 
 // borderStyle returns the appropriate border style based on the current state.

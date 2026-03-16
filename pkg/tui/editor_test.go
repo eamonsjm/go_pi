@@ -279,6 +279,43 @@ func TestEditor_CommandHint_NoMatch(t *testing.T) {
 	}
 }
 
+func TestEditor_CommandHint_MultipleMatches_OnePerLine(t *testing.T) {
+	e := NewEditor()
+	reg := NewCommandRegistry()
+	reg.Register(&SlashCommand{Name: "model", Description: "Switch model"})
+	reg.Register(&SlashCommand{Name: "module", Description: "Load module"})
+	e.SetCommands(reg)
+	e.textarea.SetValue("/mod")
+
+	hint := e.commandHint()
+	stripped := stripAnsi(hint)
+	lines := strings.Split(stripped, "\n")
+	if len(lines) != 2 {
+		t.Errorf("expected 2 hint lines (one per command), got %d: %q", len(lines), stripped)
+	}
+}
+
+func TestEditor_Height_IncludesHintLines(t *testing.T) {
+	e := NewEditor()
+	reg := NewCommandRegistry()
+	reg.Register(&SlashCommand{Name: "model", Description: "Switch model"})
+	reg.Register(&SlashCommand{Name: "module", Description: "Load module"})
+	e.SetCommands(reg)
+
+	baseH := e.Height() // no hint active
+	if baseH != 5 {
+		t.Fatalf("expected base height 5, got %d", baseH)
+	}
+
+	e.textarea.SetValue("/mod") // triggers 2-line hint
+	hintH := e.Height()
+	// 5 (base) + 2 hint lines + 0 (newline counted in View, not Height)
+	// Actually: 2 hint lines = strings.Count("\n")+1 = 2, so 5+2=7
+	if hintH != 7 {
+		t.Errorf("expected height 7 with 2 hint lines, got %d", hintH)
+	}
+}
+
 func TestEditor_CommandHint_HasSpace(t *testing.T) {
 	e := NewEditor()
 	reg := NewCommandRegistry()
