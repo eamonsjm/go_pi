@@ -50,7 +50,7 @@ func NewExportCommand(sessionMgr *session.Manager) *SlashCommand {
 
 				htmlContent := renderSessionHTML(sessionID, msgs)
 
-				if err := os.WriteFile(outPath, []byte(htmlContent), 0o644); err != nil {
+				if err := os.WriteFile(outPath, []byte(htmlContent), 0o600); err != nil {
 					return CommandResultMsg{Text: "Failed to write file: " + err.Error(), IsError: true}
 				}
 
