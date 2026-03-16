@@ -11,6 +11,13 @@
 .DS_Store
 hello-plugin
 
+# Secrets
+.env
+.env.*
+
+# Project-local config (may contain credentials)
+.gi/
+
 # Gas Town (added by gt)
 .beads/
 .runtime/
