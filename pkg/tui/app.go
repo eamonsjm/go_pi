@@ -60,6 +60,12 @@ type App struct {
 	// initialPrompt, if set, is auto-submitted after the first window resize.
 	initialPrompt string
 
+	// mouseEnabled tracks whether mouse capture is active. When true, the
+	// terminal reports mouse events to bubbletea (enabling scroll in the
+	// viewport) but prevents native text selection. When false (default),
+	// the terminal handles mouse natively so users can select and copy text.
+	mouseEnabled bool
+
 	// quitting tracks whether we are in the process of exiting.
 	quitting bool
 
@@ -562,6 +568,15 @@ func (a *App) handleAction(action Action) tea.Cmd {
 
 	case ActionSuspend:
 		return tea.Suspend
+
+	case ActionToggleMouse:
+		a.mouseEnabled = !a.mouseEnabled
+		if a.mouseEnabled {
+			a.chat.AddSystemMessage("Mouse capture ON — scroll with mouse, Alt+M to toggle back for text selection")
+			return func() tea.Msg { return tea.EnableMouseCellMotion() }
+		}
+		a.chat.AddSystemMessage("Mouse capture OFF — select and copy text freely, Alt+M to toggle back for scrolling")
+		return func() tea.Msg { return tea.DisableMouse() }
 	}
 
 	return nil

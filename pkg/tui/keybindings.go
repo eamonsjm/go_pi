@@ -18,6 +18,7 @@ const (
 	ActionCycleModelForward  Action = "cycle_model_forward"
 	ActionCycleModelBackward Action = "cycle_model_backward"
 	ActionSuspend            Action = "suspend"
+	ActionToggleMouse        Action = "toggle_mouse"
 )
 
 // actionDescriptions provides human-readable descriptions for /hotkeys display.
@@ -28,6 +29,7 @@ var actionDescriptions = map[Action]string{
 	ActionCycleModelForward:  "Cycle to next model",
 	ActionCycleModelBackward: "Cycle to previous model",
 	ActionSuspend:            "Suspend (Ctrl+Z)",
+	ActionToggleMouse:        "Toggle mouse capture (for scroll vs text selection)",
 }
 
 // Binding represents a key-to-action mapping.
@@ -50,6 +52,7 @@ var defaultBindings = []Binding{
 	{Key: "ctrl+p", Action: ActionCycleModelForward},
 	{Key: "alt+p", Action: ActionCycleModelBackward},
 	{Key: "ctrl+z", Action: ActionSuspend},
+	{Key: "alt+m", Action: ActionToggleMouse},
 }
 
 // LoadKeybindings loads keybinding configuration from ~/.gi/keybindings.json,
