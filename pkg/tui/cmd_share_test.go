@@ -77,3 +77,22 @@ func TestRenderSessionMarkdown(t *testing.T) {
 		t.Error("markdown should contain footer")
 	}
 }
+
+func TestRenderSessionMarkdown_RedactedSecrets(t *testing.T) {
+	msgs := []ai.Message{
+		{Role: ai.RoleUser, Content: []ai.ContentBlock{
+			{Type: ai.ContentTypeToolResult, Content: "API_KEY=AKIAIOSFODNN7EXAMPLE"},
+		}},
+	}
+
+	// Redact first, then render — this is what the share command does.
+	sanitized := redactSessionMessages(msgs)
+	md := renderSessionMarkdown("test123", sanitized)
+
+	if strings.Contains(md, "AKIAIOSFODNN7EXAMPLE") {
+		t.Error("rendered markdown should not contain the raw AWS key")
+	}
+	if !strings.Contains(md, "[REDACTED]") {
+		t.Error("rendered markdown should contain [REDACTED] placeholder")
+	}
+}

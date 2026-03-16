@@ -13,6 +13,13 @@ import (
 
 // NewShareCommand creates the /share command which shares the current session
 // as a secret GitHub gist via the gh CLI.
+//
+// Before uploading, the command scans for potential secrets (API keys, tokens,
+// passwords, etc.) in the session content. If any are detected:
+//   - Without --force: shows a warning and aborts
+//   - With --force: redacts detected secrets and proceeds
+//
+// Secrets are always redacted in the uploaded content regardless of flags.
 func NewShareCommand(sessionMgr *session.Manager) *SlashCommand {
 	return &SlashCommand{
 		Name:        "share",
@@ -37,7 +44,20 @@ func NewShareCommand(sessionMgr *session.Manager) *SlashCommand {
 					return CommandResultMsg{Text: "Session has no messages to share.", IsError: true}
 				}
 
-				markdown := renderSessionMarkdown(sessionID, msgs)
+				force := strings.TrimSpace(args) == "--force"
+
+				// Scan for secrets.
+				findings := scanMessagesForSecrets(msgs)
+				if len(findings) > 0 && !force {
+					return CommandResultMsg{
+						Text:    formatSecretWarning(findings),
+						IsError: true,
+					}
+				}
+
+				// Always redact secrets in the output.
+				sanitized := redactSessionMessages(msgs)
+				markdown := renderSessionMarkdown(sessionID, sanitized)
 				filename := fmt.Sprintf("session-%s.md", shortID(sessionID))
 
 				// Create secret gist via gh CLI.
@@ -62,7 +82,12 @@ func NewShareCommand(sessionMgr *session.Manager) *SlashCommand {
 				}
 
 				gistURL := strings.TrimSpace(stdout.String())
-				return CommandResultMsg{Text: fmt.Sprintf("Shared as secret gist: %s", gistURL)}
+				result := fmt.Sprintf("Shared as secret gist: %s", gistURL)
+				if len(findings) > 0 {
+					result += fmt.Sprintf("\n(%d secret pattern(s) were redacted)", len(findings))
+				}
+				result += "\n\nNote: \"Secret\" gists are not private — anyone with the URL can view them."
+				return CommandResultMsg{Text: result}
 			}
 		},
 	}
