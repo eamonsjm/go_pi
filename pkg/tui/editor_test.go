@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -667,5 +668,290 @@ func TestEditor_History_DownNoopWhenNotInHistory(t *testing.T) {
 	e.Update(tea.KeyMsg{Type: tea.KeyDown})
 	if got := e.Value(); got != "current" {
 		t.Errorf("expected 'current' unchanged, got %q", got)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Kill ring tests
+// ---------------------------------------------------------------------------
+
+func TestKillRing_PushAndCurrent(t *testing.T) {
+	var kr killRing
+	kr.push("hello", killForward)
+	if got := kr.current(); got != "hello" {
+		t.Errorf("expected 'hello', got %q", got)
+	}
+}
+
+func TestKillRing_PushEmpty(t *testing.T) {
+	var kr killRing
+	kr.push("", killForward)
+	if got := kr.current(); got != "" {
+		t.Errorf("expected empty, got %q", got)
+	}
+}
+
+func TestKillRing_AccumulateForward(t *testing.T) {
+	var kr killRing
+	kr.push("hello", killForward)
+	kr.push(" world", killForward)
+	if got := kr.current(); got != "hello world" {
+		t.Errorf("expected 'hello world', got %q", got)
+	}
+}
+
+func TestKillRing_AccumulateBackward(t *testing.T) {
+	var kr killRing
+	kr.push("world", killBackward)
+	kr.push("hello ", killBackward)
+	if got := kr.current(); got != "hello world" {
+		t.Errorf("expected 'hello world', got %q", got)
+	}
+}
+
+func TestKillRing_DirectionChangeBreaksAccumulation(t *testing.T) {
+	var kr killRing
+	kr.push("hello", killForward)
+	kr.push("world", killBackward)
+	if got := kr.current(); got != "world" {
+		t.Errorf("expected 'world', got %q", got)
+	}
+}
+
+func TestKillRing_Prev(t *testing.T) {
+	var kr killRing
+	kr.push("first", killForward)
+	kr.resetDirection()
+	kr.push("second", killForward)
+	kr.resetDirection()
+	kr.push("third", killForward)
+
+	if got := kr.current(); got != "third" {
+		t.Errorf("expected 'third', got %q", got)
+	}
+	if got := kr.prev(); got != "second" {
+		t.Errorf("expected 'second', got %q", got)
+	}
+	if got := kr.prev(); got != "first" {
+		t.Errorf("expected 'first', got %q", got)
+	}
+	// Wraps around.
+	if got := kr.prev(); got != "third" {
+		t.Errorf("expected 'third' (wrap), got %q", got)
+	}
+}
+
+func TestKillRing_MaxSize(t *testing.T) {
+	var kr killRing
+	for i := 0; i < maxKillRingSize+10; i++ {
+		kr.resetDirection()
+		kr.push(fmt.Sprintf("entry-%d", i), killForward)
+	}
+	if len(kr.entries) != maxKillRingSize {
+		t.Errorf("expected %d entries, got %d", maxKillRingSize, len(kr.entries))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Undo stack tests
+// ---------------------------------------------------------------------------
+
+func TestUndoStack_PushPop(t *testing.T) {
+	var u undoStack
+	u.push("hello", 0, 5)
+	entry, ok := u.pop()
+	if !ok {
+		t.Fatal("expected pop to succeed")
+	}
+	if entry.value != "hello" || entry.row != 0 || entry.col != 5 {
+		t.Errorf("unexpected entry: %+v", entry)
+	}
+}
+
+func TestUndoStack_DeduplicatesConsecutive(t *testing.T) {
+	var u undoStack
+	u.push("hello", 0, 5)
+	u.push("hello", 0, 5)
+	u.push("hello", 0, 6) // same value, different pos — still deduped
+	if len(u.entries) != 1 {
+		t.Errorf("expected 1 entry (deduped), got %d", len(u.entries))
+	}
+}
+
+func TestUndoStack_PopEmpty(t *testing.T) {
+	var u undoStack
+	_, ok := u.pop()
+	if ok {
+		t.Error("expected pop to fail on empty stack")
+	}
+}
+
+func TestUndoStack_MaxDepth(t *testing.T) {
+	var u undoStack
+	for i := 0; i < maxUndoDepth+10; i++ {
+		u.push(fmt.Sprintf("state-%d", i), 0, i)
+	}
+	if len(u.entries) != maxUndoDepth {
+		t.Errorf("expected %d entries, got %d", maxUndoDepth, len(u.entries))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// diffKilled tests
+// ---------------------------------------------------------------------------
+
+func TestDiffKilled_EndOfLine(t *testing.T) {
+	got := diffKilled("hello world", "hello")
+	if got != " world" {
+		t.Errorf("expected ' world', got %q", got)
+	}
+}
+
+func TestDiffKilled_StartOfLine(t *testing.T) {
+	got := diffKilled("hello world", "world")
+	if got != "hello " {
+		t.Errorf("expected 'hello ', got %q", got)
+	}
+}
+
+func TestDiffKilled_Middle(t *testing.T) {
+	got := diffKilled("hello beautiful world", "hello world")
+	if got != "beautiful " {
+		t.Errorf("expected 'beautiful ', got %q", got)
+	}
+}
+
+func TestDiffKilled_NoChange(t *testing.T) {
+	got := diffKilled("hello", "hello")
+	if got != "" {
+		t.Errorf("expected empty, got %q", got)
+	}
+}
+
+func TestDiffKilled_Newline(t *testing.T) {
+	got := diffKilled("line1\nline2", "line1line2")
+	if got != "\n" {
+		t.Errorf("expected newline, got %q", got)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Editor yank/undo integration
+// ---------------------------------------------------------------------------
+
+func TestEditor_KillAndYank(t *testing.T) {
+	e := NewEditor()
+	e.textarea.Focus()
+	e.textarea.SetValue("hello world")
+	e.textarea.CursorEnd()
+
+	// Ctrl+U kills to start of line → "hello world" killed, editor empty.
+	e.Update(tea.KeyMsg{Type: tea.KeyCtrlU})
+	if got := e.Value(); got != "" {
+		t.Errorf("after Ctrl+U expected empty, got %q", got)
+	}
+	if got := e.kills.current(); got != "hello world" {
+		t.Errorf("kill ring should contain 'hello world', got %q", got)
+	}
+
+	// Ctrl+Y yanks it back.
+	e.Update(tea.KeyMsg{Type: tea.KeyCtrlY})
+	if got := e.Value(); got != "hello world" {
+		t.Errorf("after yank expected 'hello world', got %q", got)
+	}
+}
+
+func TestEditor_Undo(t *testing.T) {
+	e := NewEditor()
+	e.textarea.Focus()
+	e.textarea.SetValue("initial")
+
+	// Type a character — undo should snapshot "initial" first.
+	e.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'X'}})
+	if !strings.Contains(e.Value(), "X") {
+		t.Fatal("expected X to be inserted")
+	}
+
+	// Undo should restore to "initial".
+	e.Update(tea.KeyMsg{Type: tea.KeyCtrlUnderscore})
+	if got := e.Value(); got != "initial" {
+		t.Errorf("after undo expected 'initial', got %q", got)
+	}
+}
+
+func TestEditor_CtrlD_ForwardDelete(t *testing.T) {
+	e := NewEditor()
+	e.textarea.Focus()
+	e.state = editorIdle
+	e.textarea.SetValue("abc")
+	e.textarea.CursorStart()
+
+	// Ctrl+D should delete 'a' (forward delete), not quit.
+	cmd := e.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
+	got := e.Value()
+	if got == "abc" {
+		t.Error("Ctrl+D should have deleted a character, value unchanged")
+	}
+	// Should not return a quit message.
+	if cmd != nil {
+		msg := cmd()
+		if _, isQuit := msg.(editorQuitMsg); isQuit {
+			t.Error("Ctrl+D with text should not quit")
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// classifyKillKey / isAltY / isEditingKey
+// ---------------------------------------------------------------------------
+
+func TestClassifyKillKey(t *testing.T) {
+	tests := []struct {
+		msg  tea.KeyMsg
+		want killDirection
+	}{
+		{tea.KeyMsg{Type: tea.KeyCtrlK}, killForward},
+		{tea.KeyMsg{Type: tea.KeyCtrlU}, killBackward},
+		{tea.KeyMsg{Type: tea.KeyCtrlW}, killBackward},
+		{tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}, Alt: true}, killForward},
+		{tea.KeyMsg{Type: tea.KeyDelete, Alt: true}, killForward},
+		{tea.KeyMsg{Type: tea.KeyBackspace, Alt: true}, killBackward},
+		{tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}}, killNone},
+		{tea.KeyMsg{Type: tea.KeyEnter}, killNone},
+	}
+	for _, tt := range tests {
+		if got := classifyKillKey(tt.msg); got != tt.want {
+			t.Errorf("classifyKillKey(%v) = %d, want %d", tt.msg, got, tt.want)
+		}
+	}
+}
+
+func TestIsAltY(t *testing.T) {
+	if !isAltY(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}, Alt: true}) {
+		t.Error("Alt+y should be detected")
+	}
+	if isAltY(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}}) {
+		t.Error("plain y should not be Alt+Y")
+	}
+	if isAltY(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}, Alt: true}) {
+		t.Error("Alt+n should not be Alt+Y")
+	}
+}
+
+func TestIsEditingKey(t *testing.T) {
+	if isEditingKey(tea.KeyMsg{Type: tea.KeyUp}) {
+		t.Error("Up arrow should not be an editing key")
+	}
+	if isEditingKey(tea.KeyMsg{Type: tea.KeyLeft}) {
+		t.Error("Left arrow should not be an editing key")
+	}
+	if !isEditingKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}}) {
+		t.Error("character 'a' should be an editing key")
+	}
+	if !isEditingKey(tea.KeyMsg{Type: tea.KeyBackspace}) {
+		t.Error("backspace should be an editing key")
+	}
+	if !isEditingKey(tea.KeyMsg{Type: tea.KeyCtrlK}) {
+		t.Error("Ctrl+K should be an editing key")
 	}
 }

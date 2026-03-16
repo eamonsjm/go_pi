@@ -3,11 +3,179 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"unicode"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
+
+// ---------------------------------------------------------------------------
+// Kill ring — emacs-style delete/yank ring
+// ---------------------------------------------------------------------------
+
+const maxKillRingSize = 32
+
+type killDirection int
+
+const (
+	killNone     killDirection = iota
+	killForward               // Ctrl+K, Alt+D
+	killBackward              // Ctrl+U, Ctrl+W
+)
+
+type killRing struct {
+	entries []string
+	idx     int
+	lastDir killDirection
+}
+
+func (kr *killRing) push(text string, dir killDirection) {
+	if text == "" {
+		return
+	}
+	if kr.lastDir == dir && len(kr.entries) > 0 {
+		last := len(kr.entries) - 1
+		if dir == killForward {
+			kr.entries[last] += text
+		} else {
+			kr.entries[last] = text + kr.entries[last]
+		}
+	} else {
+		kr.entries = append(kr.entries, text)
+		if len(kr.entries) > maxKillRingSize {
+			kr.entries = kr.entries[len(kr.entries)-maxKillRingSize:]
+		}
+	}
+	kr.idx = len(kr.entries) - 1
+	kr.lastDir = dir
+}
+
+func (kr *killRing) current() string {
+	if len(kr.entries) == 0 {
+		return ""
+	}
+	return kr.entries[kr.idx]
+}
+
+func (kr *killRing) prev() string {
+	if len(kr.entries) == 0 {
+		return ""
+	}
+	kr.idx--
+	if kr.idx < 0 {
+		kr.idx = len(kr.entries) - 1
+	}
+	return kr.entries[kr.idx]
+}
+
+func (kr *killRing) resetDirection() {
+	kr.lastDir = killNone
+}
+
+// ---------------------------------------------------------------------------
+// Undo stack
+// ---------------------------------------------------------------------------
+
+const maxUndoDepth = 100
+
+type undoEntry struct {
+	value string
+	row   int
+	col   int
+}
+
+type undoStack struct {
+	entries []undoEntry
+}
+
+func (u *undoStack) push(value string, row, col int) {
+	if len(u.entries) > 0 && u.entries[len(u.entries)-1].value == value {
+		return
+	}
+	u.entries = append(u.entries, undoEntry{value: value, row: row, col: col})
+	if len(u.entries) > maxUndoDepth {
+		u.entries = u.entries[len(u.entries)-maxUndoDepth:]
+	}
+}
+
+func (u *undoStack) pop() (undoEntry, bool) {
+	if len(u.entries) == 0 {
+		return undoEntry{}, false
+	}
+	entry := u.entries[len(u.entries)-1]
+	u.entries = u.entries[:len(u.entries)-1]
+	return entry, true
+}
+
+// diffKilled finds the contiguous substring removed from before that
+// produced after. Works by matching common prefix and suffix.
+func diffKilled(before, after string) string {
+	if len(before) <= len(after) {
+		return ""
+	}
+	rb := []rune(before)
+	ra := []rune(after)
+	prefixLen := 0
+	for prefixLen < len(ra) && rb[prefixLen] == ra[prefixLen] {
+		prefixLen++
+	}
+	suffixLen := 0
+	for suffixLen < len(ra)-prefixLen &&
+		rb[len(rb)-1-suffixLen] == ra[len(ra)-1-suffixLen] {
+		suffixLen++
+	}
+	return string(rb[prefixLen : len(rb)-suffixLen])
+}
+
+// classifyKillKey returns the kill direction if msg is a kill-ring key.
+func classifyKillKey(msg tea.KeyMsg) killDirection {
+	switch msg.Type {
+	case tea.KeyCtrlK:
+		return killForward
+	case tea.KeyCtrlU:
+		return killBackward
+	case tea.KeyCtrlW:
+		return killBackward
+	}
+	if msg.Alt {
+		if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 && (msg.Runes[0] == 'd' || msg.Runes[0] == 'D') {
+			return killForward
+		}
+		if msg.Type == tea.KeyDelete {
+			return killForward
+		}
+		if msg.Type == tea.KeyBackspace {
+			return killBackward
+		}
+	}
+	return killNone
+}
+
+// isAltY returns true if msg is Alt+Y (yank-pop).
+func isAltY(msg tea.KeyMsg) bool {
+	return msg.Alt && msg.Type == tea.KeyRunes && len(msg.Runes) == 1 &&
+		(msg.Runes[0] == 'y' || msg.Runes[0] == 'Y')
+}
+
+// isEditingKey returns true for keys that modify editor content.
+func isEditingKey(msg tea.KeyMsg) bool {
+	switch msg.Type {
+	case tea.KeyUp, tea.KeyDown, tea.KeyLeft, tea.KeyRight,
+		tea.KeyHome, tea.KeyEnd, tea.KeyPgUp, tea.KeyPgDown,
+		tea.KeyCtrlC, tea.KeyEscape, tea.KeyTab,
+		tea.KeyCtrlLeft, tea.KeyCtrlRight, tea.KeyCtrlUp, tea.KeyCtrlDown:
+		return false
+	}
+	if msg.Alt && msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {
+		r := unicode.ToLower(msg.Runes[0])
+		if r == 'f' || r == 'b' {
+			return false // Alt+F/B are navigation
+		}
+	}
+	return true
+}
 
 // editorState tracks whether the agent is idle, running, or thinking so the
 // border color can reflect that.
@@ -61,6 +229,16 @@ type Editor struct {
 	// completer holds active @filepath tab completion state, or nil when
 	// not completing.
 	completer *fileCompletion
+
+	// kills is the emacs-style kill ring for Ctrl+Y / Alt+Y yank.
+	kills killRing
+
+	// undo tracks editor states for Ctrl+_ undo.
+	undo undoStack
+
+	// yankLen is the rune length of the last yanked text. Zero means the
+	// last operation was not a yank (disables yank-pop).
+	yankLen int
 }
 
 // NewEditor creates an Editor ready for use.
@@ -78,6 +256,14 @@ func NewEditor() *Editor {
 	ta.FocusedStyle.CursorLine = lipgloss.NewStyle()
 	ta.FocusedStyle.Base = lipgloss.NewStyle().Foreground(ColorText)
 	ta.BlurredStyle.Base = lipgloss.NewStyle().Foreground(ColorMuted)
+
+	// Extend word navigation to also accept Ctrl+Left/Right.
+	ta.KeyMap.WordForward = key.NewBinding(
+		key.WithKeys("alt+right", "alt+f", "ctrl+right"),
+	)
+	ta.KeyMap.WordBackward = key.NewBinding(
+		key.WithKeys("alt+left", "alt+b", "ctrl+left"),
+	)
 
 	return &Editor{
 		textarea: ta,
@@ -167,11 +353,27 @@ type editorQuitMsg struct{}
 func (e *Editor) Update(msg tea.Msg) tea.Cmd {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// Snapshot for undo before any editing key.
+		if isEditingKey(msg) {
+			e.undo.push(
+				e.textarea.Value(),
+				e.textarea.Line(),
+				e.textarea.LineInfo().ColumnOffset,
+			)
+		}
+
+		// Detect kill keys for ring capture.
+		killDir := classifyKillKey(msg)
+		var preKillValue string
+		if killDir != killNone {
+			preKillValue = e.textarea.Value()
+		}
+
+		// Keys we fully intercept (never pass to textarea).
 		switch msg.Type {
 
 		case tea.KeyCtrlC:
 			if e.state != editorIdle {
-				// Cancel the running agent.
 				e.ctrlCCount = 0
 				return func() tea.Msg { return editorCancelMsg{} }
 			}
@@ -182,12 +384,10 @@ func (e *Editor) Update(msg tea.Msg) tea.Cmd {
 			return nil
 
 		case tea.KeyCtrlD:
-			// Ctrl+D (EOF) quits when idle and the editor is empty,
-			// matching standard terminal behavior.
 			if e.state == editorIdle && e.textarea.Value() == "" {
 				return func() tea.Msg { return editorQuitMsg{} }
 			}
-			return nil
+			// Fall through to textarea for forward-delete.
 
 		case tea.KeyEscape:
 			if e.state != editorIdle {
@@ -199,16 +399,13 @@ func (e *Editor) Update(msg tea.Msg) tea.Cmd {
 			if e.handleTabCompletion() {
 				return nil
 			}
-			// No @token — try slash command completion.
 			return e.handleTab()
 
 		case tea.KeyEnter:
-			// Submit on Enter (no shift).
 			text := e.textarea.Value()
 			if text == "" {
 				return nil
 			}
-			// Append to history (skip duplicates of the most recent entry).
 			if len(e.history) == 0 || e.history[len(e.history)-1] != text {
 				e.history = append(e.history, text)
 			}
@@ -217,78 +414,154 @@ func (e *Editor) Update(msg tea.Msg) tea.Cmd {
 			e.textarea.Reset()
 			e.ctrlCCount = 0
 
-			// Slash commands are always handled locally, regardless of
-			// whether the agent is idle or running.
 			if strings.HasPrefix(text, "/") {
 				name, args := parseSlashCommand(text)
 				return func() tea.Msg { return editorCommandMsg{name: name, args: args} }
 			}
-
 			if e.state == editorIdle {
 				return func() tea.Msg { return editorSubmitMsg{text: text} }
 			}
-			// Agent running — send as steering.
 			return func() tea.Msg { return editorSteerMsg{text: text} }
 
+		case tea.KeyCtrlY:
+			e.handleYank()
+			return nil
+
+		case tea.KeyCtrlUnderscore:
+			e.handleUndo()
+			return nil
+
 		case tea.KeyUp:
-			if len(e.history) == 0 {
-				break
+			if len(e.history) > 0 && e.textarea.Line() == 0 {
+				if e.historyIdx == len(e.history) {
+					e.draft = e.textarea.Value()
+				}
+				if e.historyIdx > 0 {
+					e.historyIdx--
+					e.textarea.SetValue(e.history[e.historyIdx])
+					e.textarea.CursorEnd()
+					return nil
+				}
+				return nil
 			}
-			// Only enter history mode when textarea is on a single line
-			// (avoid hijacking multi-line cursor movement).
-			if strings.Contains(e.textarea.Value(), "\n") {
-				break
-			}
-			// Save the current text as draft when first entering history.
-			if e.historyIdx == len(e.history) {
-				e.draft = e.textarea.Value()
-			}
-			if e.historyIdx > 0 {
-				e.historyIdx--
-				e.textarea.SetValue(e.history[e.historyIdx])
+
+		case tea.KeyDown:
+			if len(e.history) > 0 &&
+				e.textarea.Line() == e.textarea.LineCount()-1 &&
+				e.historyIdx < len(e.history) {
+				e.historyIdx++
+				if e.historyIdx == len(e.history) {
+					e.textarea.SetValue(e.draft)
+				} else {
+					e.textarea.SetValue(e.history[e.historyIdx])
+				}
 				e.textarea.CursorEnd()
 				return nil
 			}
-			return nil // already at oldest entry
+		}
 
-		case tea.KeyDown:
-			if len(e.history) == 0 {
-				break
-			}
-			// Only handle history navigation on single-line content.
-			if strings.Contains(e.textarea.Value(), "\n") {
-				break
-			}
-			// Not in history mode — let the textarea handle it.
-			if e.historyIdx >= len(e.history) {
-				break
-			}
-			e.historyIdx++
-			if e.historyIdx == len(e.history) {
-				// Past the newest entry — restore draft (or empty).
-				e.textarea.SetValue(e.draft)
-			} else {
-				e.textarea.SetValue(e.history[e.historyIdx])
-			}
-			e.textarea.CursorEnd()
+		// Alt+Y (yank-pop) — can't match in Type switch.
+		if isAltY(msg) {
+			e.handleYankPop()
 			return nil
 		}
 
-		// Reset Ctrl-C counter on any non-Ctrl-C keypress.
+		// Reset counters on non-matching keys.
 		if msg.Type != tea.KeyCtrlC {
 			e.ctrlCCount = 0
 		}
-		// Reset tab-completion state on any non-Tab keypress.
 		if msg.Type != tea.KeyTab {
 			e.tabMatches = nil
 			e.tabIndex = 0
 			e.completer = nil
 		}
+		// Non-yank resets yank-pop tracking.
+		if msg.Type != tea.KeyCtrlY {
+			e.yankLen = 0
+		}
+		// Non-kill resets kill accumulation direction.
+		if killDir == killNone {
+			e.kills.resetDirection()
+		}
+
+		// Pass to textarea.
+		var cmd tea.Cmd
+		e.textarea, cmd = e.textarea.Update(msg)
+
+		// Capture killed text for the ring.
+		if killDir != killNone {
+			killed := diffKilled(preKillValue, e.textarea.Value())
+			e.kills.push(killed, killDir)
+		}
+
+		return cmd
 	}
 
 	var cmd tea.Cmd
 	e.textarea, cmd = e.textarea.Update(msg)
 	return cmd
+}
+
+// handleYank inserts the current kill-ring entry at the cursor.
+func (e *Editor) handleYank() {
+	text := e.kills.current()
+	if text == "" {
+		return
+	}
+	e.textarea.InsertString(text)
+	e.yankLen = len([]rune(text))
+}
+
+// handleYankPop replaces the last yanked text with the previous kill-ring entry.
+func (e *Editor) handleYankPop() {
+	if e.yankLen == 0 {
+		return
+	}
+	value := e.textarea.Value()
+	runeOffset := e.cursorRuneOffset()
+	runes := []rune(value)
+
+	start := runeOffset - e.yankLen
+	if start < 0 {
+		start = 0
+	}
+	// Remove previously yanked text.
+	remaining := append(append([]rune(nil), runes[:start]...), runes[runeOffset:]...)
+
+	text := e.kills.prev()
+	if text == "" {
+		return
+	}
+	insertRunes := []rune(text)
+	result := make([]rune, 0, len(remaining)+len(insertRunes))
+	result = append(result, remaining[:start]...)
+	result = append(result, insertRunes...)
+	result = append(result, remaining[start:]...)
+
+	e.textarea.SetValue(string(result))
+	e.yankLen = len(insertRunes)
+	e.navigateTo(string(result), start+len(insertRunes))
+}
+
+// handleUndo restores the previous editor state.
+func (e *Editor) handleUndo() {
+	entry, ok := e.undo.pop()
+	if !ok {
+		return
+	}
+	if entry.value == e.textarea.Value() {
+		entry, ok = e.undo.pop()
+		if !ok {
+			return
+		}
+	}
+	e.textarea.SetValue(entry.value)
+	lines := strings.Split(entry.value, "\n")
+	currentLine := len(lines) - 1
+	for i := 0; i < currentLine-entry.row; i++ {
+		e.textarea.CursorUp()
+	}
+	e.textarea.SetCursor(entry.col)
 }
 
 // View renders the editor with a styled border and an optional autocomplete
