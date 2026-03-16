@@ -57,11 +57,11 @@ type chatBlock struct {
 	// the block needs re-rendering. Cleared whenever block content changes.
 	rendered string
 
-	// Incremental rendering cache (streaming assistant blocks only).
-	// glamourPrefix holds the glamour-rendered output for completed
-	// paragraphs (text[:prefixTextLen]). Updated when new paragraph
-	// boundaries (\n\n) are detected during streaming. Cleared on
-	// resize, theme change, or when streaming ends.
+	// glamourPrefix holds glamour-rendered output for text[:prefixTextLen].
+	// Set when transitioning from idle (non-streaming) back to streaming:
+	// the idle glamour render is snapshotted as the prefix so previously
+	// rendered text maintains its appearance. Cleared on resize, theme
+	// change, or when streaming ends.
 	glamourPrefix string
 	prefixTextLen int
 }
@@ -456,36 +456,6 @@ func (c *ChatView) View() string {
 // Content rendering
 // ---------------------------------------------------------------------------
 
-// updateIncrementalCache checks for new paragraph boundaries (\n\n) in a
-// streaming assistant block's text and glamour-renders completed sections
-// into the block's glamourPrefix cache. Only the newly completed section
-// is rendered, giving O(section_length) cost per boundary instead of O(N).
-func (c *ChatView) updateIncrementalCache(blk *chatBlock) {
-	tail := blk.text[blk.prefixTextLen:]
-	boundary := strings.LastIndex(tail, "\n\n")
-	if boundary < 0 {
-		return
-	}
-	newSection := tail[:boundary+2]
-	if c.renderer == nil {
-		return
-	}
-	md, err := c.renderer.Render(newSection)
-	if err != nil {
-		return
-	}
-	rendered := strings.TrimRight(md, "\n")
-	if rendered == "" {
-		return
-	}
-	if blk.glamourPrefix != "" {
-		blk.glamourPrefix += "\n" + rendered
-	} else {
-		blk.glamourPrefix = rendered
-	}
-	blk.prefixTextLen += boundary + 2
-}
-
 // rebuildContent renders all blocks into a single string and pushes it into
 // the viewport. Auto-scrolls to the bottom only if the viewport was already
 // at the bottom (so manual scroll-back is preserved during streaming).
@@ -496,16 +466,13 @@ func (c *ChatView) updateIncrementalCache(blk *chatBlock) {
 // to O(1 block).
 func (c *ChatView) rebuildContent() {
 	wasAtBottom := c.viewport.AtBottom()
+	oldYOffset := c.viewport.YOffset
 
 	var sb strings.Builder
 
 	for i := range c.blocks {
 		blk := &c.blocks[i]
 		if blk.rendered == "" {
-			// Update incremental rendering cache for streaming blocks.
-			if blk.kind == blockAssistantText && blk.streaming {
-				c.updateIncrementalCache(blk)
-			}
 			var buf strings.Builder
 			if i > 0 {
 				buf.WriteString("\n")
@@ -522,6 +489,10 @@ func (c *ChatView) rebuildContent() {
 		c.viewport.GotoBottom()
 		c.hasNewBelow = false
 	} else {
+		// Preserve scroll position when not at bottom (e.g. user scrolled
+		// up during streaming). SetYOffset clamps to valid range, so if
+		// content shrunk past the old offset we end up at the new bottom.
+		c.viewport.SetYOffset(oldYOffset)
 		c.hasNewBelow = true
 	}
 }
@@ -564,10 +535,10 @@ func (c *ChatView) renderAssistant(sb *strings.Builder, blk chatBlock) {
 	sb.WriteString(label + "\n")
 
 	if blk.streaming {
-		// Incremental rendering: output glamour-rendered prefix of
-		// completed paragraphs plus plain-text tail for the incomplete
-		// paragraph. The cache is updated by updateIncrementalCache
-		// in rebuildContent before this function is called.
+		// During streaming, show the glamour prefix (snapshotted from
+		// the last idle timeout) plus word-wrapped plain text for the
+		// new tail. Word-wrapping at the same width as glamour keeps
+		// line counts stable and minimises jumps on transition.
 		tail := blk.text[blk.prefixTextLen:]
 		if blk.glamourPrefix != "" {
 			sb.WriteString(blk.glamourPrefix)
@@ -576,7 +547,11 @@ func (c *ChatView) renderAssistant(sb *strings.Builder, blk chatBlock) {
 			}
 		}
 		if tail != "" {
-			sb.WriteString(AssistantMsgStyle.Render(tail))
+			w := c.width - 4
+			if w < 40 {
+				w = 40
+			}
+			sb.WriteString(AssistantMsgStyle.Render(wordwrap.String(tail, w)))
 		}
 	} else {
 		rendered := blk.text
