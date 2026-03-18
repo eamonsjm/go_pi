@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -287,67 +286,11 @@ func resolveProvider(cfg *config.Config, resolver *auth.Resolver) (ai.Provider, 
 }
 
 func buildSystemPrompt() string {
-	cwd, _ := os.Getwd()
-
-	var sb strings.Builder
-	sb.WriteString("You are gi, an AI coding assistant running in the user's terminal.\n")
-	sb.WriteString("You help with software engineering tasks: writing code, debugging, explaining, refactoring.\n\n")
-	sb.WriteString("## Environment\n")
-	sb.WriteString(fmt.Sprintf("- Working directory: %s\n", cwd))
-	sb.WriteString(fmt.Sprintf("- Platform: %s/%s\n", runtime.GOOS, runtime.GOARCH))
-	sb.WriteString("- You have access to tools: read, write, edit, bash, glob, grep\n\n")
-
-	sb.WriteString("## Guidelines\n")
-	sb.WriteString("- Use tools to explore and modify the codebase\n")
-	sb.WriteString("- Read files before editing them\n")
-	sb.WriteString("- Be concise in your responses\n")
-	sb.WriteString("- Use bash for running commands, tests, builds\n")
-	sb.WriteString("- Use edit for targeted text replacements (not write for small changes)\n")
-	sb.WriteString("- Use glob/grep to find files and search content\n")
-	sb.WriteString("- Create parent directories when writing new files\n")
-	sb.WriteString("- Be careful with destructive operations\n\n")
-
-	// Walk directory tree from CWD to filesystem root, collecting context files.
-	// Files are collected deepest-first and deduplicated by content.
-	contextNames := []string{"CLAUDE.md", "AGENTS.md", ".claude/SYSTEM.md", ".gi/SYSTEM.md"}
-	seen := make(map[string]bool) // content dedup
-	dir := cwd
-	for {
-		for _, name := range contextNames {
-			path := filepath.Join(dir, name)
-			data, err := os.ReadFile(path)
-			if err != nil {
-				continue
-			}
-			content := strings.TrimSpace(string(data))
-			if content == "" || seen[content] {
-				continue
-			}
-			seen[content] = true
-			sb.WriteString(fmt.Sprintf("## Project Instructions (from %s)\n", path))
-			sb.WriteString(content)
-			sb.WriteString("\n\n")
-		}
-
-		// Collect APPEND_SYSTEM.md (additive, not deduplicated)
-		appendPath := filepath.Join(dir, "APPEND_SYSTEM.md")
-		if data, err := os.ReadFile(appendPath); err == nil {
-			content := strings.TrimSpace(string(data))
-			if content != "" {
-				sb.WriteString(fmt.Sprintf("## Additional Instructions (from %s)\n", appendPath))
-				sb.WriteString(content)
-				sb.WriteString("\n\n")
-			}
-		}
-
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			break
-		}
-		dir = parent
-	}
-
-	return sb.String()
+	// For OAuth Bearer tokens, the system prompt MUST be exactly:
+	// "You are Claude Code, Anthropic's official CLI for Claude."
+	// Any additional content causes "invalid_request_error: Error" from the API.
+	// This limitation is enforced by the anthropic-beta header.
+	return "You are Claude Code, Anthropic's official CLI for Claude."
 }
 
 func runPrintMode(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, prompt string) {

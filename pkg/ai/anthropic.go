@@ -66,9 +66,31 @@ const maxRetries = 2 // up to 3 attempts total
 // a channel of StreamEvents. Retries automatically on rate limit (429) and
 // overloaded (529) errors.
 func (p *AnthropicProvider) Stream(ctx context.Context, req StreamRequest) (<-chan StreamEvent, error) {
+	// OAuth tokens require a system prompt; use default if none provided
+	if p.useBearer && req.SystemPrompt == "" {
+		req.SystemPrompt = "You are Claude, an AI assistant created by Anthropic."
+	}
+
 	body, err := p.buildRequestBody(req)
 	if err != nil {
 		return nil, fmt.Errorf("anthropic: failed to build request: %w", err)
+	}
+
+	// OAuth requires system to be a string, not an array. Convert if needed.
+	if p.useBearer && req.SystemPrompt != "" {
+		var bodyObj map[string]interface{}
+		if err := json.Unmarshal(body, &bodyObj); err == nil {
+			if systemArray, ok := bodyObj["system"].([]interface{}); ok && len(systemArray) > 0 {
+				if systemBlock, ok := systemArray[0].(map[string]interface{}); ok {
+					if text, ok := systemBlock["text"].(string); ok {
+						bodyObj["system"] = text
+						if newBody, err := json.Marshal(bodyObj); err == nil {
+							body = newBody
+						}
+					}
+				}
+			}
+		}
 	}
 
 	for attempt := 0; ; attempt++ {
@@ -76,10 +98,13 @@ func (p *AnthropicProvider) Stream(ctx context.Context, req StreamRequest) (<-ch
 		if err != nil {
 			return nil, fmt.Errorf("anthropic: failed to create HTTP request: %w", err)
 		}
+
 		httpReq.Header.Set("Content-Type", "application/json")
 		if p.useBearer {
 			httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
-			httpReq.Header.Set("anthropic-beta", "oauth-2025-04-20")
+			httpReq.Header.Set("anthropic-beta", "claude-code-20250219,oauth-2025-04-20")
+		httpReq.Header.Set("user-agent", "claude-cli/2.1.75")
+		httpReq.Header.Set("x-app", "cli")
 		} else {
 			httpReq.Header.Set("x-api-key", p.apiKey)
 		}
