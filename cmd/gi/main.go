@@ -415,6 +415,7 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 			return
 		}
 		agentLoop.SetProvider(p)
+		agentLoop.SetModel(cfg.DefaultModel)
 		app.SetModel(cfg.DefaultModel)
 	})
 
