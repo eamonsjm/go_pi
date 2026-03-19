@@ -54,8 +54,8 @@ func RunJSONStream(agentLoop *agent.AgentLoop, prompt string) {
 }
 
 func readStdin() string {
-	info, _ := os.Stdin.Stat()
-	if info.Mode()&os.ModeCharDevice != 0 {
+	info, err := os.Stdin.Stat()
+	if err != nil || info.Mode()&os.ModeCharDevice != 0 {
 		// stdin is a terminal, not piped — return empty.
 		return ""
 	}
