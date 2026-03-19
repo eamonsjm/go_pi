@@ -208,6 +208,10 @@ func searchFile(path string, re *regexp.Regexp, contextLines, maxMatches int) ([
 		}
 	}
 
+	if err := scanner.Err(); err != nil {
+		return nil, 0
+	}
+
 	if len(matchLineNums) == 0 {
 		return nil, 0
 	}
