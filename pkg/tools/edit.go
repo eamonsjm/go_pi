@@ -81,20 +81,28 @@ func (t *EditTool) Execute(ctx context.Context, params map[string]any) (string, 
 	var matchTarget string
 	var normNote string
 
-	count := strings.Count(content, oldString)
-	switch {
-	case count == 1:
-		matchTarget = oldString
-	case count > 1:
-		return "", fmt.Errorf("old_string found %d times in %s. It must be unique. Provide more surrounding context to make the match unique.", count, filePath)
-	default:
-		// Exact match failed — try fuzzy matching with normalization.
-		matched, normName, found := fuzzyFind(content, oldString)
-		if !found {
-			return "", fmt.Errorf("old_string not found in %s. Make sure the string matches exactly, including whitespace and indentation.", filePath)
+	// Try hash-based edit first if oldString looks like a hash
+	hashMatch, hashNote, hashFound := tryHashBasedEdit(content, oldString)
+	if hashFound {
+		matchTarget = hashMatch
+		normNote = hashNote
+	} else {
+		// Fall back to content-based matching
+		count := strings.Count(content, oldString)
+		switch {
+		case count == 1:
+			matchTarget = oldString
+		case count > 1:
+			return "", fmt.Errorf("old_string found %d times in %s. It must be unique. Provide more surrounding context to make the match unique.", count, filePath)
+		default:
+			// Exact match failed — try fuzzy matching with normalization.
+			matched, normName, found := fuzzyFind(content, oldString)
+			if !found {
+				return "", fmt.Errorf("old_string not found in %s. Make sure the string matches exactly, including whitespace and indentation.", filePath)
+			}
+			matchTarget = matched
+			normNote = fmt.Sprintf("Note: exact match failed. Matched via %s.", normName)
 		}
-		matchTarget = matched
-		normNote = fmt.Sprintf("Note: exact match failed. Matched via %s.", normName)
 	}
 
 	newContent := strings.Replace(content, matchTarget, newString, 1)
@@ -134,6 +142,43 @@ func (t *EditTool) Execute(ctx context.Context, params map[string]any) (string, 
 		diff = normNote + "\n" + diff
 	}
 	return diff, nil
+}
+
+// tryHashBasedEdit attempts to match oldString as a line hash.
+// Supports formats like:
+//   - "a1b" (bare hash)
+//   - "replace line a1b with ..." (descriptive format, extracts hash)
+// Returns the matched line content, a note, and whether a match was found.
+func tryHashBasedEdit(content, oldString string) (matchedLine string, note string, found bool) {
+	// Extract hash from oldString. Support both "a1b" and "replace line a1b with ..." formats.
+	var targetHash string
+
+	// Check if it's a descriptive format like "replace line a1b with ..."
+	if strings.HasPrefix(oldString, "replace line ") {
+		parts := strings.Fields(oldString)
+		if len(parts) >= 3 {
+			targetHash = parts[2]
+		}
+	} else if len(oldString) <= 10 && strings.TrimSpace(oldString) == oldString {
+		// Likely a bare hash (short, no whitespace)
+		targetHash = oldString
+	}
+
+	if targetHash == "" {
+		// Not a hash-based edit
+		return "", "", false
+	}
+
+	// Search for the line with matching hash
+	lines := strings.Split(content, "\n")
+	for _, line := range lines {
+		if contentHash(line) == targetHash {
+			return line, fmt.Sprintf("Matched via content hash %s", targetHash), true
+		}
+	}
+
+	// No matching hash found
+	return "", "", false
 }
 
 // unifiedDiff generates a simple unified diff between two strings.

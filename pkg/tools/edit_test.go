@@ -144,3 +144,127 @@ func TestEditTool_MissingFilePath(t *testing.T) {
 		t.Fatal("expected error for missing file_path")
 	}
 }
+
+func TestEditTool_HashBasedEdit_BareHash(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "edit.txt")
+	os.WriteFile(path, []byte("hello world\nfoo bar\nbaz qux\n"), 0644)
+
+	// Get the hash of "foo bar"
+	hash := contentHash("foo bar")
+
+	tool := &EditTool{}
+	result, err := tool.Execute(context.Background(), map[string]any{
+		"file_path":  path,
+		"old_string": hash,
+		"new_string": "FOO BAR",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Result should contain a diff.
+	if !strings.Contains(result, "-foo bar") {
+		t.Errorf("expected diff with -foo bar, got:\n%s", result)
+	}
+	if !strings.Contains(result, "+FOO BAR") {
+		t.Errorf("expected diff with +FOO BAR, got:\n%s", result)
+	}
+
+	// Verify file was actually changed.
+	data, _ := os.ReadFile(path)
+	if !strings.Contains(string(data), "FOO BAR") {
+		t.Errorf("file should contain 'FOO BAR', got: %s", string(data))
+	}
+	if strings.Contains(string(data), "foo bar") {
+		t.Errorf("file should not contain 'foo bar' anymore")
+	}
+}
+
+func TestEditTool_HashBasedEdit_DescriptiveFormat(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "edit.txt")
+	os.WriteFile(path, []byte("hello world\nfoo bar\nbaz qux\n"), 0644)
+
+	// Get the hash of "foo bar"
+	hash := contentHash("foo bar")
+
+	tool := &EditTool{}
+	result, err := tool.Execute(context.Background(), map[string]any{
+		"file_path":  path,
+		"old_string": "replace line " + hash + " with FOO BAR",
+		"new_string": "FOO BAR",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Result should contain a diff.
+	if !strings.Contains(result, "-foo bar") {
+		t.Errorf("expected diff with -foo bar, got:\n%s", result)
+	}
+	if !strings.Contains(result, "+FOO BAR") {
+		t.Errorf("expected diff with +FOO BAR, got:\n%s", result)
+	}
+
+	// Verify file was actually changed.
+	data, _ := os.ReadFile(path)
+	if !strings.Contains(string(data), "FOO BAR") {
+		t.Errorf("file should contain 'FOO BAR', got: %s", string(data))
+	}
+}
+
+func TestEditTool_HashBasedEdit_CorruptionPrevention(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "edit.txt")
+	os.WriteFile(path, []byte("hello world\nfoo bar\nbaz qux\n"), 0644)
+
+	// Use a hash that doesn't exist in the file
+	nonexistentHash := "zzz"
+
+	tool := &EditTool{}
+	_, err := tool.Execute(context.Background(), map[string]any{
+		"file_path":  path,
+		"old_string": nonexistentHash,
+		"new_string": "FOO BAR",
+	})
+
+	// Should fail because the hash doesn't match
+	if err == nil {
+		t.Fatal("expected error for non-matching hash")
+	}
+
+	// Verify file was NOT changed
+	data, _ := os.ReadFile(path)
+	if !strings.Contains(string(data), "foo bar") {
+		t.Errorf("file should still contain 'foo bar'")
+	}
+}
+
+func TestEditTool_HashBasedEdit_FallbackToContent(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "edit.txt")
+	os.WriteFile(path, []byte("hello world\nfoo bar\nbaz qux\n"), 0644)
+
+	// Use a multi-line content match (should fall back to content matching)
+	tool := &EditTool{}
+	result, err := tool.Execute(context.Background(), map[string]any{
+		"file_path":  path,
+		"old_string": "hello world\nfoo bar",
+		"new_string": "HELLO WORLD\nFOO BAR",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Result should contain a diff.
+	if !strings.Contains(result, "-hello world") {
+		t.Errorf("expected diff with -hello world, got:\n%s", result)
+	}
+
+	// Verify file was actually changed.
+	data, _ := os.ReadFile(path)
+	if !strings.Contains(string(data), "HELLO WORLD") {
+		t.Errorf("file should contain 'HELLO WORLD', got: %s", string(data))
+	}
+}

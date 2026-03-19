@@ -109,7 +109,8 @@ func (t *ReadTool) Execute(ctx context.Context, params map[string]any) (string, 
 		if len(line) > maxLineTruncateLen {
 			line = line[:maxLineTruncateLen] + "..."
 		}
-		fmt.Fprintf(&b, "%*d\t%s\n", lineNumWidth, i+1, line)
+		hash := contentHash(line)
+		fmt.Fprintf(&b, "%*d\t%s\t%s\n", lineNumWidth, i+1, hash, line)
 	}
 
 	if endIdx < totalLines {

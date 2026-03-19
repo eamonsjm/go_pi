@@ -21,15 +21,25 @@ func TestReadTool_ReadFile(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Should contain line numbers and content.
-	if !strings.Contains(result, "1\tline1") {
+	// Should contain line numbers, hashes, and content.
+	// Format is now: linenum<TAB>hash<TAB>content
+	if !strings.Contains(result, "line1") {
 		t.Errorf("expected line 1 content, got:\n%s", result)
 	}
-	if !strings.Contains(result, "2\tline2") {
+	if !strings.Contains(result, "line2") {
 		t.Errorf("expected line 2 content, got:\n%s", result)
 	}
-	if !strings.Contains(result, "3\tline3") {
+	if !strings.Contains(result, "line3") {
 		t.Errorf("expected line 3 content, got:\n%s", result)
+	}
+
+	// Verify hashes are present (should have 3 tab-separated fields per line)
+	lines := strings.Split(strings.TrimSpace(result), "\n")
+	for _, line := range lines {
+		fields := strings.Split(line, "\t")
+		if len(fields) < 3 {
+			t.Errorf("expected at least 3 fields (linenum, hash, content), got %d: %s", len(fields), line)
+		}
 	}
 }
 
