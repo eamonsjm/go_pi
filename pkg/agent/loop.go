@@ -19,6 +19,7 @@ const eventBufSize = 1024
 type AgentLoop struct {
 	provider     ai.Provider
 	tools        *tools.Registry
+	hooks        *tools.HookRegistry
 	systemPrompt string
 	model        string
 	maxTokens    int
@@ -47,9 +48,15 @@ type AgentLoop struct {
 
 // NewAgentLoop creates a new agent loop wired to the given provider and tool registry.
 func NewAgentLoop(provider ai.Provider, toolRegistry *tools.Registry, opts ...Option) *AgentLoop {
+	hooks := tools.NewHookRegistry()
+	// Register default compression hooks
+	hooks.Register(&tools.ANSIStripper{})
+	hooks.Register(&tools.Compressor{})
+
 	a := &AgentLoop{
 		provider:         provider,
 		tools:            toolRegistry,
+		hooks:            hooks,
 		maxTokens:        8192,
 		thinking:         ai.ThinkingOff,
 		contextWindow:    200000,
@@ -397,6 +404,19 @@ func (a *AgentLoop) executeTool(ctx context.Context, tc ai.ContentBlock) ai.Mess
 		return ai.NewToolResultMessage(tc.ToolUseID, errMsg, true)
 	}
 
+	// Fire before-execution hooks
+	if err := a.hooks.Before(ctx, tc.ToolName, params); err != nil {
+		errMsg := fmt.Sprintf("hook error: %v", err)
+		a.emit(ctx, AgentEvent{
+			Type:       EventToolExecEnd,
+			ToolCallID: tc.ToolUseID,
+			ToolName:   tc.ToolName,
+			ToolResult: errMsg,
+			ToolError:  true,
+		})
+		return ai.NewToolResultMessage(tc.ToolUseID, errMsg, true)
+	}
+
 	// Check if tool supports rich (multi-block) results.
 	if richTool, ok := tool.(tools.RichTool); ok {
 		blocks, err := richTool.ExecuteRich(ctx, params)
@@ -411,6 +431,10 @@ func (a *AgentLoop) executeTool(ctx context.Context, tc ai.ContentBlock) ai.Mess
 				}
 			}
 		}
+
+		// Fire after-execution hooks
+		resultText, _ = a.hooks.After(ctx, tc.ToolName, params, resultText, nil)
+
 		a.emit(ctx, AgentEvent{
 			Type:       EventToolExecEnd,
 			ToolCallID: tc.ToolUseID,
@@ -428,6 +452,24 @@ func (a *AgentLoop) executeTool(ctx context.Context, tc ai.ContentBlock) ai.Mess
 	isError := err != nil
 	if isError {
 		result = err.Error()
+	}
+
+	// Track original size before compression hooks
+	originalSize := len(result)
+
+	// Fire after-execution hooks
+	result, hookErr := a.hooks.After(ctx, tc.ToolName, params, result, nil)
+	if hookErr != nil {
+		isError = true
+		result = hookErr.Error()
+	}
+
+	// Record compression metrics for bash commands
+	if tc.ToolName == "bash" && !isError {
+		compressedSize := len(result)
+		cmd, _ := params["command"].(string)
+		category := tools.DetectCategory(cmd)
+		tools.GlobalMetrics.Record(category, originalSize, compressedSize, 0)
 	}
 
 	a.emit(ctx, AgentEvent{
