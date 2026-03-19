@@ -6,13 +6,18 @@ An AI coding agent for the terminal, implemented in Go with [Bubble Tea](https:/
 
 ## Features
 
-- **Multi-provider AI** -- supports Anthropic, OpenAI, and OpenRouter out of the box
+- **Multi-provider AI** -- supports Anthropic, OpenAI, OpenRouter, Azure OpenAI, AWS Bedrock, and Google Gemini out of the box
 - **Agentic tool-use loop** -- the model can read, write, edit files, run shell commands, and search your codebase
 - **Interactive TUI** -- full-screen terminal UI with streaming responses, thinking indicators, and a multi-line editor
 - **Print mode** -- pipe a prompt in and get a response on stdout, no TUI required
 - **Extended thinking** -- configurable thinking levels (off, low, medium, high) for supported models
 - **Session persistence** -- conversations are saved and can be resumed by session ID
 - **Project-aware** -- automatically loads AGENTS.md, CLAUDE.md, or .gi/SYSTEM.md from the working directory
+- **Slash commands** -- built-in commands for aliasing, authentication, session management, settings, and more
+- **Configurable keybindings** -- customize hotkeys via `~/.gi/keybindings.json`
+- **Plugin system** -- extend gi with custom tools and commands
+- **JSON-RPC and streaming modes** -- programmatic interfaces for integration with other tools
+- **Token optimization** -- RTK integration for output compression and command rewriting
 
 ## Install
 
@@ -103,13 +108,19 @@ gi -p "explain this code"
 | Flag | Description |
 |------|-------------|
 | `-model` | Model name (e.g. `claude-sonnet-4-20250514`, `gpt-4o`) |
-| `-provider` | Provider name: `anthropic`, `openrouter`, `openai` |
+| `-provider` | Provider name: `anthropic`, `openrouter`, `openai`, `azure`, `bedrock`, `gemini` |
 | `-thinking` | Thinking level: `off`, `low`, `medium`, `high` |
 | `-p` | Print mode -- send prompt, print response, exit |
 | `-session` | Resume a previous session by ID |
+| `-new` | Start a fresh session instead of resuming |
 | `-cwd` | Set the working directory |
+| `-json` | JSON event stream output mode |
+| `-rpc` | JSON-RPC 2.0 mode over stdin/stdout |
+| `-plugin` | Comma-separated paths to plugin executables or directories |
 
 ### Key bindings
+
+**Editor navigation:**
 
 | Key | Action |
 |-----|--------|
@@ -118,8 +129,18 @@ gi -p "explain this code"
 | Up arrow | Recall previous message (when editor is empty) |
 | Ctrl+C | Cancel running agent; press twice while idle to quit |
 | Escape | Cancel running agent |
-| t | Toggle thinking block expand/collapse (while agent is running) |
-| r | Toggle tool result expand/collapse (while agent is running) |
+
+**App-level actions (configurable via `~/.gi/keybindings.json`):**
+
+| Key | Action |
+|-----|--------|
+| Ctrl+T | Toggle thinking block expand/collapse |
+| Ctrl+R | Toggle tool result expand/collapse |
+| Shift+Tab | Cycle thinking level (off/low/medium/high) |
+| Ctrl+P | Cycle to next model |
+| Alt+P | Cycle to previous model |
+| Ctrl+Z | Suspend (Ctrl+Z) |
+| Alt+M | Toggle mouse capture (for scroll vs text selection) |
 
 ## Providers
 
@@ -128,6 +149,9 @@ gi -p "explain this code"
 | Anthropic | `ANTHROPIC_API_KEY` | `claude-sonnet-4-20250514` |
 | OpenRouter | `OPENROUTER_API_KEY` | `anthropic/claude-sonnet-4-20250514` |
 | OpenAI | `OPENAI_API_KEY` | `gpt-4o` |
+| Azure OpenAI | `AZURE_OPENAI_KEY` | (configured via settings) |
+| AWS Bedrock | `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | `anthropic.claude-3-5-sonnet-20241022-v2:0` |
+| Google Gemini | `GOOGLE_API_KEY` | `gemini-2.0-flash` |
 
 If no provider is specified, gi auto-detects based on which API key is available (checked in the order above).
 
@@ -150,38 +174,64 @@ gi exposes the following tools to the AI model:
 go_pi/
   cmd/
     gi/
-      main.go           # Entry point, flag parsing, provider/agent wiring
+      main.go              # Entry point, flag parsing, provider/agent wiring
   pkg/
     agent/
-      loop.go           # Agentic tool-use loop
-      options.go         # Functional options for AgentLoop
-      types.go           # Event types
+      loop.go              # Agentic tool-use loop
+      compaction.go        # Context compaction and history management
+      options.go           # Functional options for AgentLoop
+      types.go             # Event types
     ai/
-      types.go           # Provider interface, Message, ContentBlock, streaming types
-      anthropic.go       # Anthropic API provider
-      openai.go          # OpenAI API provider
-      openrouter.go      # OpenRouter provider (delegates to OpenAI provider)
+      types.go             # Provider interface, Message, ContentBlock, streaming types
+      errors.go            # AI-specific error types
+      anthropic.go         # Anthropic API provider
+      openai.go            # OpenAI API provider
+      openrouter.go        # OpenRouter provider (delegates to OpenAI provider)
+      azure.go             # Azure OpenAI provider
+      bedrock.go           # AWS Bedrock provider
+      gemini.go            # Google Gemini provider
+    auth/
+      store.go             # API key storage and retrieval
+      resolver.go          # Auth credential resolution
+      provider.go          # Provider-specific auth logic
+      anthropic.go         # Anthropic OAuth handling
+      openai.go            # OpenAI OAuth handling
+      pkce.go              # PKCE flow implementation
+      credential.go        # Credential management
     config/
-      config.go          # Settings loading and merging
-      auth.go            # API key management (env vars + auth.json)
+      config.go            # Settings loading and merging
+      auth.go              # Auth configuration
     session/
-      manager.go         # Session persistence
+      manager.go           # Session persistence
     tools/
-      tool.go            # Tool interface and registry
-      read.go            # read tool
-      write.go           # write tool
-      edit.go            # edit tool
-      bash.go            # bash tool
-      glob.go            # glob tool
-      grep.go            # grep tool
+      tool.go              # Tool interface and registry
+      read.go              # read tool
+      write.go             # write tool
+      edit.go              # edit tool
+      bash.go              # bash tool
+      glob.go              # glob tool
+      grep.go              # grep tool
     tui/
-      app.go             # Root Bubble Tea model
-      chat.go            # Chat/message view
-      editor.go          # Input editor
-      header.go          # Header bar
-      footer.go          # Footer bar (token usage)
-      messages.go        # TUI message types
-      styles.go          # Colors and lipgloss styles
+      app.go               # Root Bubble Tea model
+      chat.go              # Chat/message view
+      editor.go            # Input editor
+      header.go            # Header bar
+      footer.go            # Footer bar (token usage)
+      messages.go          # TUI message types
+      styles.go            # Colors and lipgloss styles
+      keybindings.go       # Configurable keybindings
+      model_selector.go    # Model selection overlay
+      commands.go          # Slash command registry
+      completer.go         # Command/flag completion
+      cmd_*.go             # Built-in slash commands (alias, auth, compact, copy, export, fork, hotkeys, rtk, session, settings, share, theme, tree)
+    plugin/
+      plugin.go            # Plugin system and manager
+    rpc/
+      jsonrpc.go           # JSON-RPC 2.0 server
+      jsonstream.go        # JSON event stream mode
+      events.go            # RPC event types
+    sdk/
+      sdk.go               # Python/JavaScript SDK for programmatic use
   go.mod
   go.sum
 ```
