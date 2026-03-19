@@ -204,6 +204,7 @@ func (a *App) RegisterBuiltinCommands(ctx context.Context, agentLoop *agent.Agen
 
 	a.RegisterCommand(NewCompactCommand(ctx, agentLoop))
 	a.RegisterCommand(NewSettingsCommand(cfg, agentLoop, a.header))
+	a.RegisterCommand(NewRTKCommand(cfg))
 	a.RegisterCommand(NewNewSessionCommand(agentLoop, sessionMgr, a.chat, a.header))
 	a.RegisterCommand(NewResumeCommand(agentLoop, sessionMgr, a.chat, a.header))
 	a.RegisterCommand(NewSessionInfoCommand(sessionMgr, a.chat,
@@ -405,6 +406,14 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case settingsUpdatedMsg:
 		a.chat.AddSystemMessage(fmt.Sprintf("Updated %s to %s", msg.key, msg.value))
+		return a, nil
+
+	case rtkDisplayMsg:
+		a.chat.AddSystemMessage(msg.text)
+		return a, nil
+
+	case rtkUpdatedMsg:
+		a.chat.AddSystemMessage(fmt.Sprintf("RTK %s set to %s", msg.setting, msg.value))
 		return a, nil
 
 	// ---- Model selector events ----

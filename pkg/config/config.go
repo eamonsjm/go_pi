@@ -7,6 +7,15 @@ import (
 	"path/filepath"
 )
 
+// RTKConfig holds RTK-specific settings.
+type RTKConfig struct {
+	Enabled               bool              `json:"enabled"`
+	MetricsEnabled        bool              `json:"metrics_enabled"`
+	CompressionLevels     map[string]string `json:"compression_levels"` // category -> level (low/medium/high)
+	EnabledCategories     map[string]bool   `json:"enabled_categories"`
+	ExportPath            string            `json:"export_path"`
+}
+
 // Config holds all gi settings.
 type Config struct {
 	// Provider settings
@@ -23,6 +32,9 @@ type Config struct {
 	// Paths
 	SessionDir string `json:"session_dir"`
 	ConfigDir  string `json:"config_dir"`
+
+	// RTK (Rust Token Killer) compression settings
+	RTK *RTKConfig `json:"rtk"`
 }
 
 // DefaultConfig returns a Config populated with sensible defaults.
@@ -37,6 +49,37 @@ func DefaultConfig() *Config {
 		Theme:           "auto",
 		SessionDir:      filepath.Join(giDir, "sessions"),
 		ConfigDir:       giDir,
+		RTK: &RTKConfig{
+			Enabled:           true,
+			MetricsEnabled:    true,
+			CompressionLevels: defaultCompressionLevels(),
+			EnabledCategories: defaultEnabledCategories(),
+			ExportPath:        filepath.Join(giDir, "metrics.json"),
+		},
+	}
+}
+
+// defaultCompressionLevels returns default compression settings.
+func defaultCompressionLevels() map[string]string {
+	return map[string]string{
+		"go-test":   "medium",
+		"go-build":  "high",
+		"git-log":   "medium",
+		"linter":    "medium",
+		"generic":   "low",
+	}
+}
+
+// defaultEnabledCategories returns which categories are enabled by default.
+func defaultEnabledCategories() map[string]bool {
+	return map[string]bool{
+		"git":     true,
+		"docker":  true,
+		"build":   true,
+		"package": true,
+		"test":    true,
+		"file":    true,
+		"other":   true,
 	}
 }
 
@@ -150,6 +193,14 @@ func mergeFromFile(cfg *Config, path string) error {
 		var s string
 		if json.Unmarshal(v, &s) == nil && s != "" {
 			cfg.ConfigDir = s
+		}
+	}
+
+	// RTK configuration
+	if v, ok := raw["rtk"]; ok {
+		var rtkCfg RTKConfig
+		if json.Unmarshal(v, &rtkCfg) == nil {
+			cfg.RTK = &rtkCfg
 		}
 	}
 

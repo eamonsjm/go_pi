@@ -311,6 +311,33 @@ func (t *RtkCommandTranslator) AfterExecute(ctx context.Context, toolName string
 	return result, err
 }
 
+// GetTotalTokens returns the total number of tokens processed.
+func (m *Metrics) GetTotalTokens() int64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.totalTokens
+}
+
+// GetSavedTokens returns the total number of tokens saved by compression.
+func (m *Metrics) GetSavedTokens() int64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.savedTokens
+}
+
+// GetCommandMetrics returns a copy of the command metrics map.
+func (m *Metrics) GetCommandMetrics() map[CommandCategory]*CommandMetrics {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Create a shallow copy
+	result := make(map[CommandCategory]*CommandMetrics)
+	for k, v := range m.Commands {
+		result[k] = v
+	}
+	return result
+}
+
 // RegisterDefaultHooks creates and registers all standard compression hooks.
 func RegisterDefaultHooks(registry *HookRegistry, config *CompressionConfig) {
 	// Always strip ANSI codes first
