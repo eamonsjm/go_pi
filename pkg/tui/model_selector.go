@@ -299,10 +299,14 @@ func RegisterModelCommand() SlashCommand {
 					}
 				}
 			}
-			// Not in the catalogue — use as-is with empty provider (keep current).
-			model := args
+			// Unknown model — return error with list of available models.
+			var availableModels []string
+			for _, opt := range defaultModels {
+				availableModels = append(availableModels, fmt.Sprintf("%s (%s/%s)", opt.Label, opt.Provider, opt.Model))
+			}
+			errorMsg := fmt.Sprintf("Unknown model: %s\n\nAvailable models:\n%s", args, strings.Join(availableModels, "\n"))
 			return func() tea.Msg {
-				return modelSelectedMsg{provider: "", model: model}
+				return CommandResultMsg{Text: errorMsg, IsError: true}
 			}
 		},
 	}
