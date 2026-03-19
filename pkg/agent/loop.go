@@ -49,6 +49,8 @@ type AgentLoop struct {
 // NewAgentLoop creates a new agent loop wired to the given provider and tool registry.
 func NewAgentLoop(provider ai.Provider, toolRegistry *tools.Registry, opts ...Option) *AgentLoop {
 	hooks := tools.NewHookRegistry()
+	// Register RTK command translator first (before compression)
+	hooks.Register(tools.NewRtkCommandTranslator())
 	// Register default compression hooks
 	hooks.Register(&tools.ANSIStripper{})
 	hooks.Register(&tools.Compressor{})

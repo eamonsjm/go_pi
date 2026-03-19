@@ -242,3 +242,190 @@ func TestHookRegistry(t *testing.T) {
 		t.Errorf("Hook chain = %q, want %q", result, expected)
 	}
 }
+
+func TestMakeCommandMapping(t *testing.T) {
+	mapping := makeCommandMapping()
+
+	expectedMappings := map[string]string{
+		"git":    "rtk git",
+		"go":     "rtk go",
+		"cargo":  "rtk cargo",
+		"npm":    "rtk npm",
+		"docker": "rtk docker",
+	}
+
+	for cmd, expected := range expectedMappings {
+		if mapping[cmd] != expected {
+			t.Errorf("mapping[%q] = %q, want %q", cmd, mapping[cmd], expected)
+		}
+	}
+}
+
+func TestRtkCommandTranslatorDetection(t *testing.T) {
+	// Test that translator initializes without error
+	translator := NewRtkCommandTranslator()
+	if translator == nil {
+		t.Fatal("NewRtkCommandTranslator returned nil")
+	}
+
+	// Check that mapping is initialized
+	if len(translator.mapping) == 0 {
+		t.Fatal("translator.mapping is empty")
+	}
+
+	// Check that detection ran (rtkAvailable should be a boolean)
+	_ = translator.rtkAvailable // Should be true or false, no error
+}
+
+func TestRtkCommandTranslatorBeforeExecute(t *testing.T) {
+	// Create translator with rtk disabled for predictable testing
+	translator := &RtkCommandTranslator{
+		rtkAvailable: false,
+		mapping:      makeCommandMapping(),
+	}
+
+	ctx := context.Background()
+
+	// Test 1: Non-bash tools should not be modified
+	params := map[string]any{"command": "git status"}
+	err := translator.BeforeExecute(ctx, "read", params)
+	if err != nil {
+		t.Fatalf("BeforeExecute failed: %v", err)
+	}
+	if params["command"] != "git status" {
+		t.Errorf("BeforeExecute modified non-bash tool")
+	}
+
+	// Test 2: If rtk unavailable, commands should not be translated
+	params = map[string]any{"command": "git status"}
+	err = translator.BeforeExecute(ctx, "bash", params)
+	if err != nil {
+		t.Fatalf("BeforeExecute failed: %v", err)
+	}
+	if params["command"] != "git status" {
+		t.Errorf("BeforeExecute modified command when rtk unavailable")
+	}
+
+	// Test 3: With rtk available, matching commands should be translated
+	translator.rtkAvailable = true
+	params = map[string]any{"command": "git status"}
+	err = translator.BeforeExecute(ctx, "bash", params)
+	if err != nil {
+		t.Fatalf("BeforeExecute failed: %v", err)
+	}
+	if params["command"] != "rtk git status" {
+		t.Errorf("BeforeExecute = %q, want %q", params["command"], "rtk git status")
+	}
+
+	// Test 4: Commands not in mapping should not be translated
+	params = map[string]any{"command": "ls -la"}
+	err = translator.BeforeExecute(ctx, "bash", params)
+	if err != nil {
+		t.Fatalf("BeforeExecute failed: %v", err)
+	}
+	if params["command"] != "ls -la" {
+		t.Errorf("BeforeExecute modified unmapped command")
+	}
+
+	// Test 5: Empty command should not cause error
+	params = map[string]any{"command": ""}
+	err = translator.BeforeExecute(ctx, "bash", params)
+	if err != nil {
+		t.Fatalf("BeforeExecute failed: %v", err)
+	}
+
+	// Test 6: Multiple arguments should be preserved
+	params = map[string]any{"command": "go build -v ./..."}
+	translator.rtkAvailable = true
+	err = translator.BeforeExecute(ctx, "bash", params)
+	if err != nil {
+		t.Fatalf("BeforeExecute failed: %v", err)
+	}
+	if params["command"] != "rtk go build -v ./..." {
+		t.Errorf("BeforeExecute = %q, want %q", params["command"], "rtk go build -v ./...")
+	}
+}
+
+func TestRtkCommandTranslatorAfterExecute(t *testing.T) {
+	translator := &RtkCommandTranslator{
+		rtkAvailable: true,
+		mapping:      makeCommandMapping(),
+	}
+
+	ctx := context.Background()
+
+	// AfterExecute should be a no-op
+	result, err := translator.AfterExecute(ctx, "bash", nil, "output", nil)
+	if err != nil {
+		t.Fatalf("AfterExecute failed: %v", err)
+	}
+	if result != "output" {
+		t.Errorf("AfterExecute modified result: %q", result)
+	}
+}
+
+func TestRtkCommandTranslatorMetrics(t *testing.T) {
+	translator := &RtkCommandTranslator{
+		rtkAvailable: true,
+		mapping:      makeCommandMapping(),
+	}
+
+	ctx := context.Background()
+
+	// Test 1: Rewritten command should increment rewritten counter
+	params := map[string]any{"command": "git status"}
+	err := translator.BeforeExecute(ctx, "bash", params)
+	if err != nil {
+		t.Fatalf("BeforeExecute failed: %v", err)
+	}
+
+	rewritten, native, _ := translator.GetMetrics()
+	if rewritten != 1 {
+		t.Errorf("Expected 1 rewritten command, got %d", rewritten)
+	}
+	if native != 0 {
+		t.Errorf("Expected 0 native commands, got %d", native)
+	}
+
+	// Test 2: Native (non-rewritten) command should increment native counter
+	translator = &RtkCommandTranslator{
+		rtkAvailable: true,
+		mapping:      makeCommandMapping(),
+	}
+
+	params = map[string]any{"command": "ls -la"}
+	err = translator.BeforeExecute(ctx, "bash", params)
+	if err != nil {
+		t.Fatalf("BeforeExecute failed: %v", err)
+	}
+
+	rewritten, native, _ = translator.GetMetrics()
+	if native != 1 {
+		t.Errorf("Expected 1 native command, got %d", native)
+	}
+	if rewritten != 0 {
+		t.Errorf("Expected 0 rewritten commands, got %d", rewritten)
+	}
+
+	// Test 3: Mixed commands
+	translator = &RtkCommandTranslator{
+		rtkAvailable: true,
+		mapping:      makeCommandMapping(),
+	}
+
+	cmds := []string{"git status", "ls -la", "go build", "echo hello"}
+	for _, cmd := range cmds {
+		params = map[string]any{"command": cmd}
+		_ = translator.BeforeExecute(ctx, "bash", params)
+	}
+
+	rewritten, native, _ = translator.GetMetrics()
+	if rewritten != 2 {
+		t.Errorf("Expected 2 rewritten commands, got %d", rewritten)
+	}
+	if native != 2 {
+		t.Errorf("Expected 2 native commands, got %d", native)
+	}
+	// Note: The actual token savings come from output compression by rtk,
+	// which is tracked separately in the compression hooks.
+}

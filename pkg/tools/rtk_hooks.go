@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"os/exec"
 	"regexp"
 	"strings"
 	"sync"
@@ -209,6 +210,106 @@ func (m *Metrics) Record(category CommandCategory, originalSize, compressedSize 
 
 // GlobalMetrics is the package-level metrics collector.
 var GlobalMetrics = NewMetrics()
+
+// RtkCommandTranslator detects rtk binary and translates commands to rtk equivalents.
+type RtkCommandTranslator struct {
+	mu              sync.Mutex
+	rtkAvailable    bool
+	mapping         map[string]string
+	rewrittenCount  int64
+	nativeCount     int64
+	totalBytesSaved int64
+}
+
+// NewRtkCommandTranslator creates a new RTK command translator.
+// It detects rtk availability and sets up command mappings.
+func NewRtkCommandTranslator() *RtkCommandTranslator {
+	t := &RtkCommandTranslator{
+		mapping: makeCommandMapping(),
+	}
+	t.rtkAvailable = t.detectRtkBinary()
+	return t
+}
+
+// detectRtkBinary checks if the rtk binary is available in PATH.
+func (t *RtkCommandTranslator) detectRtkBinary() bool {
+	_, err := exec.LookPath("rtk")
+	return err == nil
+}
+
+// makeCommandMapping returns a map of native commands to rtk equivalents.
+func makeCommandMapping() map[string]string {
+	return map[string]string{
+		"git": "rtk git",
+		"go":  "rtk go",
+		"cargo": "rtk cargo",
+		"npm": "rtk npm",
+		"docker": "rtk docker",
+	}
+}
+
+// BeforeExecute translates bash commands to rtk equivalents if rtk is available.
+func (t *RtkCommandTranslator) BeforeExecute(ctx context.Context, toolName string, params map[string]any) error {
+	if toolName != "bash" {
+		return nil
+	}
+
+	cmd, ok := params["command"].(string)
+	if !ok || cmd == "" {
+		return nil
+	}
+
+	// Parse the command and check if it starts with a mapped command
+	parts := strings.Fields(cmd)
+	if len(parts) == 0 {
+		t.recordMetric(cmd, false, 0)
+		return nil
+	}
+
+	// Check if rtk is available and the first part is in our mapping
+	if t.rtkAvailable {
+		if rtkCmd, exists := t.mapping[parts[0]]; exists {
+			// Replace the original command with rtk equivalent
+			originalLen := len(cmd)
+			rtkCommand := rtkCmd + " " + strings.Join(parts[1:], " ")
+			params["command"] = rtkCommand
+
+			// Track the rewrite
+			savedBytes := originalLen - len(rtkCommand)
+			t.recordMetric(cmd, true, int64(savedBytes))
+			return nil
+		}
+	}
+
+	// Record native (non-rewritten) command
+	t.recordMetric(cmd, false, 0)
+	return nil
+}
+
+// recordMetric tracks command rewriting statistics.
+func (t *RtkCommandTranslator) recordMetric(cmd string, rewritten bool, bytesSaved int64) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if rewritten {
+		t.rewrittenCount++
+		t.totalBytesSaved += bytesSaved
+	} else {
+		t.nativeCount++
+	}
+}
+
+// GetMetrics returns the current RTK translation metrics.
+func (t *RtkCommandTranslator) GetMetrics() (rewritten, native int64, bytesSaved int64) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.rewrittenCount, t.nativeCount, t.totalBytesSaved
+}
+
+// AfterExecute is a no-op for the RTK translator.
+func (t *RtkCommandTranslator) AfterExecute(ctx context.Context, toolName string, params map[string]any, result string, err error) (string, error) {
+	return result, err
+}
 
 // RegisterDefaultHooks creates and registers all standard compression hooks.
 func RegisterDefaultHooks(registry *HookRegistry, config *CompressionConfig) {
