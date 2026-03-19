@@ -163,19 +163,19 @@ func DetectCategory(cmd string) CommandCategory {
 
 // Metrics tracks command execution statistics.
 type Metrics struct {
-	mu           sync.Mutex
-	Commands     map[CommandCategory]*CommandMetrics
-	totalTokens  int64
-	savedTokens  int64
+	mu          sync.Mutex
+	Commands    map[CommandCategory]*CommandMetrics
+	totalTokens int64
+	savedTokens int64
 }
 
 // CommandMetrics holds stats for a specific command category.
 type CommandMetrics struct {
-	Count        int64
-	TotalBytes   int64
+	Count           int64
+	TotalBytes      int64
 	CompressedBytes int64
-	TotalTime    time.Duration
-	AvgTime      time.Duration
+	TotalTime       time.Duration
+	AvgTime         time.Duration
 }
 
 // NewMetrics creates a new metrics collector.
@@ -209,3 +209,18 @@ func (m *Metrics) Record(category CommandCategory, originalSize, compressedSize 
 
 // GlobalMetrics is the package-level metrics collector.
 var GlobalMetrics = NewMetrics()
+
+// RegisterDefaultHooks creates and registers all standard compression hooks.
+func RegisterDefaultHooks(registry *HookRegistry, config *CompressionConfig) {
+	// Always strip ANSI codes first
+	registry.Register(&ANSIStripper{})
+
+	// Register language-specific compressors
+	registry.Register(NewGoTestAggregator(config.GetLevel("go-test")))
+	registry.Register(NewGoBuildErrorExtractor(config.GetLevel("go-build")))
+	registry.Register(NewGitLogCompactor(config.GetLevel("git-log")))
+	registry.Register(NewLinterOutputGrouper(config.GetLevel("linter")))
+
+	// Generic compression as fallback
+	registry.Register(&Compressor{})
+}
