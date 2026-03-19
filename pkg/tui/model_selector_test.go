@@ -329,20 +329,23 @@ func TestRegisterModelCommand_WithKnownModel(t *testing.T) {
 
 func TestRegisterModelCommand_WithUnknownModel(t *testing.T) {
 	cmd := RegisterModelCommand()
-	result := cmd.Execute("custom-model-v1")
+	result := cmd.Execute("haiku")
 	if result == nil {
 		t.Fatal("expected command to return a tea.Cmd")
 	}
 	msg := result()
-	sel, ok := msg.(modelSelectedMsg)
+	cmdResult, ok := msg.(CommandResultMsg)
 	if !ok {
-		t.Fatalf("expected modelSelectedMsg, got %T", msg)
+		t.Fatalf("expected CommandResultMsg, got %T", msg)
 	}
-	if sel.model != "custom-model-v1" {
-		t.Errorf("expected model 'custom-model-v1', got %q", sel.model)
+	if !cmdResult.IsError {
+		t.Errorf("expected IsError to be true for unknown model, got false")
 	}
-	if sel.provider != "" {
-		t.Errorf("expected empty provider for unknown model, got %q", sel.provider)
+	if !strings.Contains(cmdResult.Text, "Unknown model") {
+		t.Errorf("expected error message to contain 'Unknown model', got %q", cmdResult.Text)
+	}
+	if !strings.Contains(cmdResult.Text, "Available models") {
+		t.Errorf("expected error message to contain 'Available models', got %q", cmdResult.Text)
 	}
 }
 
