@@ -13,13 +13,14 @@ import (
 
 // HostMessage is a message sent from the host to a plugin over stdin.
 type HostMessage struct {
-	Type   string         `json:"type"`
-	ID     string         `json:"id,omitempty"`
-	Name   string         `json:"name,omitempty"`
-	Params map[string]any `json:"params,omitempty"`
-	Args   string         `json:"args,omitempty"`
-	Config *PluginConfig  `json:"config,omitempty"`
-	Event  *EventPayload  `json:"event,omitempty"`
+	Type      string         `json:"type"`
+	ID        string         `json:"id,omitempty"`
+	Name      string         `json:"name,omitempty"`
+	Params    map[string]any `json:"params,omitempty"`
+	Args      string         `json:"args,omitempty"`
+	Config    *PluginConfig  `json:"config,omitempty"`
+	Event     *EventPayload  `json:"event,omitempty"`
+	UIResponse *UIResponse   `json:"ui_response,omitempty"` // response to ui_request
 }
 
 // PluginConfig is the configuration sent to a plugin during initialization.
@@ -41,6 +42,14 @@ type EventPayload struct {
 	Error      string         `json:"error,omitempty"`
 }
 
+// UIResponse is sent from the host to a plugin in response to a ui_request.
+type UIResponse struct {
+	ID     string `json:"id"`              // matches the ui_request ID
+	Value  string `json:"value,omitempty"` // user's response (selection, input, confirmation)
+	Error  string `json:"error,omitempty"` // error message if dialog failed
+	Closed bool   `json:"closed"`          // true if user closed the dialog without responding
+}
+
 // --- Plugin -> Host message types ---
 
 // PluginMessage is a message sent from a plugin to the host over stdout.
@@ -56,6 +65,13 @@ type PluginMessage struct {
 	Level    string       `json:"level,omitempty"`
 	Message  string       `json:"message,omitempty"`
 	Status   *HeartbeatStatus `json:"status,omitempty"`
+	// UI request fields (type: ui_request)
+	UIType       string   `json:"ui_type,omitempty"` // 'select' | 'confirm' | 'input' | 'editor' | 'notify'
+	UITitle      string   `json:"ui_title,omitempty"`
+	UIOptions    []string `json:"ui_options,omitempty"` // for select dialog
+	UIDefault    string   `json:"ui_default,omitempty"` // for input/editor
+	UIValue      string   `json:"ui_value,omitempty"`   // for ui_response
+	UINotifyLevel string `json:"ui_notify_level,omitempty"` // 'info' | 'warning' | 'error' for notify
 }
 
 // HeartbeatStatus carries plugin health metrics returned in a heartbeat_ack.

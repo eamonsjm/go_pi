@@ -1,0 +1,10 @@
+{
+  "name": "UI Example Plugin",
+  "version": "0.1.0",
+  "description": "Demonstrates all UI API capabilities: dialogs, notifications, and user input",
+  "executable": "./plugin-ui-example",
+  "capabilities": ["ui"],
+  "init_timeout": 5,
+  "tool_timeout": 30,
+  "command_timeout": 10
+}

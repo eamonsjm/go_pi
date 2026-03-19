@@ -83,6 +83,9 @@ type PluginProcess struct {
 	// responseCh receives tool_result, command_result, and capabilities messages.
 	responseCh chan PluginMessage
 
+	// uiRequestCh receives ui_request messages from plugins (dialog/notification requests).
+	uiRequestCh chan PluginMessage
+
 	// Auto-restart fields.
 	restartCfg   *RestartConfig // nil means no auto-restart
 	pluginCfg    PluginConfig   // saved for re-initialization on restart
@@ -146,6 +149,7 @@ func startPlugin(name, path string) (*PluginProcess, error) {
 		scanner:     scanner,
 		injectCh:    make(chan PluginMessage, 64),
 		responseCh:  make(chan PluginMessage, 16),
+		uiRequestCh: make(chan PluginMessage, 16),
 		heartbeatCh: make(chan PluginMessage, 4),
 		healthy:     true,
 		timeouts:    DefaultTimeoutConfig(),
@@ -179,12 +183,14 @@ func (p *PluginProcess) readLoop() {
 	p.mu.Lock()
 	injectCh := p.injectCh
 	responseCh := p.responseCh
+	uiRequestCh := p.uiRequestCh
 	heartbeatCh := p.heartbeatCh
 	scanner := p.scanner
 	p.mu.Unlock()
 
 	defer close(injectCh)
 	defer close(responseCh)
+	defer close(uiRequestCh)
 	defer close(heartbeatCh)
 
 	for scanner.Scan() {
@@ -206,6 +212,12 @@ func (p *PluginProcess) readLoop() {
 			case responseCh <- msg:
 			default:
 				log.Printf("plugin %s: dropped %s response (channel full)", p.name, msg.Type)
+			}
+		case "ui_request":
+			select {
+			case uiRequestCh <- msg:
+			default:
+				log.Printf("plugin %s: dropped ui_request (channel full)", p.name)
 			}
 		case "heartbeat_ack":
 			select {
@@ -746,6 +758,7 @@ func (p *PluginProcess) respawn() error {
 
 	newInjectCh := make(chan PluginMessage, 64)
 	newResponseCh := make(chan PluginMessage, 16)
+	newUIRequestCh := make(chan PluginMessage, 16)
 	newHeartbeatCh := make(chan PluginMessage, 4)
 
 	p.mu.Lock()
@@ -754,6 +767,7 @@ func (p *PluginProcess) respawn() error {
 	p.scanner = scanner
 	p.injectCh = newInjectCh
 	p.responseCh = newResponseCh
+	p.uiRequestCh = newUIRequestCh
 	p.heartbeatCh = newHeartbeatCh
 	p.healthy = true // Reset health on restart.
 	p.closed = false // Allow Send to work again for initialization.
@@ -771,5 +785,43 @@ func (p *PluginProcess) respawn() error {
 		return fmt.Errorf("re-initialization failed: %w", err)
 	}
 
+	return nil
+}
+
+// WaitUIRequest waits for a ui_request message from the plugin with a timeout.
+// Returns the UI request message from the plugin or an error.
+func (p *PluginProcess) WaitUIRequest(timeout time.Duration) (PluginMessage, error) {
+	p.mu.Lock()
+	uiRequestCh := p.uiRequestCh
+	p.mu.Unlock()
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
+	select {
+	case msg, ok := <-uiRequestCh:
+		if !ok {
+			return PluginMessage{}, fmt.Errorf("plugin %s: process exited", p.name)
+		}
+		return msg, nil
+	case <-timer.C:
+		return PluginMessage{}, &timeoutError{plugin: p.name}
+	}
+}
+
+// RespondToUIRequest sends a ui_response to a ui_request from the plugin.
+// The response includes the user's input/selection and an optional error message.
+func (p *PluginProcess) RespondToUIRequest(id string, value string, closed bool, errMsg string) error {
+	if err := p.Send(HostMessage{
+		Type: "ui_response",
+		UIResponse: &UIResponse{
+			ID:     id,
+			Value:  value,
+			Closed: closed,
+			Error:  errMsg,
+		},
+	}); err != nil {
+		return fmt.Errorf("plugin %s: sending UI response: %w", p.name, err)
+	}
 	return nil
 }
