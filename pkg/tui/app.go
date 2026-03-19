@@ -499,6 +499,16 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a, cmd
 			}
 		}
+
+		// If viewport is scrolled up (not at bottom), up/down arrows should
+		// scroll the chat view, not trigger editor history recall.
+		if (msg.Type == tea.KeyUp || msg.Type == tea.KeyDown) && !a.chat.AtBottom() {
+			chatCmd := a.chat.Update(msg)
+			if chatCmd != nil {
+				cmds = append(cmds, chatCmd)
+			}
+			return a, tea.Batch(cmds...)
+		}
 	}
 
 	// Delegate to sub-components.

@@ -172,6 +172,11 @@ func (c *ChatView) SetSize(w, h int) {
 	c.rebuildContent()
 }
 
+// AtBottom returns true if the viewport is at the bottom of the content.
+func (c *ChatView) AtBottom() bool {
+	return c.viewport.AtBottom()
+}
+
 // ---------------------------------------------------------------------------
 // Event handlers — called by the parent App on each AgentEvent
 // ---------------------------------------------------------------------------
