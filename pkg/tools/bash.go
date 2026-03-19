@@ -11,8 +11,8 @@ import (
 )
 
 const (
-	defaultTimeout   = 120000 // 120 seconds in milliseconds
-	maxOutputBytes   = 100000
+	defaultTimeout = 120000 // 120 seconds in milliseconds
+	maxOutputBytes = 100000
 )
 
 // BashTool executes shell commands via /bin/bash.

@@ -113,8 +113,8 @@ type testRichTool struct {
 }
 
 func (t *testRichTool) Name() string        { return t.name }
-func (t *testRichTool) Description() string  { return "test rich tool" }
-func (t *testRichTool) Schema() any          { return nil }
+func (t *testRichTool) Description() string { return "test rich tool" }
+func (t *testRichTool) Schema() any         { return nil }
 func (t *testRichTool) Execute(_ context.Context, _ map[string]any) (string, error) {
 	return "fallback", nil
 }

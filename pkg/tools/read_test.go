@@ -144,4 +144,3 @@ func TestReadTool_MissingFilePath(t *testing.T) {
 		t.Fatal("expected error for missing file_path")
 	}
 }
-

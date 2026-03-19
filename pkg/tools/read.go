@@ -119,5 +119,3 @@ func (t *ReadTool) Execute(ctx context.Context, params map[string]any) (string, 
 
 	return b.String(), nil
 }
-
-

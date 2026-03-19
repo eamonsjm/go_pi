@@ -271,4 +271,3 @@ func matchInclude(name, pattern string) bool {
 	matched, _ := filepath.Match(pattern, name)
 	return matched
 }
-

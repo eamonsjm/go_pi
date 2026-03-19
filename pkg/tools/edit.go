@@ -148,6 +148,7 @@ func (t *EditTool) Execute(ctx context.Context, params map[string]any) (string, 
 // Supports formats like:
 //   - "a1b" (bare hash)
 //   - "replace line a1b with ..." (descriptive format, extracts hash)
+//
 // Returns the matched line content, a note, and whether a match was found.
 func tryHashBasedEdit(content, oldString string) (matchedLine string, note string, found bool) {
 	// Extract hash from oldString. Support both "a1b" and "replace line a1b with ..." formats.
