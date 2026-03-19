@@ -33,6 +33,9 @@ type Config struct {
 	SessionDir string `json:"session_dir"`
 	ConfigDir  string `json:"config_dir"`
 
+	// Command aliases
+	Aliases map[string]string `json:"aliases"`
+
 	// RTK (Rust Token Killer) compression settings
 	RTK *RTKConfig `json:"rtk"`
 }
@@ -193,6 +196,14 @@ func mergeFromFile(cfg *Config, path string) error {
 		var s string
 		if json.Unmarshal(v, &s) == nil && s != "" {
 			cfg.ConfigDir = s
+		}
+	}
+
+	// Command aliases
+	if v, ok := raw["aliases"]; ok {
+		var aliases map[string]string
+		if json.Unmarshal(v, &aliases) == nil && aliases != nil {
+			cfg.Aliases = aliases
 		}
 	}
 

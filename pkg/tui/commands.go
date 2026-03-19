@@ -14,15 +14,17 @@ type SlashCommand struct {
 	Execute     func(args string) tea.Cmd
 }
 
-// CommandRegistry holds all registered slash commands.
+// CommandRegistry holds all registered slash commands and their aliases.
 type CommandRegistry struct {
 	commands map[string]*SlashCommand
+	aliases  map[string]string // alias -> target command name
 }
 
 // NewCommandRegistry creates an empty CommandRegistry.
 func NewCommandRegistry() *CommandRegistry {
 	return &CommandRegistry{
 		commands: make(map[string]*SlashCommand),
+		aliases:  make(map[string]string),
 	}
 }
 
@@ -32,10 +34,44 @@ func (r *CommandRegistry) Register(cmd *SlashCommand) {
 	r.commands[cmd.Name] = cmd
 }
 
-// Get returns the command with the given name, or (nil, false) if not found.
+// Get returns the command with the given name, resolving aliases if necessary.
+// Returns (nil, false) if the command or alias target is not found.
 func (r *CommandRegistry) Get(name string) (*SlashCommand, bool) {
+	// Resolve alias if one exists
+	if target, isAlias := r.aliases[name]; isAlias {
+		name = target
+	}
 	cmd, ok := r.commands[name]
 	return cmd, ok
+}
+
+// SetAlias creates a new command alias. The target must be a registered command.
+func (r *CommandRegistry) SetAlias(alias string, target string) bool {
+	// Verify target command exists
+	if _, ok := r.commands[target]; !ok {
+		return false
+	}
+	r.aliases[alias] = target
+	return true
+}
+
+// GetAlias returns the target command for an alias, or empty string if not found.
+func (r *CommandRegistry) GetAlias(alias string) string {
+	return r.aliases[alias]
+}
+
+// RemoveAlias removes an alias.
+func (r *CommandRegistry) RemoveAlias(alias string) {
+	delete(r.aliases, alias)
+}
+
+// AllAliases returns all aliases as a map of alias -> target.
+func (r *CommandRegistry) AllAliases() map[string]string {
+	result := make(map[string]string)
+	for k, v := range r.aliases {
+		result[k] = v
+	}
+	return result
 }
 
 // All returns every registered command sorted alphabetically by name.

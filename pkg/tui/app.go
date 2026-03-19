@@ -232,6 +232,18 @@ func (a *App) RegisterBuiltinCommands(ctx context.Context, agentLoop *agent.Agen
 		a.RegisterCommand(NewLogoutCommand(authStore))
 		a.RegisterCommand(NewAuthStatusCommand(authStore, authResolver))
 	}
+
+	// Alias commands.
+	a.RegisterCommand(NewAliasCommand(cfg, a.commands))
+	a.RegisterCommand(NewAliasesCommand(a.commands))
+	a.RegisterCommand(NewUnaliasCommand(cfg, a.commands))
+
+	// Load aliases from config.
+	if cfg.Aliases != nil {
+		for alias, target := range cfg.Aliases {
+			a.commands.SetAlias(alias, target)
+		}
+	}
 }
 
 // ---------------------------------------------------------------------------
