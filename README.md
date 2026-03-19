@@ -208,6 +208,8 @@ This project builds on the work and ideas of several influential projects and co
 - **[charmbracelet/lipgloss](https://github.com/charmbracelet/lipgloss)** — Elegant terminal styling utilities used throughout the TUI.
 - **[charmbracelet/bubbles](https://github.com/charmbracelet/bubbles)** — Reusable TUI components including input editors, text displays, and interactive elements.
 - **[Gas Town](https://github.com/ejm/gt)** — Multi-agent coordination framework that serves as both the deployment environment and the inspiration for gi's architectural principles.
+- **[pi-mono](https://github.com/badlogic/pi-mono)** — Pi mono architecture and multi-agent patterns that inform the distributed coordination principles used in gi.
+- **[oh-my-pi](https://github.com/can1357/oh-my-pi)** — Oh-my-pi extensions and utilities that contribute to the agent design and tooling ecosystem.
 
 ## License
 
