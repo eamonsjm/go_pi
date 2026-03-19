@@ -88,11 +88,16 @@ Example `settings.json`:
 
 ```bash
 gi
-gi -model claude-sonnet-4-20250514
-gi -provider openrouter -model anthropic/claude-sonnet-4-20250514
-gi -thinking high
-gi -session abc123
-gi -cwd /path/to/project
+gi -m claude-sonnet-4-20250514
+gi --model claude-sonnet-4-20250514
+gi -p openrouter -m anthropic/claude-sonnet-4-20250514
+gi --provider openrouter --model anthropic/claude-sonnet-4-20250514
+gi -t high
+gi --thinking high
+gi -s abc123
+gi --session abc123
+gi -w /path/to/project
+gi --cwd /path/to/project
 ```
 
 ### Print mode
@@ -100,23 +105,24 @@ gi -cwd /path/to/project
 Send a single prompt and print the response to stdout (no TUI):
 
 ```bash
-gi -p "explain this code"
+gi -P "explain this code"
+gi --print "explain this code"
 ```
 
 ### CLI flags
 
 | Flag | Description |
 |------|-------------|
-| `-model` | Model name (e.g. `claude-sonnet-4-20250514`, `gpt-4o`) |
-| `-provider` | Provider name: `anthropic`, `openrouter`, `openai`, `azure`, `bedrock`, `gemini` |
-| `-thinking` | Thinking level: `off`, `low`, `medium`, `high` |
-| `-p` | Print mode -- send prompt, print response, exit |
-| `-session` | Resume a previous session by ID |
-| `-new` | Start a fresh session instead of resuming |
-| `-cwd` | Set the working directory |
-| `-json` | JSON event stream output mode |
-| `-rpc` | JSON-RPC 2.0 mode over stdin/stdout |
-| `-plugin` | Comma-separated paths to plugin executables or directories |
+| `-m, --model` | Model name (e.g. `claude-sonnet-4-20250514`, `gpt-4o`) |
+| `-p, --provider` | Provider name: `anthropic`, `openrouter`, `openai`, `azure`, `bedrock`, `gemini` |
+| `-t, --thinking` | Thinking level: `off`, `low`, `medium`, `high` |
+| `-P, --print` | Print mode -- send prompt, print response, exit |
+| `-s, --session` | Resume a previous session by ID |
+| `-n, --new` | Start a fresh session instead of resuming |
+| `-w, --cwd` | Set the working directory |
+| `-j, --json` | JSON event stream output mode |
+| `-r, --rpc` | JSON-RPC 2.0 mode over stdin/stdout |
+| `--plugin` | Comma-separated paths to plugin executables or directories |
 
 ### Key bindings
 

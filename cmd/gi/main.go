@@ -24,17 +24,61 @@ import (
 )
 
 func main() {
-	modelFlag := flag.String("model", "", "Model to use (e.g. claude-sonnet-4-20250514)")
-	providerFlag := flag.String("provider", "", "Provider (anthropic, openai)")
-	thinkingFlag := flag.String("thinking", "", "Thinking level (off, low, medium, high)")
-	printFlag := flag.String("p", "", "Print mode: send prompt and print response")
-	sessionFlag := flag.String("session", "", "Resume a session by ID")
-	newFlag := flag.Bool("new", false, "Start a fresh session instead of resuming")
-	cwdFlag := flag.String("cwd", "", "Working directory")
-	jsonFlag := flag.Bool("json", false, "JSON event stream output mode")
-	rpcFlag := flag.Bool("rpc", false, "JSON-RPC 2.0 mode over stdin/stdout")
-	pluginFlag := flag.String("plugin", "", "Comma-separated paths to plugin executables or directories")
+	// Flag variables (use 'Flag' suffix to avoid conflicts with later variable names)
+	var modelVal string
+	var providerVal string
+	var thinkingVal string
+	var printVal string
+	var sessionVal string
+	var newVal bool
+	var cwdVal string
+	var jsonVal bool
+	var rpcVal bool
+	var pluginVal string
+
+	// Register flags with both short and long forms
+	flag.StringVar(&modelVal, "m", "", "Model name (short form, same as -model)")
+	flag.StringVar(&modelVal, "model", "", "Model to use (e.g. claude-sonnet-4-20250514)")
+
+	flag.StringVar(&providerVal, "p", "", "Provider name (short form, same as -provider)")
+	flag.StringVar(&providerVal, "provider", "", "Provider (anthropic, openai, etc.)")
+
+	flag.StringVar(&thinkingVal, "t", "", "Thinking level (short form, same as -thinking)")
+	flag.StringVar(&thinkingVal, "thinking", "", "Thinking level (off, low, medium, high)")
+
+	flag.StringVar(&printVal, "P", "", "Print mode: send prompt and print response (short form, same as -print)")
+	flag.StringVar(&printVal, "print", "", "Print mode: send prompt and print response")
+
+	flag.StringVar(&sessionVal, "s", "", "Session ID (short form, same as -session)")
+	flag.StringVar(&sessionVal, "session", "", "Resume a session by ID")
+
+	flag.BoolVar(&newVal, "n", false, "Start fresh session (short form, same as -new)")
+	flag.BoolVar(&newVal, "new", false, "Start a fresh session instead of resuming")
+
+	flag.StringVar(&cwdVal, "w", "", "Working directory (short form, same as -cwd)")
+	flag.StringVar(&cwdVal, "cwd", "", "Working directory")
+
+	flag.BoolVar(&jsonVal, "j", false, "JSON mode (short form, same as -json)")
+	flag.BoolVar(&jsonVal, "json", false, "JSON event stream output mode")
+
+	flag.BoolVar(&rpcVal, "r", false, "RPC mode (short form, same as -rpc)")
+	flag.BoolVar(&rpcVal, "rpc", false, "JSON-RPC 2.0 mode over stdin/stdout")
+
+	flag.StringVar(&pluginVal, "plugin", "", "Comma-separated paths to plugin executables or directories")
+
 	flag.Parse()
+
+	// Create pointers for rest of code compatibility
+	modelFlag := &modelVal
+	providerFlag := &providerVal
+	thinkingFlag := &thinkingVal
+	printFlag := &printVal
+	sessionFlag := &sessionVal
+	newFlag := &newVal
+	cwdFlag := &cwdVal
+	jsonFlag := &jsonVal
+	rpcFlag := &rpcVal
+	pluginFlag := &pluginVal
 
 	// Process @filepath arguments from remaining CLI args.
 	initialPrompt, err := processFileArgs(flag.Args())
