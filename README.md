@@ -199,6 +199,16 @@ go build -o gi ./cmd/gi/
 go vet ./...
 ```
 
+## Credits
+
+This project builds on the work and ideas of several influential projects and communities:
+
+- **[pi-rtk-optimizer](https://github.com/MasuRii/pi-rtk-optimizer)** — RTK optimizer pattern, command rewriting architecture, and output compression pipeline that inspired the token optimization approach.
+- **[Bubble Tea](https://github.com/charmbracelet/bubbletea)** — A delightful and powerful terminal UI framework that powers gi's interactive interface.
+- **[charmbracelet/lipgloss](https://github.com/charmbracelet/lipgloss)** — Elegant terminal styling utilities used throughout the TUI.
+- **[charmbracelet/bubbles](https://github.com/charmbracelet/bubbles)** — Reusable TUI components including input editors, text displays, and interactive elements.
+- **[Gas Town](https://github.com/ejm/gt)** — Multi-agent coordination framework that serves as both the deployment environment and the inspiration for gi's architectural principles.
+
 ## License
 
 MIT
