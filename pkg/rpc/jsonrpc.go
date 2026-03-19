@@ -142,6 +142,10 @@ func (s *rpcServer) serve(r io.Reader) {
 
 		s.handleRequest(req)
 	}
+
+	if err := scanner.Err(); err != nil {
+		log.Printf("rpc: scanner error: %v", err)
+	}
 }
 
 func (s *rpcServer) handleRequest(req Request) {
