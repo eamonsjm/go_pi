@@ -330,11 +330,74 @@ func resolveProvider(cfg *config.Config, resolver *auth.Resolver) (ai.Provider, 
 }
 
 func buildSystemPrompt() string {
-	// For OAuth Bearer tokens, the system prompt MUST be exactly:
-	// "You are Claude Code, Anthropic's official CLI for Claude."
-	// Any additional content causes "invalid_request_error: Error" from the API.
-	// This limitation is enforced by the anthropic-beta header.
-	return "You are Claude Code, Anthropic's official CLI for Claude."
+	base := "You are Claude Code, Anthropic's official CLI for Claude."
+
+	var parts []string
+	seenContent := make(map[string]bool)
+
+	// Walk directory tree from current to root, collecting files
+	cwd, err := os.Getwd()
+	if err != nil {
+		return base
+	}
+
+	// Check .claude/SYSTEM.md in current directory
+	dotClaudePath := filepath.Join(cwd, ".claude", "SYSTEM.md")
+	if data, err := os.ReadFile(dotClaudePath); err == nil {
+		content := string(data)
+		if !seenContent[content] {
+			parts = append(parts, content)
+			seenContent[content] = true
+		}
+	}
+
+	// Walk from current directory up to root
+	current := cwd
+	for {
+		// Check CLAUDE.md (deepest first - we're already starting from deepest)
+		claudePath := filepath.Join(current, "CLAUDE.md")
+		if data, err := os.ReadFile(claudePath); err == nil {
+			content := string(data)
+			if !seenContent[content] {
+				parts = append(parts, content)
+				seenContent[content] = true
+			}
+		}
+
+		// Check AGENTS.md
+		agentsPath := filepath.Join(current, "AGENTS.md")
+		if data, err := os.ReadFile(agentsPath); err == nil {
+			content := string(data)
+			if !seenContent[content] {
+				parts = append(parts, content)
+				seenContent[content] = true
+			}
+		}
+
+		// Check APPEND_SYSTEM.md
+		appendPath := filepath.Join(current, "APPEND_SYSTEM.md")
+		if data, err := os.ReadFile(appendPath); err == nil {
+			content := string(data)
+			if !seenContent[content] {
+				parts = append(parts, content)
+				seenContent[content] = true
+			}
+		}
+
+		// Move to parent directory
+		parent := filepath.Dir(current)
+		if parent == current {
+			// Reached filesystem root
+			break
+		}
+		current = parent
+	}
+
+	if len(parts) == 0 {
+		return base
+	}
+
+	return base + "\n\n" + strings.Join(parts, "\n\n")
 }
 
 func runPrintMode(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, prompt string) {
