@@ -66,15 +66,16 @@ func TestModelSelector_ApplyFilter(t *testing.T) {
 
 	ms.filter = "opus"
 	ms.applyFilter()
-	// Should match both Opus entries.
-	for _, idx := range ms.filtered {
-		opt := ms.models[idx]
-		if opt.Label != "Claude Opus 4" && opt.Label != "Claude Opus 4 (OpenRouter)" {
-			t.Errorf("unexpected filtered model: %q", opt.Label)
-		}
-	}
+	// Should match Opus entries (newer versions plus legacy ones).
 	if len(ms.filtered) < 2 {
 		t.Errorf("expected at least 2 opus matches, got %d", len(ms.filtered))
+	}
+	for _, idx := range ms.filtered {
+		opt := ms.models[idx]
+		if !strings.Contains(strings.ToLower(opt.Label), "opus") &&
+			!strings.Contains(strings.ToLower(opt.Model), "opus") {
+			t.Errorf("unexpected filtered model: %q", opt.Label)
+		}
 	}
 }
 

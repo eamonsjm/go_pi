@@ -38,7 +38,7 @@ func main() {
 
 	// Register flags with both short and long forms
 	flag.StringVar(&modelVal, "m", "", "Model name (short form, same as -model)")
-	flag.StringVar(&modelVal, "model", "", "Model to use (e.g. claude-sonnet-4-20250514)")
+	flag.StringVar(&modelVal, "model", "", "Model to use (e.g. claude-opus-4-6)")
 
 	flag.StringVar(&providerVal, "p", "", "Provider name (short form, same as -provider)")
 	flag.StringVar(&providerVal, "provider", "", "Provider (anthropic, openai, etc.)")
@@ -282,9 +282,9 @@ func resolveProvider(cfg *config.Config, resolver *auth.Resolver) (ai.Provider, 
 	if model == "" {
 		switch providerName {
 		case "anthropic":
-			model = "claude-sonnet-4-20250514"
+			model = "claude-opus-4-6"
 		case "openrouter":
-			model = "anthropic/claude-sonnet-4-20250514"
+			model = "anthropic/claude-opus-4-6"
 		case "openai":
 			model = "gpt-4o"
 		case "gemini":
@@ -457,6 +457,14 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 	app.RegisterBuiltinCommands(ctx, agentLoop, sessionMgr, cfg, authStore, authResolver)
 	app.SetModelChangeCallback(func(provider, model string) {
 		agentLoop.SetModel(model)
+		// Persist the model selection to config
+		cfg.DefaultModel = model
+		if provider != "" {
+			cfg.DefaultProvider = provider
+		}
+		if err := cfg.Save(); err != nil {
+			log.Printf("Failed to save model change to config: %v", err)
+		}
 	})
 	app.SetLoginSuccessCallback(func(providerName string) {
 		p, err := resolveProvider(cfg, authResolver)
