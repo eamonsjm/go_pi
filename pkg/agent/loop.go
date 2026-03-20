@@ -51,9 +51,8 @@ func NewAgentLoop(provider ai.Provider, toolRegistry *tools.Registry, opts ...Op
 	hooks := tools.NewHookRegistry()
 	// Register RTK command translator first (before compression)
 	hooks.Register(tools.NewRtkCommandTranslator())
-	// Register default compression hooks
-	hooks.Register(&tools.ANSIStripper{})
-	hooks.Register(&tools.Compressor{})
+	// Register language-specific compression filters and generic compressor
+	tools.RegisterDefaultHooks(hooks, tools.GlobalCompressionConfig)
 
 	a := &AgentLoop{
 		provider:         provider,
