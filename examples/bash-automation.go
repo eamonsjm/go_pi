@@ -33,14 +33,10 @@ func main() {
 
 	// Create a tool registry with the tools the AI can use
 	registry := tools.NewRegistry()
-	if err := registry.Register(
-		tools.NewReadTool(),
-		tools.NewBashTool(),
-		tools.NewGlobTool(),
-		tools.NewGrepTool(),
-	); err != nil {
-		log.Fatal(err)
-	}
+	registry.Register(&tools.ReadTool{})
+	registry.Register(&tools.BashTool{})
+	registry.Register(&tools.GlobTool{})
+	registry.Register(&tools.GrepTool{})
 
 	s, err := sdk.NewSession(
 		sdk.WithAPIKey("anthropic", apiKey),

@@ -31,7 +31,6 @@ import (
 
 	"github.com/ejm/go_pi/pkg/agent"
 	"github.com/ejm/go_pi/pkg/sdk"
-	"github.com/ejm/go_pi/pkg/session"
 )
 
 func main() {
@@ -51,12 +50,6 @@ func main() {
 	}
 	sessionDir := filepath.Join(home, ".gi", "sessions")
 
-	// Create a session manager for listing and loading
-	mgr, err := session.NewManager(sessionDir)
-	if err != nil {
-		log.Fatal(err)
-	}
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -68,31 +61,25 @@ func main() {
 		cancel()
 	}()
 
-	// Create or resume session
-	var s *sdk.Session
+	// Create a new session
+	fmt.Println("Creating new session...")
+	s, err := sdk.NewSession(
+		sdk.WithAPIKey("anthropic", apiKey),
+		sdk.WithSessionDir(sessionDir),
+		sdk.WithSystemPrompt("You are a helpful assistant for learning Go programming."),
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
 
+	// If a session ID was provided, resume that session instead
 	if sessionID != "" {
 		fmt.Printf("Resuming session %s...\n\n", sessionID)
-		// Load existing session
-		if err := mgr.LoadSession(sessionID); err != nil {
-			log.Printf("Warning: could not load session: %v\n", err)
+		if err := s.Resume(sessionID); err != nil {
+			log.Printf("Warning: could not resume session: %v\n", err)
 		}
-		s, err = sdk.NewSession(
-			sdk.WithAPIKey("anthropic", apiKey),
-			sdk.WithSessionDir(sessionDir),
-			sdk.WithSessionID(sessionID),
-		)
 	} else {
-		fmt.Println("Creating new session...")
-		s, err = sdk.NewSession(
-			sdk.WithAPIKey("anthropic", apiKey),
-			sdk.WithSessionDir(sessionDir),
-			sdk.WithSystemPrompt("You are a helpful assistant for learning Go programming."),
-		)
-		if err != nil {
-			log.Fatal(err)
-		}
-		fmt.Printf("Session ID: %s\n", s.ID())
+		fmt.Printf("Session ID: %s\n", s.SessionID())
 		fmt.Println("Save this ID to resume the conversation later.\n")
 	}
 
@@ -135,6 +122,6 @@ func main() {
 		}
 	}
 
-	fmt.Printf("\nSession %s saved. Resume with:\n", s.ID())
-	fmt.Printf("  go run ./examples/session-persistence %s\n", s.ID())
+	fmt.Printf("\nSession %s saved. Resume with:\n", s.SessionID())
+	fmt.Printf("  go run ./examples/session-persistence %s\n", s.SessionID())
 }
