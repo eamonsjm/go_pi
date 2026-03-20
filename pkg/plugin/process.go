@@ -64,10 +64,10 @@ func DefaultHeartbeatConfig() HeartbeatConfig {
 
 // PluginProcess manages a single plugin subprocess and its JSONL communication.
 type PluginProcess struct {
-	name     string
-	path     string
-	spawnCmd func() *exec.Cmd // creates the exec.Cmd for (re)spawning
-	cmd      *exec.Cmd
+	name         string
+	path         string
+	spawnCmd     func() *exec.Cmd // creates the exec.Cmd for (re)spawning
+	cmd          *exec.Cmd
 	stdin        io.WriteCloser
 	scanner      *bufio.Scanner
 	tools        []ToolDef
@@ -93,10 +93,10 @@ type PluginProcess struct {
 	restarting   bool           // true while restart is in progress
 
 	// Heartbeat fields.
-	heartbeatCh      chan PluginMessage // receives heartbeat_ack messages
-	healthy          bool              // true when last heartbeat succeeded or no heartbeat sent yet
-	lastHeartbeatAck time.Time         // time of last successful heartbeat ack
-	lastHeartbeatStatus *HeartbeatStatus // status from last ack
+	heartbeatCh         chan PluginMessage // receives heartbeat_ack messages
+	healthy             bool               // true when last heartbeat succeeded or no heartbeat sent yet
+	lastHeartbeatAck    time.Time          // time of last successful heartbeat ack
+	lastHeartbeatStatus *HeartbeatStatus   // status from last ack
 
 	// Per-plugin timeout configuration.
 	timeouts TimeoutConfig
@@ -109,7 +109,7 @@ type PluginProcess struct {
 	ctx        context.Context
 	cancel     context.CancelFunc
 	stopped    chan struct{} // closed when supervisor exits
-	stopErr    error        // error from the last process exit
+	stopErr    error         // error from the last process exit
 }
 
 // startPlugin spawns a plugin subprocess and sets up JSONL communication pipes.

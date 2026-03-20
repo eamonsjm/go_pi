@@ -644,7 +644,7 @@ type dummyTool struct {
 	name string
 }
 
-func (d *dummyTool) Name() string                                                   { return d.name }
-func (d *dummyTool) Description() string                                             { return "dummy" }
-func (d *dummyTool) Schema() any                                                     { return nil }
+func (d *dummyTool) Name() string                                                { return d.name }
+func (d *dummyTool) Description() string                                         { return "dummy" }
+func (d *dummyTool) Schema() any                                                 { return nil }
 func (d *dummyTool) Execute(_ context.Context, _ map[string]any) (string, error) { return "", nil }

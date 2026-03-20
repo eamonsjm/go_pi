@@ -359,9 +359,9 @@ func rtkExport(path string) tea.Cmd {
 
 		// Prepare export data
 		export := map[string]interface{}{
-			"total_tokens":   metrics.GetTotalTokens(),
-			"saved_tokens":   metrics.GetSavedTokens(),
-			"commands":       metrics.GetCommandMetrics(),
+			"total_tokens": metrics.GetTotalTokens(),
+			"saved_tokens": metrics.GetSavedTokens(),
+			"commands":     metrics.GetCommandMetrics(),
 		}
 
 		// Create parent directory if needed

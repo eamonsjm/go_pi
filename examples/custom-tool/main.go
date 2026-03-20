@@ -25,7 +25,7 @@ import (
 type WeatherTool struct{}
 
 func (w *WeatherTool) Name() string        { return "get_weather" }
-func (w *WeatherTool) Description() string  { return "Get current weather for a city" }
+func (w *WeatherTool) Description() string { return "Get current weather for a city" }
 func (w *WeatherTool) Schema() any {
 	return map[string]any{
 		"type": "object",

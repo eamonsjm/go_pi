@@ -49,4 +49,3 @@ type PluginInjectMsg struct {
 	IsLog      bool
 	LogLevel   string
 }
-

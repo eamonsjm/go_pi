@@ -11,11 +11,11 @@ import (
 
 // Footer renders a single-line status bar at the bottom of the terminal.
 type Footer struct {
-	width        int
-	cwd          string
-	usage        ai.Usage
-	contextPct   float64 // 0..100
-	maxContext   int     // max context tokens for the model
+	width      int
+	cwd        string
+	usage      ai.Usage
+	contextPct float64 // 0..100
+	maxContext int     // max context tokens for the model
 }
 
 // NewFooter creates a Footer, automatically capturing the current working

@@ -15,11 +15,11 @@ const (
 type ContentType string
 
 const (
-	ContentTypeText      ContentType = "text"
-	ContentTypeToolUse   ContentType = "tool_use"
+	ContentTypeText       ContentType = "text"
+	ContentTypeToolUse    ContentType = "tool_use"
 	ContentTypeToolResult ContentType = "tool_result"
-	ContentTypeThinking  ContentType = "thinking"
-	ContentTypeImage     ContentType = "image"
+	ContentTypeThinking   ContentType = "thinking"
+	ContentTypeImage      ContentType = "image"
 )
 
 // ContentBlock is a single piece of content within a message.
@@ -181,14 +181,14 @@ type StreamEvent struct {
 type StreamEventType string
 
 const (
-	EventMessageStart   StreamEventType = "message_start"
-	EventTextDelta      StreamEventType = "text_delta"
-	EventThinkingDelta  StreamEventType = "thinking_delta"
-	EventToolUseStart   StreamEventType = "tool_use_start"
-	EventToolUseDelta   StreamEventType = "tool_use_delta"
-	EventToolUseEnd     StreamEventType = "tool_use_end"
-	EventMessageEnd     StreamEventType = "message_end"
-	EventError          StreamEventType = "error"
+	EventMessageStart  StreamEventType = "message_start"
+	EventTextDelta     StreamEventType = "text_delta"
+	EventThinkingDelta StreamEventType = "thinking_delta"
+	EventToolUseStart  StreamEventType = "tool_use_start"
+	EventToolUseDelta  StreamEventType = "tool_use_delta"
+	EventToolUseEnd    StreamEventType = "tool_use_end"
+	EventMessageEnd    StreamEventType = "message_end"
+	EventError         StreamEventType = "error"
 )
 
 // Usage tracks token usage.

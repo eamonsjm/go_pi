@@ -756,7 +756,7 @@ func TestAutoCompactPreservesRecentMessages(t *testing.T) {
 		WithReserveTokens(100),
 		WithKeepRecentTokens(200),
 		WithMessages([]ai.Message{
-			ai.NewTextMessage(ai.RoleUser, strings.Repeat("old ", 300)),     // ~1200 chars
+			ai.NewTextMessage(ai.RoleUser, strings.Repeat("old ", 300)),       // ~1200 chars
 			ai.NewTextMessage(ai.RoleAssistant, strings.Repeat("resp ", 300)), // ~1500 chars
 			ai.NewTextMessage(ai.RoleUser, "recent question"),
 			ai.NewTextMessage(ai.RoleAssistant, "recent answer"),
@@ -862,7 +862,7 @@ func TestEstimateMessageChars(t *testing.T) {
 		Role: ai.RoleAssistant,
 		Content: []ai.ContentBlock{
 			{Type: ai.ContentTypeText, Text: "hello world"}, // 11 chars
-			{Type: ai.ContentTypeToolUse, ToolName: "read"},  // 4 + 50 = 54 chars
+			{Type: ai.ContentTypeToolUse, ToolName: "read"}, // 4 + 50 = 54 chars
 		},
 	}
 	chars := estimateMessageChars(msg)
@@ -1049,4 +1049,3 @@ func TestAutoCompactOptionsApplied(t *testing.T) {
 		t.Errorf("expected keepRecentTokens 2000, got %d", a.keepRecentTokens)
 	}
 }
-

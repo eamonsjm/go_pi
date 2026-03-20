@@ -443,7 +443,7 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 				"  /login openai             — OAuth login (ChatGPT Plus/Pro)\n"+
 				"  export ANTHROPIC_API_KEY=sk-...  — API key\n"+
 				"  export OPENAI_API_KEY=sk-...     — OpenAI key\n"+
-			"  export GEMINI_API_KEY=...        — Gemini key\n\n"+
+				"  export GEMINI_API_KEY=...        — Gemini key\n\n"+
 				"Or save to ~/.gi/auth.json.\n"+
 				"Use /auth to check status. (%v)", providerErr))
 	}

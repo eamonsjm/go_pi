@@ -90,10 +90,10 @@ type oaiStreamOpt struct {
 }
 
 type oaiMessage struct {
-	Role       string          `json:"role"`
-	Content    any             `json:"content,omitempty"`     // string, []oaiContentPart, or nil
-	ToolCalls  []oaiToolCall   `json:"tool_calls,omitempty"`
-	ToolCallID string          `json:"tool_call_id,omitempty"`
+	Role       string        `json:"role"`
+	Content    any           `json:"content,omitempty"` // string, []oaiContentPart, or nil
+	ToolCalls  []oaiToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string        `json:"tool_call_id,omitempty"`
 }
 
 // oaiContentPart represents a content part in OpenAI's multi-modal message format.
@@ -120,8 +120,8 @@ type oaiToolFunction struct {
 }
 
 type oaiTool struct {
-	Type     string          `json:"type"`
-	Function oaiToolFuncDef  `json:"function"`
+	Type     string         `json:"type"`
+	Function oaiToolFuncDef `json:"function"`
 }
 
 type oaiToolFuncDef struct {
@@ -282,9 +282,9 @@ type oaiChoice struct {
 }
 
 type oaiDelta struct {
-	Role      string              `json:"role,omitempty"`
-	Content   *string             `json:"content,omitempty"`
-	ToolCalls []oaiDeltaToolCall  `json:"tool_calls,omitempty"`
+	Role      string             `json:"role,omitempty"`
+	Content   *string            `json:"content,omitempty"`
+	ToolCalls []oaiDeltaToolCall `json:"tool_calls,omitempty"`
 }
 
 type oaiDeltaToolCall struct {

@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/ejm/go_pi/pkg/ai"
 	"github.com/ejm/go_pi/pkg/agent"
+	"github.com/ejm/go_pi/pkg/ai"
 	"github.com/ejm/go_pi/pkg/tools"
 )
 

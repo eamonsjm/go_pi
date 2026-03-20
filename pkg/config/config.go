@@ -9,11 +9,11 @@ import (
 
 // RTKConfig holds RTK-specific settings.
 type RTKConfig struct {
-	Enabled               bool              `json:"enabled"`
-	MetricsEnabled        bool              `json:"metrics_enabled"`
-	CompressionLevels     map[string]string `json:"compression_levels"` // category -> level (low/medium/high)
-	EnabledCategories     map[string]bool   `json:"enabled_categories"`
-	ExportPath            string            `json:"export_path"`
+	Enabled           bool              `json:"enabled"`
+	MetricsEnabled    bool              `json:"metrics_enabled"`
+	CompressionLevels map[string]string `json:"compression_levels"` // category -> level (low/medium/high)
+	EnabledCategories map[string]bool   `json:"enabled_categories"`
+	ExportPath        string            `json:"export_path"`
 }
 
 // Config holds all gi settings.
@@ -65,11 +65,11 @@ func DefaultConfig() *Config {
 // defaultCompressionLevels returns default compression settings.
 func defaultCompressionLevels() map[string]string {
 	return map[string]string{
-		"go-test":   "medium",
-		"go-build":  "high",
-		"git-log":   "medium",
-		"linter":    "medium",
-		"generic":   "low",
+		"go-test":  "medium",
+		"go-build": "high",
+		"git-log":  "medium",
+		"linter":   "medium",
+		"generic":  "low",
 	}
 }
 

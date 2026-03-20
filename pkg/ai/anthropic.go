@@ -103,8 +103,8 @@ func (p *AnthropicProvider) Stream(ctx context.Context, req StreamRequest) (<-ch
 		if p.useBearer {
 			httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
 			httpReq.Header.Set("anthropic-beta", "claude-code-20250219,oauth-2025-04-20")
-		httpReq.Header.Set("user-agent", "claude-cli/2.1.75")
-		httpReq.Header.Set("x-app", "cli")
+			httpReq.Header.Set("user-agent", "claude-cli/2.1.75")
+			httpReq.Header.Set("x-app", "cli")
 		} else {
 			httpReq.Header.Set("x-api-key", p.apiKey)
 		}
@@ -174,15 +174,15 @@ func parseHTTPError(statusCode int, header http.Header, body []byte) *APIError {
 
 // anthRequestBody is the JSON body sent to the Anthropic Messages API.
 type anthRequestBody struct {
-	Model         string             `json:"model"`
-	MaxTokens     int                `json:"max_tokens"`
-	Stream        bool               `json:"stream"`
-	System        []anthSystemBlock  `json:"system,omitempty"`
-	Messages      []anthMessage      `json:"messages"`
-	Tools         []anthTool         `json:"tools,omitempty"`
-	Thinking      *anthThinking      `json:"thinking,omitempty"`
-	Temperature   *float64           `json:"temperature,omitempty"`
-	StopSequences []string           `json:"stop_sequences,omitempty"`
+	Model         string            `json:"model"`
+	MaxTokens     int               `json:"max_tokens"`
+	Stream        bool              `json:"stream"`
+	System        []anthSystemBlock `json:"system,omitempty"`
+	Messages      []anthMessage     `json:"messages"`
+	Tools         []anthTool        `json:"tools,omitempty"`
+	Thinking      *anthThinking     `json:"thinking,omitempty"`
+	Temperature   *float64          `json:"temperature,omitempty"`
+	StopSequences []string          `json:"stop_sequences,omitempty"`
 }
 
 type anthSystemBlock struct {
@@ -395,10 +395,10 @@ type anthContentBlockStartData struct {
 type anthContentBlockDeltaData struct {
 	Index int `json:"index"`
 	Delta struct {
-		Type         string `json:"type"`
-		Text         string `json:"text,omitempty"`
-		Thinking     string `json:"thinking,omitempty"`
-		PartialJSON  string `json:"partial_json,omitempty"`
+		Type        string `json:"type"`
+		Text        string `json:"text,omitempty"`
+		Thinking    string `json:"thinking,omitempty"`
+		PartialJSON string `json:"partial_json,omitempty"`
 	} `json:"delta"`
 }
 

@@ -109,4 +109,3 @@ func TestHeader_View_ContainsGi(t *testing.T) {
 		t.Errorf("expected View to contain app name 'gi', got %q", stripped)
 	}
 }
-

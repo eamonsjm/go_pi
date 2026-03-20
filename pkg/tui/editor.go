@@ -21,8 +21,8 @@ type killDirection int
 
 const (
 	killNone     killDirection = iota
-	killForward               // Ctrl+K, Alt+D
-	killBackward              // Ctrl+U, Ctrl+W
+	killForward                // Ctrl+K, Alt+D
+	killBackward               // Ctrl+U, Ctrl+W
 )
 
 type killRing struct {

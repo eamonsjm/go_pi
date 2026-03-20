@@ -243,8 +243,8 @@ type ctxBlockingTool struct {
 }
 
 func (t *ctxBlockingTool) Name() string        { return t.name }
-func (t *ctxBlockingTool) Description() string  { return "blocks until cancelled" }
-func (t *ctxBlockingTool) Schema() any          { return nil }
+func (t *ctxBlockingTool) Description() string { return "blocks until cancelled" }
+func (t *ctxBlockingTool) Schema() any         { return nil }
 func (t *ctxBlockingTool) Execute(ctx context.Context, _ map[string]any) (string, error) {
 	<-ctx.Done()
 	return "", ctx.Err()

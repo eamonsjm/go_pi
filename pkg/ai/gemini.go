@@ -97,10 +97,10 @@ func (p *GeminiProvider) Stream(ctx context.Context, req StreamRequest) (<-chan 
 // -- Request construction --
 
 type gemRequestBody struct {
-	Contents         []gemContent      `json:"contents"`
-	SystemInstruction *gemContent      `json:"systemInstruction,omitempty"`
-	Tools            []gemToolSet      `json:"tools,omitempty"`
-	GenerationConfig *gemGenConfig     `json:"generationConfig,omitempty"`
+	Contents          []gemContent  `json:"contents"`
+	SystemInstruction *gemContent   `json:"systemInstruction,omitempty"`
+	Tools             []gemToolSet  `json:"tools,omitempty"`
+	GenerationConfig  *gemGenConfig `json:"generationConfig,omitempty"`
 }
 
 type gemContent struct {
@@ -109,10 +109,10 @@ type gemContent struct {
 }
 
 type gemPart struct {
-	Text             string            `json:"text,omitempty"`
-	InlineData       *gemInlineData    `json:"inlineData,omitempty"`
-	FunctionCall     *gemFunctionCall  `json:"functionCall,omitempty"`
-	FunctionResponse *gemFuncResponse  `json:"functionResponse,omitempty"`
+	Text             string           `json:"text,omitempty"`
+	InlineData       *gemInlineData   `json:"inlineData,omitempty"`
+	FunctionCall     *gemFunctionCall `json:"functionCall,omitempty"`
+	FunctionResponse *gemFuncResponse `json:"functionResponse,omitempty"`
 }
 
 // gemInlineData represents inline binary data (images) in Gemini's format.
@@ -142,10 +142,10 @@ type gemFuncDecl struct {
 }
 
 type gemGenConfig struct {
-	MaxOutputTokens int              `json:"maxOutputTokens,omitempty"`
-	Temperature     *float64         `json:"temperature,omitempty"`
-	StopSequences   []string         `json:"stopSequences,omitempty"`
-	ThinkingConfig  *gemThinkConfig  `json:"thinkingConfig,omitempty"`
+	MaxOutputTokens int             `json:"maxOutputTokens,omitempty"`
+	Temperature     *float64        `json:"temperature,omitempty"`
+	StopSequences   []string        `json:"stopSequences,omitempty"`
+	ThinkingConfig  *gemThinkConfig `json:"thinkingConfig,omitempty"`
 }
 
 type gemThinkConfig struct {

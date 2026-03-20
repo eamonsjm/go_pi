@@ -749,4 +749,3 @@ func truncateLines(text string, n int) string {
 	}
 	return strings.Join(lines[:n], "\n")
 }
-

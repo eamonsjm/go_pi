@@ -240,10 +240,10 @@ func (t *RtkCommandTranslator) detectRtkBinary() bool {
 // makeCommandMapping returns a map of native commands to rtk equivalents.
 func makeCommandMapping() map[string]string {
 	return map[string]string{
-		"git": "rtk git",
-		"go":  "rtk go",
-		"cargo": "rtk cargo",
-		"npm": "rtk npm",
+		"git":    "rtk git",
+		"go":     "rtk go",
+		"cargo":  "rtk cargo",
+		"npm":    "rtk npm",
 		"docker": "rtk docker",
 	}
 }

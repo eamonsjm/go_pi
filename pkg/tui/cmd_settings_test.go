@@ -299,4 +299,3 @@ func TestSettingsDisplay_ShowsCurrentValues(t *testing.T) {
 		}
 	}
 }
-

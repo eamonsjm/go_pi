@@ -13,14 +13,14 @@ import (
 
 // HostMessage is a message sent from the host to a plugin over stdin.
 type HostMessage struct {
-	Type      string         `json:"type"`
-	ID        string         `json:"id,omitempty"`
-	Name      string         `json:"name,omitempty"`
-	Params    map[string]any `json:"params,omitempty"`
-	Args      string         `json:"args,omitempty"`
-	Config    *PluginConfig  `json:"config,omitempty"`
-	Event     *EventPayload  `json:"event,omitempty"`
-	UIResponse *UIResponse   `json:"ui_response,omitempty"` // response to ui_request
+	Type       string         `json:"type"`
+	ID         string         `json:"id,omitempty"`
+	Name       string         `json:"name,omitempty"`
+	Params     map[string]any `json:"params,omitempty"`
+	Args       string         `json:"args,omitempty"`
+	Config     *PluginConfig  `json:"config,omitempty"`
+	Event      *EventPayload  `json:"event,omitempty"`
+	UIResponse *UIResponse    `json:"ui_response,omitempty"` // response to ui_request
 }
 
 // PluginConfig is the configuration sent to a plugin during initialization.
@@ -54,24 +54,24 @@ type UIResponse struct {
 
 // PluginMessage is a message sent from a plugin to the host over stdout.
 type PluginMessage struct {
-	Type     string       `json:"type"`
-	ID       string       `json:"id,omitempty"`
-	Content  string       `json:"content,omitempty"`
-	Text     string       `json:"text,omitempty"`
-	IsError  bool         `json:"is_error,omitempty"`
-	Tools    []ToolDef    `json:"tools,omitempty"`
-	Commands []CommandDef `json:"commands,omitempty"`
-	Role     string       `json:"role,omitempty"`
-	Level    string       `json:"level,omitempty"`
-	Message  string       `json:"message,omitempty"`
+	Type     string           `json:"type"`
+	ID       string           `json:"id,omitempty"`
+	Content  string           `json:"content,omitempty"`
+	Text     string           `json:"text,omitempty"`
+	IsError  bool             `json:"is_error,omitempty"`
+	Tools    []ToolDef        `json:"tools,omitempty"`
+	Commands []CommandDef     `json:"commands,omitempty"`
+	Role     string           `json:"role,omitempty"`
+	Level    string           `json:"level,omitempty"`
+	Message  string           `json:"message,omitempty"`
 	Status   *HeartbeatStatus `json:"status,omitempty"`
 	// UI request fields (type: ui_request)
-	UIType       string   `json:"ui_type,omitempty"` // 'select' | 'confirm' | 'input' | 'editor' | 'notify'
-	UITitle      string   `json:"ui_title,omitempty"`
-	UIOptions    []string `json:"ui_options,omitempty"` // for select dialog
-	UIDefault    string   `json:"ui_default,omitempty"` // for input/editor
-	UIValue      string   `json:"ui_value,omitempty"`   // for ui_response
-	UINotifyLevel string `json:"ui_notify_level,omitempty"` // 'info' | 'warning' | 'error' for notify
+	UIType        string   `json:"ui_type,omitempty"` // 'select' | 'confirm' | 'input' | 'editor' | 'notify'
+	UITitle       string   `json:"ui_title,omitempty"`
+	UIOptions     []string `json:"ui_options,omitempty"`      // for select dialog
+	UIDefault     string   `json:"ui_default,omitempty"`      // for input/editor
+	UIValue       string   `json:"ui_value,omitempty"`        // for ui_response
+	UINotifyLevel string   `json:"ui_notify_level,omitempty"` // 'info' | 'warning' | 'error' for notify
 }
 
 // HeartbeatStatus carries plugin health metrics returned in a heartbeat_ack.

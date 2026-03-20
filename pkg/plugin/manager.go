@@ -23,7 +23,7 @@ type Manager struct {
 	heartbeatCfg *HeartbeatConfig // if set, enables periodic heartbeats
 
 	heartbeatCancel context.CancelFunc // cancels the heartbeat goroutine
-	heartbeatDone   chan struct{}       // closed when heartbeat goroutine exits
+	heartbeatDone   chan struct{}      // closed when heartbeat goroutine exits
 }
 
 // NewManager creates a new plugin manager. The tool registry is used to register

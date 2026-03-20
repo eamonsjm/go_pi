@@ -221,7 +221,7 @@ func TestSessionSetters(t *testing.T) {
 
 func TestResolveProviderDefaults(t *testing.T) {
 	tests := []struct {
-		provider string
+		provider  string
 		wantModel string
 	}{
 		{"anthropic", "claude-sonnet-4-20250514"},

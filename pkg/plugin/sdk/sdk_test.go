@@ -14,8 +14,8 @@ import (
 func pipePlugin(t *testing.T, p *Plugin) (send func(hostMessage), recv func() pluginMessage, done chan struct{}) {
 	t.Helper()
 
-	pr, pw := io.Pipe()  // host writes -> plugin reads (stdin)
-	rr, rw := io.Pipe()  // plugin writes -> host reads (stdout)
+	pr, pw := io.Pipe() // host writes -> plugin reads (stdin)
+	rr, rw := io.Pipe() // plugin writes -> host reads (stdout)
 	done = make(chan struct{})
 
 	// Run the message loop in a goroutine using internal types directly.

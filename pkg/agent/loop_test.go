@@ -76,9 +76,9 @@ type mockTool struct {
 	err    error
 }
 
-func (t *mockTool) Name() string                                                  { return t.name }
-func (t *mockTool) Description() string                                           { return "mock tool" }
-func (t *mockTool) Schema() any                                                   { return nil }
+func (t *mockTool) Name() string        { return t.name }
+func (t *mockTool) Description() string { return "mock tool" }
+func (t *mockTool) Schema() any         { return nil }
 func (t *mockTool) Execute(_ context.Context, _ map[string]any) (string, error) {
 	if t.err != nil {
 		return "", t.err
@@ -447,8 +447,8 @@ type callbackTool struct {
 }
 
 func (t *callbackTool) Name() string        { return t.name }
-func (t *callbackTool) Description() string  { return "callback tool" }
-func (t *callbackTool) Schema() any          { return nil }
+func (t *callbackTool) Description() string { return "callback tool" }
+func (t *callbackTool) Schema() any         { return nil }
 func (t *callbackTool) Execute(_ context.Context, _ map[string]any) (string, error) {
 	return t.fn()
 }
@@ -897,8 +897,8 @@ type mockRichTool struct {
 }
 
 func (t *mockRichTool) Name() string        { return t.name }
-func (t *mockRichTool) Description() string  { return "mock rich tool" }
-func (t *mockRichTool) Schema() any          { return nil }
+func (t *mockRichTool) Description() string { return "mock rich tool" }
+func (t *mockRichTool) Schema() any         { return nil }
 func (t *mockRichTool) Execute(_ context.Context, _ map[string]any) (string, error) {
 	return "fallback", nil
 }
