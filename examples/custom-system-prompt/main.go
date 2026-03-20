@@ -98,7 +98,9 @@ func calculateTotal(items []Item) float64 {
 	newPrompt := `You are now a Python expert. Rewrite the above code in Python.`
 	s.SetSystemPrompt(newPrompt)
 
-	fmt.Println("\n--- After changing system prompt ---\n")
+	fmt.Println()
+	fmt.Println("--- After changing system prompt ---")
+	fmt.Println()
 
 	events = s.Events()
 	errCh = make(chan error, 1)

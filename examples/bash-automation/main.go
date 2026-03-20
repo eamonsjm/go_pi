@@ -100,7 +100,8 @@ When asked to perform tasks, use the available tools to:
 				fmt.Fprintf(os.Stderr, "\nError: %v\n", event.Error)
 			}
 		}
-		fmt.Println("\n---")
+		fmt.Println()
+		fmt.Println("---")
 
 		if err := <-errCh; err != nil {
 			log.Printf("Error: %v\n", err)

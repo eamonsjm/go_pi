@@ -80,7 +80,7 @@ func main() {
 		}
 	} else {
 		fmt.Printf("Session ID: %s\n", s.SessionID())
-		fmt.Println("Save this ID to resume the conversation later.\n")
+		fmt.Println("Save this ID to resume the conversation later.")
 	}
 
 	if err != nil {
@@ -115,7 +115,7 @@ func main() {
 				fmt.Fprintf(os.Stderr, "\nError: %v\n", event.Error)
 			}
 		}
-		fmt.Println("\n")
+		fmt.Println()
 
 		if err := <-errCh; err != nil {
 			log.Printf("Error: %v\n", err)

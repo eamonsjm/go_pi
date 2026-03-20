@@ -116,5 +116,6 @@ func main() {
 		runModelComparison(ctx, "openai", "gpt-4-turbo", prompt)
 	}
 
-	fmt.Println("\n--- Comparison complete ---")
+	fmt.Println()
+	fmt.Println("--- Comparison complete ---")
 }
