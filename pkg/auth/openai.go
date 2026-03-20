@@ -129,8 +129,12 @@ func (o *OpenAIOAuth) Login(cb OAuthCallbacks) (*Credential, error) {
 	})
 
 	server := &http.Server{Handler: mux}
-	go server.Serve(listener)
-	defer server.Shutdown(context.Background())
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	defer func() {
+		_ = server.Shutdown(context.Background())
+	}()
 
 	select {
 	case result := <-resultCh:
@@ -208,7 +212,7 @@ func (o *OpenAIOAuth) RefreshToken(cred *Credential) (*Credential, error) {
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
 		var errResp tokenErrorResponse
-		json.Unmarshal(body, &errResp)
+		_ = json.Unmarshal(body, &errResp)
 		return nil, fmt.Errorf("refresh failed (%d): %s",
 			resp.StatusCode, errResp.ErrorDescription)
 	}

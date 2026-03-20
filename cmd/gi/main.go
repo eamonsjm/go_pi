@@ -116,24 +116,14 @@ func main() {
 	tools.RegisterDefaults(registry)
 
 	pluginMgr := plugin.NewManager(registry)
-	home, err := os.UserHomeDir()
-	if err != nil {
-		log.Printf("Warning: could not determine home directory: %v", err)
-		home = ""
+	home, _ := os.UserHomeDir()
+	cwd, _ := os.Getwd()
+	if err := pluginMgr.Discover([]string{
+		filepath.Join(home, ".gi", "plugins"),
+		filepath.Join(cwd, ".gi", "plugins"),
+	}); err != nil {
+		log.Printf("Failed to discover plugins: %v", err)
 	}
-	cwd, err := os.Getwd()
-	if err != nil {
-		log.Printf("Warning: could not determine current directory: %v", err)
-		cwd = ""
-	}
-	var pluginPaths []string
-	if home != "" {
-		pluginPaths = append(pluginPaths, filepath.Join(home, ".gi", "plugins"))
-	}
-	if cwd != "" {
-		pluginPaths = append(pluginPaths, filepath.Join(cwd, ".gi", "plugins"))
-	}
-	pluginMgr.Discover(pluginPaths)
 	if *pluginFlag != "" {
 		for _, p := range strings.Split(*pluginFlag, ",") {
 			p = strings.TrimSpace(p)
@@ -145,13 +135,19 @@ func main() {
 			}
 		}
 	}
-	pluginMgr.Initialize(plugin.PluginConfig{
+	if err := pluginMgr.Initialize(plugin.PluginConfig{
 		Cwd:       cwd,
 		Model:     cfg.DefaultModel,
 		Provider:  cfg.DefaultProvider,
 		GiVersion: "0.1.0",
-	})
-	defer pluginMgr.Shutdown()
+	}); err != nil {
+		log.Printf("Failed to initialize plugins: %v", err)
+	}
+	defer func() {
+		if err := pluginMgr.Shutdown(); err != nil {
+			log.Printf("Failed to shutdown plugins: %v", err)
+		}
+	}()
 
 	sessionDir := cfg.SessionDir
 	if sessionDir == "" {
@@ -555,7 +551,9 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 			go func() {
 				// Save user message to session
 				msg := ai.NewTextMessage(ai.RoleUser, text)
-				sessionMgr.SaveMessage(msg)
+				if err := sessionMgr.SaveMessage(msg); err != nil {
+					log.Printf("Failed to save user message: %v", err)
+				}
 
 				// Run agent
 				events := agentLoop.Events()
@@ -571,7 +569,9 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 
 					// Save assistant and tool_result messages to session
 					if (event.Type == agent.EventTurnEnd || event.Type == agent.EventToolResult) && event.Message != nil {
-						sessionMgr.SaveMessage(*event.Message)
+						if err := sessionMgr.SaveMessage(*event.Message); err != nil {
+							log.Printf("Failed to save message: %v", err)
+						}
 					}
 				}
 			}()

@@ -31,7 +31,7 @@ func (s *Store) Lock() error {
 // Unlock releases the file lock acquired by Lock. Safe to call if not locked.
 func (s *Store) Unlock() {
 	if s.lockFile != nil {
-		syscall.Flock(int(s.lockFile.Fd()), syscall.LOCK_UN)
+		_ = syscall.Flock(int(s.lockFile.Fd()), syscall.LOCK_UN)
 		s.lockFile.Close()
 		s.lockFile = nil
 	}

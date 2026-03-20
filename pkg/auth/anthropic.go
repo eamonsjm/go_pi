@@ -230,7 +230,7 @@ func (a *AnthropicOAuth) RefreshToken(cred *Credential) (*Credential, error) {
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
 		var errResp tokenErrorResponse
-		json.Unmarshal(body, &errResp)
+		_ = json.Unmarshal(body, &errResp)
 		return nil, fmt.Errorf("refresh failed (%d): %s",
 			resp.StatusCode, errResp.ErrorDescription)
 	}

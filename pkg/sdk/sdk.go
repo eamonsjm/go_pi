@@ -252,7 +252,9 @@ func (s *Session) Prompt(ctx context.Context, text string) error {
 	beforeCount := len(s.loop.Messages())
 
 	// Persist user message.
-	s.sessionMgr.SaveMessage(ai.NewTextMessage(ai.RoleUser, text))
+	if err := s.sessionMgr.SaveMessage(ai.NewTextMessage(ai.RoleUser, text)); err != nil {
+		return err
+	}
 
 	err := s.loop.Prompt(ctx, text)
 
@@ -261,7 +263,9 @@ func (s *Session) Prompt(ctx context.Context, text string) error {
 	// it by starting from beforeCount+1.
 	allMsgs := s.loop.Messages()
 	for i := beforeCount + 1; i < len(allMsgs); i++ {
-		s.sessionMgr.SaveMessage(allMsgs[i])
+		if err := s.sessionMgr.SaveMessage(allMsgs[i]); err != nil {
+			return err
+		}
 	}
 
 	return err
