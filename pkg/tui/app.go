@@ -395,6 +395,33 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, cmd.Execute(msg.args)
 
+	case editorShellResultMsg:
+		if msg.errorMsg != "" {
+			a.chat.AddSystemMessage(fmt.Sprintf("Error executing command: %s", msg.errorMsg))
+			return a, nil
+		}
+
+		// Display the command output as a system message.
+		outputDisplay := msg.output
+		if outputDisplay == "" {
+			outputDisplay = "(no output)"
+		}
+		a.chat.AddSystemMessage(fmt.Sprintf("$ %s\n%s", msg.command, outputDisplay))
+
+		// If sendToAI is true, submit the command result to the agent.
+		if msg.sendToAI {
+			fullMessage := fmt.Sprintf("!%s\n\nOutput:\n%s", msg.command, msg.output)
+			a.chat.AddUserMessage(fullMessage)
+			a.agentRunning = true
+			a.editor.SetState(editorRunning)
+			if a.onSubmit != nil {
+				a.onSubmit(fullMessage)
+			}
+			return a, tickRender()
+		}
+
+		return a, nil
+
 	case CommandResultMsg:
 		if msg.IsError {
 			a.chat.AddSystemMessage("Error: " + msg.Text)

@@ -1,7 +1,10 @@
 package tui
 
 import (
+	"bytes"
 	"fmt"
+	"os"
+	"os/exec"
 	"strings"
 	"unicode"
 
@@ -350,6 +353,67 @@ type editorCancelMsg struct{}
 // editorQuitMsg is sent when the user double-presses Ctrl-C while idle.
 type editorQuitMsg struct{}
 
+// editorShellResultMsg is sent when a shell command execution completes.
+type editorShellResultMsg struct {
+	command   string // The original command (without ! or !!)
+	output    string // Command output
+	sendToAI  bool   // true for !, false for !!
+	errorMsg  string // Non-empty if command failed
+}
+
+// executeShellCommand runs a shell command and returns output and any error.
+// It handles both ! (sendToAI=true) and !! (sendToAI=false) commands.
+func executeShellCommand(fullText string) tea.Cmd {
+	return func() tea.Msg {
+		// Detect ! or !! prefix
+		sendToAI := false
+		command := ""
+
+		if strings.HasPrefix(fullText, "!!") {
+			sendToAI = false
+			command = strings.TrimPrefix(fullText, "!!")
+		} else if strings.HasPrefix(fullText, "!") {
+			sendToAI = true
+			command = strings.TrimPrefix(fullText, "!")
+		}
+
+		command = strings.TrimSpace(command)
+		if command == "" {
+			return editorShellResultMsg{
+				command:  "",
+				sendToAI: sendToAI,
+				errorMsg: "no command provided",
+			}
+		}
+
+		// Execute command using /bin/sh (more portable than /bin/bash)
+		var buf bytes.Buffer
+		cmd := exec.Command("/bin/sh", "-c", command)
+		cmd.Stdout = &buf
+		cmd.Stderr = &buf
+		cmd.Stdin = os.Stdin
+
+		err := cmd.Run()
+		output := buf.String()
+
+		if err != nil {
+			return editorShellResultMsg{
+				command:  command,
+				output:   output,
+				sendToAI: sendToAI,
+				errorMsg: err.Error(),
+			}
+		}
+
+		return editorShellResultMsg{
+			command:  command,
+			output:   output,
+			sendToAI: sendToAI,
+			errorMsg: "",
+		}
+	}
+}
+
 func (e *Editor) Update(msg tea.Msg) tea.Cmd {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
@@ -413,6 +477,14 @@ func (e *Editor) Update(msg tea.Msg) tea.Cmd {
 			e.draft = ""
 			e.textarea.Reset()
 			e.ctrlCCount = 0
+
+			// Handle shell commands (! and !! prefix)
+			if strings.HasPrefix(text, "!") && !strings.HasPrefix(text, "//") {
+				// Detect !! (local only) or ! (send to AI)
+				if strings.HasPrefix(text, "!!") || strings.HasPrefix(text, "!") {
+					return executeShellCommand(text)
+				}
+			}
 
 			if strings.HasPrefix(text, "/") {
 				name, args := parseSlashCommand(text)

@@ -955,3 +955,129 @@ func TestIsEditingKey(t *testing.T) {
 		t.Error("Ctrl+K should be an editing key")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Shell command execution
+// ---------------------------------------------------------------------------
+
+func TestExecuteShellCommand_BangCommand(t *testing.T) {
+	cmd := executeShellCommand("!echo hello")
+	if cmd == nil {
+		t.Fatal("executeShellCommand should return a command")
+	}
+	msg := cmd()
+	shellMsg, ok := msg.(editorShellResultMsg)
+	if !ok {
+		t.Fatalf("expected editorShellResultMsg, got %T", msg)
+	}
+	if shellMsg.sendToAI != true {
+		t.Errorf("expected sendToAI=true for ! command, got %v", shellMsg.sendToAI)
+	}
+	if shellMsg.command != "echo hello" {
+		t.Errorf("expected command 'echo hello', got %q", shellMsg.command)
+	}
+	if shellMsg.errorMsg != "" {
+		t.Errorf("expected no error, got %q", shellMsg.errorMsg)
+	}
+	if !strings.Contains(shellMsg.output, "hello") {
+		t.Errorf("expected output containing 'hello', got %q", shellMsg.output)
+	}
+}
+
+func TestExecuteShellCommand_DoubleBangCommand(t *testing.T) {
+	cmd := executeShellCommand("!!echo world")
+	if cmd == nil {
+		t.Fatal("executeShellCommand should return a command")
+	}
+	msg := cmd()
+	shellMsg, ok := msg.(editorShellResultMsg)
+	if !ok {
+		t.Fatalf("expected editorShellResultMsg, got %T", msg)
+	}
+	if shellMsg.sendToAI != false {
+		t.Errorf("expected sendToAI=false for !! command, got %v", shellMsg.sendToAI)
+	}
+	if shellMsg.command != "echo world" {
+		t.Errorf("expected command 'echo world', got %q", shellMsg.command)
+	}
+	if shellMsg.errorMsg != "" {
+		t.Errorf("expected no error, got %q", shellMsg.errorMsg)
+	}
+	if !strings.Contains(shellMsg.output, "world") {
+		t.Errorf("expected output containing 'world', got %q", shellMsg.output)
+	}
+}
+
+func TestExecuteShellCommand_NoCommand(t *testing.T) {
+	cmd := executeShellCommand("!   ")
+	if cmd == nil {
+		t.Fatal("executeShellCommand should return a command")
+	}
+	msg := cmd()
+	shellMsg, ok := msg.(editorShellResultMsg)
+	if !ok {
+		t.Fatalf("expected editorShellResultMsg, got %T", msg)
+	}
+	if shellMsg.errorMsg == "" {
+		t.Error("expected error for empty command")
+	}
+}
+
+func TestExecuteShellCommand_FailedCommand(t *testing.T) {
+	cmd := executeShellCommand("!false")
+	if cmd == nil {
+		t.Fatal("executeShellCommand should return a command")
+	}
+	msg := cmd()
+	shellMsg, ok := msg.(editorShellResultMsg)
+	if !ok {
+		t.Fatalf("expected editorShellResultMsg, got %T", msg)
+	}
+	if shellMsg.errorMsg == "" {
+		t.Error("expected error for failed command")
+	}
+}
+
+func TestEditor_Update_ShellCommand_Bang(t *testing.T) {
+	e := NewEditor()
+	e.state = editorIdle
+	e.textarea.SetValue("!echo test")
+
+	cmd := e.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("shell command should return a command")
+	}
+	msg := cmd()
+	shellMsg, ok := msg.(editorShellResultMsg)
+	if !ok {
+		t.Fatalf("expected editorShellResultMsg, got %T", msg)
+	}
+	if shellMsg.sendToAI != true {
+		t.Errorf("expected sendToAI=true, got %v", shellMsg.sendToAI)
+	}
+	if !strings.Contains(shellMsg.output, "test") {
+		t.Errorf("expected output containing 'test', got %q", shellMsg.output)
+	}
+}
+
+func TestEditor_Update_ShellCommand_DoubleBang(t *testing.T) {
+	e := NewEditor()
+	e.state = editorIdle
+	e.textarea.SetValue("!!echo local")
+
+	cmd := e.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("shell command should return a command")
+	}
+	msg := cmd()
+	shellMsg, ok := msg.(editorShellResultMsg)
+	if !ok {
+		t.Fatalf("expected editorShellResultMsg, got %T", msg)
+	}
+	if shellMsg.sendToAI != false {
+		t.Errorf("expected sendToAI=false, got %v", shellMsg.sendToAI)
+	}
+	if !strings.Contains(shellMsg.output, "local") {
+		t.Errorf("expected output containing 'local', got %q", shellMsg.output)
+	}
+}
