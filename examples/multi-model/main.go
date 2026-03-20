@@ -101,7 +101,7 @@ func main() {
 
 	prompt := "What are the three most important principles of clean code?"
 
-	fmt.Println("Comparing different AI models and providers on the same prompt:\n")
+	fmt.Println("Comparing different AI models and providers on the same prompt:")
 	fmt.Printf("Prompt: %q\n", prompt)
 
 	// Compare Anthropic models
