@@ -18,3 +18,15 @@ jobs:
         with:
           version: latest
       - run: go vet ./...
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - name: Run govulncheck
+        run: |
+          go install github.com/golang/vuln/cmd/govulncheck@latest
+          govulncheck ./...
