@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -65,8 +64,8 @@ func (t *BashTool) Execute(ctx context.Context, params map[string]any) (string, 
 
 	cmd := exec.CommandContext(cmdCtx, "/bin/bash", "-c", command)
 
-	// Use a process group so we can kill the entire tree on timeout.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	// Configure process group (platform-specific: Unix uses process groups, Windows does not).
+	configureProcessGroup(cmd)
 
 	var buf bytes.Buffer
 	cmd.Stdout = &buf
@@ -91,7 +90,7 @@ func (t *BashTool) Execute(ctx context.Context, params map[string]any) (string, 
 		// Timeout or context cancellation - kill the process group.
 		timedOut = true
 		if cmd.Process != nil {
-			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+			_ = killProcessGroup(cmd.Process.Pid)
 		}
 		<-done // Wait for the process to actually exit.
 		exitCode = -1

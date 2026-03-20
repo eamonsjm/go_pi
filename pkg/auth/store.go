@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"syscall"
 )
 
 // Store manages persisted authentication credentials for all providers.
@@ -131,39 +130,9 @@ func (s *Store) Providers() []string {
 	return out
 }
 
-// Lock acquires an exclusive file lock on the auth store.
-// Callers must call Unlock when done (typically via defer).
-// The lock file is adjacent to auth.json (auth.json.lock).
-func (s *Store) Lock() error {
-	lockPath := s.path + ".lock"
-
-	dir := filepath.Dir(lockPath)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("create lock dir: %w", err)
-	}
-
-	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600)
-	if err != nil {
-		return fmt.Errorf("open lock file: %w", err)
-	}
-
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
-		f.Close()
-		return fmt.Errorf("acquire lock: %w", err)
-	}
-
-	s.lockFile = f
-	return nil
-}
-
-// Unlock releases the file lock acquired by Lock. Safe to call if not locked.
-func (s *Store) Unlock() {
-	if s.lockFile != nil {
-		syscall.Flock(int(s.lockFile.Fd()), syscall.LOCK_UN)
-		s.lockFile.Close()
-		s.lockFile = nil
-	}
-}
+// Lock and Unlock are implemented in platform-specific files:
+// - store_unix.go: Uses syscall.Flock for file-based locking
+// - store_windows.go: Uses sync.Mutex for in-process locking
 
 // WithLock executes fn while holding an exclusive file lock on the auth store.
 // This prevents concurrent processes from racing on token refresh.
