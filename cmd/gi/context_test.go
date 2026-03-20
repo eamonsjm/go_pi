@@ -14,16 +14,33 @@ func TestBuildSystemPrompt_WalksDirectoryTree(t *testing.T) {
 	// root/sub/AGENTS.md
 	root := t.TempDir()
 	sub := filepath.Join(root, "sub")
-	os.MkdirAll(sub, 0o755)
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
 
-	os.WriteFile(filepath.Join(root, "CLAUDE.md"), []byte("root instructions"), 0o644)
-	os.WriteFile(filepath.Join(sub, "CLAUDE.md"), []byte("sub instructions"), 0o644)
-	os.WriteFile(filepath.Join(sub, "AGENTS.md"), []byte("agents instructions"), 0o644)
+	if err := os.WriteFile(filepath.Join(root, "CLAUDE.md"), []byte("root instructions"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sub, "CLAUDE.md"), []byte("sub instructions"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sub, "AGENTS.md"), []byte("agents instructions"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	// Change to sub directory
-	orig, _ := os.Getwd()
-	os.Chdir(sub)
-	defer os.Chdir(orig)
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(sub); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := os.Chdir(orig); err != nil {
+			t.Logf("Warning: failed to restore directory: %v", err)
+		}
+	}()
 
 	prompt := buildSystemPrompt()
 
@@ -49,15 +66,30 @@ func TestBuildSystemPrompt_WalksDirectoryTree(t *testing.T) {
 func TestBuildSystemPrompt_DeduplicatesByContent(t *testing.T) {
 	root := t.TempDir()
 	sub := filepath.Join(root, "sub")
-	os.MkdirAll(sub, 0o755)
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
 
 	// Same content in both
-	os.WriteFile(filepath.Join(root, "CLAUDE.md"), []byte("same content"), 0o644)
-	os.WriteFile(filepath.Join(sub, "CLAUDE.md"), []byte("same content"), 0o644)
+	if err := os.WriteFile(filepath.Join(root, "CLAUDE.md"), []byte("same content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sub, "CLAUDE.md"), []byte("same content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
-	orig, _ := os.Getwd()
-	os.Chdir(sub)
-	defer os.Chdir(orig)
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(sub); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := os.Chdir(orig); err != nil {
+			t.Logf("Warning: failed to restore directory: %v", err)
+		}
+	}()
 
 	prompt := buildSystemPrompt()
 
@@ -71,14 +103,29 @@ func TestBuildSystemPrompt_DeduplicatesByContent(t *testing.T) {
 func TestBuildSystemPrompt_AppendSystemMd(t *testing.T) {
 	root := t.TempDir()
 	sub := filepath.Join(root, "sub")
-	os.MkdirAll(sub, 0o755)
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
 
-	os.WriteFile(filepath.Join(sub, "APPEND_SYSTEM.md"), []byte("appended content"), 0o644)
-	os.WriteFile(filepath.Join(root, "APPEND_SYSTEM.md"), []byte("root appended"), 0o644)
+	if err := os.WriteFile(filepath.Join(sub, "APPEND_SYSTEM.md"), []byte("appended content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "APPEND_SYSTEM.md"), []byte("root appended"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
-	orig, _ := os.Getwd()
-	os.Chdir(sub)
-	defer os.Chdir(orig)
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(sub); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := os.Chdir(orig); err != nil {
+			t.Logf("Warning: failed to restore directory: %v", err)
+		}
+	}()
 
 	prompt := buildSystemPrompt()
 
@@ -92,12 +139,25 @@ func TestBuildSystemPrompt_AppendSystemMd(t *testing.T) {
 
 func TestBuildSystemPrompt_DotClaudeSystemMd(t *testing.T) {
 	root := t.TempDir()
-	os.MkdirAll(filepath.Join(root, ".claude"), 0o755)
-	os.WriteFile(filepath.Join(root, ".claude", "SYSTEM.md"), []byte("claude system"), 0o644)
+	if err := os.MkdirAll(filepath.Join(root, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".claude", "SYSTEM.md"), []byte("claude system"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
-	orig, _ := os.Getwd()
-	os.Chdir(root)
-	defer os.Chdir(orig)
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(root); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := os.Chdir(orig); err != nil {
+			t.Logf("Warning: failed to restore directory: %v", err)
+		}
+	}()
 
 	prompt := buildSystemPrompt()
 

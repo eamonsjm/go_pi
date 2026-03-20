@@ -30,7 +30,9 @@ func TestProcessFileArgs_TextOnly(t *testing.T) {
 func TestProcessFileArgs_SingleFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.txt")
-	os.WriteFile(path, []byte("file contents here"), 0o644)
+	if err := os.WriteFile(path, []byte("file contents here"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	result, err := processFileArgs([]string{"@" + path})
 	if err != nil {
@@ -48,8 +50,12 @@ func TestProcessFileArgs_MultipleFiles(t *testing.T) {
 	dir := t.TempDir()
 	path1 := filepath.Join(dir, "a.txt")
 	path2 := filepath.Join(dir, "b.txt")
-	os.WriteFile(path1, []byte("alpha"), 0o644)
-	os.WriteFile(path2, []byte("bravo"), 0o644)
+	if err := os.WriteFile(path1, []byte("alpha"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path2, []byte("bravo"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	result, err := processFileArgs([]string{"@" + path1, "@" + path2})
 	if err != nil {
@@ -63,7 +69,9 @@ func TestProcessFileArgs_MultipleFiles(t *testing.T) {
 func TestProcessFileArgs_FilesAndText(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "code.go")
-	os.WriteFile(path, []byte("package main"), 0o644)
+	if err := os.WriteFile(path, []byte("package main"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	result, err := processFileArgs([]string{"@" + path, "explain", "this"})
 	if err != nil {

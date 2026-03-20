@@ -116,12 +116,24 @@ func main() {
 	tools.RegisterDefaults(registry)
 
 	pluginMgr := plugin.NewManager(registry)
-	home, _ := os.UserHomeDir()
-	cwd, _ := os.Getwd()
-	pluginMgr.Discover([]string{
-		filepath.Join(home, ".gi", "plugins"),
-		filepath.Join(cwd, ".gi", "plugins"),
-	})
+	home, err := os.UserHomeDir()
+	if err != nil {
+		log.Printf("Warning: could not determine home directory: %v", err)
+		home = ""
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		log.Printf("Warning: could not determine current directory: %v", err)
+		cwd = ""
+	}
+	var pluginPaths []string
+	if home != "" {
+		pluginPaths = append(pluginPaths, filepath.Join(home, ".gi", "plugins"))
+	}
+	if cwd != "" {
+		pluginPaths = append(pluginPaths, filepath.Join(cwd, ".gi", "plugins"))
+	}
+	pluginMgr.Discover(pluginPaths)
 	if *pluginFlag != "" {
 		for _, p := range strings.Split(*pluginFlag, ",") {
 			p = strings.TrimSpace(p)
@@ -143,8 +155,16 @@ func main() {
 
 	sessionDir := cfg.SessionDir
 	if sessionDir == "" {
-		home, _ := os.UserHomeDir()
-		sessionDir = filepath.Join(home, ".gi", "sessions")
+		home, err := os.UserHomeDir()
+		if err != nil {
+			log.Printf("Warning: could not determine home directory: %v", err)
+			home = ""
+		}
+		if home != "" {
+			sessionDir = filepath.Join(home, ".gi", "sessions")
+		} else {
+			sessionDir = ".gi/sessions"
+		}
 	}
 	sessionMgr := session.NewManager(sessionDir)
 
