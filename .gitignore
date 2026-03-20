@@ -1,23 +1,56 @@
 # Binary
 /gi
 /bin/
+/dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.so.*
+*.dylib
 
 # IDE
 .idea/
 .vscode/
 *.swp
 *.swo
+*.sublime-project
+*.sublime-workspace
+.netbeans/
+.project
+.settings/
+.classpath
+*.swp
+*~
+.DS_Store
 
 # OS
 .DS_Store
+Thumbs.db
+.AppleDouble
+.LSOverride
+
+# Build artifacts
 hello-plugin
 
-# Secrets
+# Secrets & credentials
 .env
 .env.*
+*.pem
+*.key
+*.pub
+*.crt
 
 # Project-local config (may contain credentials)
 .gi/
+
+# Go
+*.test
+*.out
+coverage.out
+coverage.html
+*.prof
+go.sum.bak
 
 # Gas Town (added by gt)
 .beads/
