@@ -452,6 +452,7 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 	defer cancel()
 
 	app := tui.NewApp()
+	app.SetHasUI(true) // Interactive mode has UI
 	app.SetModel(cfg.DefaultModel)
 	app.SetThinking(cfg.ThinkingLevel)
 	app.RegisterBuiltinCommands(ctx, agentLoop, sessionMgr, cfg, authStore, authResolver)
@@ -521,6 +522,12 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 
 	p := tea.NewProgram(app, tea.WithAltScreen())
 
+	// Create a map of plugin processes for UI response handling
+	pluginsByName := make(map[string]*plugin.PluginProcess)
+	for _, proc := range pluginMgr.Plugins() {
+		pluginsByName[proc.Name()] = proc
+	}
+
 	// Wire up callbacks
 	app.SetCallbacks(
 		// onSubmit
@@ -559,6 +566,13 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 		},
 	)
 
+	// Set UI response callback
+	app.SetUIResponseCallback(func(response *tui.PluginUIResponseMsg) {
+		if proc, ok := pluginsByName[response.PluginName]; ok {
+			_ = proc.RespondToUIRequest(response.ID, response.Value, response.Closed, response.Error)
+		}
+	})
+
 	// Consume inject messages from all plugins and route to TUI/agent.
 	for _, proc := range pluginMgr.Plugins() {
 		go func(proc *plugin.PluginProcess) {
@@ -580,6 +594,23 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 				if msg.Type == "inject_message" && msg.Role == "user" && content != "" {
 					agentLoop.FollowUp(content)
 				}
+			}
+		}(proc)
+	}
+
+	// Consume UI requests from all plugins and route to TUI.
+	for _, proc := range pluginMgr.Plugins() {
+		go func(proc *plugin.PluginProcess) {
+			for msg := range proc.UIRequests() {
+				p.Send(tui.PluginUIRequestMsg{
+					PluginName: proc.Name(),
+					ID:         msg.ID,
+					UIType:     msg.UIType,
+					UITitle:    msg.UITitle,
+					UIOptions:  msg.UIOptions,
+					UIDefault:  msg.UIDefault,
+					UILevel:    msg.UINotifyLevel,
+				})
 			}
 		}(proc)
 	}

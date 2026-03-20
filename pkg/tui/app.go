@@ -83,6 +83,13 @@ type App struct {
 	providerInfo   ProviderInfo
 	sessionUsage   ai.Usage
 	sessionUsageID string // session ID this usage belongs to
+
+	// Plugin UI request handling.
+	// uiRequestPending is non-nil while waiting for the user to respond to a UI dialog.
+	// The onUIResponse callback should be set to send the response back to the plugin.
+	uiRequestPending *PluginUIRequestMsg
+	onUIResponse     func(*PluginUIResponseMsg)
+	hasUI            bool // true when in interactive mode, false in print/RPC mode
 }
 
 // NewApp creates a fully initialised App ready to be passed to tea.NewProgram.
@@ -119,6 +126,16 @@ func (a *App) SetCallbacks(onSubmit, onSteer func(string), onCancel func()) {
 	a.onSubmit = onSubmit
 	a.onSteer = onSteer
 	a.onCancel = onCancel
+}
+
+// SetUIResponseCallback sets the callback for sending UI responses back to plugins.
+func (a *App) SetUIResponseCallback(onUIResponse func(*PluginUIResponseMsg)) {
+	a.onUIResponse = onUIResponse
+}
+
+// SetHasUI sets whether the TUI is running in interactive mode.
+func (a *App) SetHasUI(hasUI bool) {
+	a.hasUI = hasUI
 }
 
 // SetModel updates the model name shown in the header.
@@ -345,6 +362,23 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 
+		// If we're waiting for a UI response, handle it.
+		if a.uiRequestPending != nil {
+			req := a.uiRequestPending
+			a.uiRequestPending = nil
+			a.chat.AddUserMessage(msg.text)
+			if a.onUIResponse != nil {
+				a.onUIResponse(&PluginUIResponseMsg{
+					PluginName: req.PluginName,
+					ID:         req.ID,
+					Value:      msg.text,
+					Closed:     false,
+					Error:      "",
+				})
+			}
+			return a, nil
+		}
+
 		a.chat.AddUserMessage(msg.text)
 		a.agentRunning = true
 		a.editor.SetState(editorRunning)
@@ -378,6 +412,39 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case PluginInjectMsg:
 		a.chat.AddPluginMessage(msg.PluginName, msg.Content, msg.IsLog, msg.LogLevel)
+		return a, nil
+
+	case PluginUIRequestMsg:
+		if !a.hasUI {
+			// In headless mode, respond with sensible defaults instead of waiting for user input.
+			response := &PluginUIResponseMsg{
+				PluginName: msg.PluginName,
+				ID:         msg.ID,
+				Closed:     true,
+				Error:      "UI not available in headless mode",
+			}
+			// Set a default value based on the dialog type.
+			switch msg.UIType {
+			case "confirm":
+				response.Value = "false"
+			case "select":
+				if len(msg.UIOptions) > 0 {
+					response.Value = msg.UIOptions[0]
+				}
+			case "input", "editor":
+				response.Value = msg.UIDefault
+			case "notify":
+				response.Value = ""
+			}
+			if a.onUIResponse != nil {
+				a.onUIResponse(response)
+			}
+			return a, nil
+		}
+
+		// Store the pending UI request. The next editor submission will be handled
+		// as a response to this request rather than a prompt to the agent.
+		a.uiRequestPending = &msg
 		return a, nil
 
 	case authOAuthMsg:

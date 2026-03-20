@@ -49,3 +49,24 @@ type PluginInjectMsg struct {
 	IsLog      bool
 	LogLevel   string
 }
+
+// PluginUIRequestMsg carries a ui_request message from a plugin process.
+// The TUI should render the appropriate dialog and send back a PluginUIResponseMsg.
+type PluginUIRequestMsg struct {
+	PluginName string
+	ID         string // Unique request ID to correlate with response
+	UIType     string // "select" | "confirm" | "input" | "editor" | "notify"
+	UITitle    string
+	UIOptions  []string // For select dialog
+	UIDefault  string   // For input/editor
+	UILevel    string   // For notify: "info" | "warning" | "error"
+}
+
+// PluginUIResponseMsg is sent by the TUI after the user responds to a dialog.
+type PluginUIResponseMsg struct {
+	PluginName string
+	ID         string // Matches the request ID
+	Value      string // User's response
+	Closed     bool   // True if user closed without responding
+	Error      string // Error message if dialog failed
+}

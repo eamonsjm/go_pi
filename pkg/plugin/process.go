@@ -380,6 +380,16 @@ func (p *PluginProcess) InjectMessages() <-chan PluginMessage {
 	return p.injectCh
 }
 
+// UIRequests returns the channel for receiving ui_request messages from the plugin.
+// Note: when a plugin restarts, this channel is closed and a new one is created
+// internally; callers that need ui_request messages after restart should call
+// UIRequests() again.
+func (p *PluginProcess) UIRequests() <-chan PluginMessage {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.uiRequestCh
+}
+
 // Heartbeat sends a heartbeat message and waits for a heartbeat_ack within
 // the given timeout. If the plugin responds in time, health is marked true and
 // the status is stored. If the plugin does not respond, health is marked false.
