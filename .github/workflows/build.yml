@@ -34,19 +34,19 @@ jobs:
       - name: Build Linux
         if: runner.os == 'Linux'
         run: |
-          GOOS=linux GOARCH=amd64 go build -o bin/go_pi-linux-amd64 ./cmd/...
-          GOOS=linux GOARCH=arm64 go build -o bin/go_pi-linux-arm64 ./cmd/...
+          GOOS=linux GOARCH=amd64 go build -o bin/go_pi-linux-amd64 ./cmd/gi
+          GOOS=linux GOARCH=arm64 go build -o bin/go_pi-linux-arm64 ./cmd/gi
 
       - name: Build macOS
         if: runner.os == 'macOS'
         run: |
-          GOOS=darwin GOARCH=amd64 go build -o bin/go_pi-darwin-amd64 ./cmd/...
-          GOOS=darwin GOARCH=arm64 go build -o bin/go_pi-darwin-arm64 ./cmd/...
+          GOOS=darwin GOARCH=amd64 go build -o bin/go_pi-darwin-amd64 ./cmd/gi
+          GOOS=darwin GOARCH=arm64 go build -o bin/go_pi-darwin-arm64 ./cmd/gi
 
       - name: Build Windows
         if: runner.os == 'Windows'
         run: |
-          go build -o bin/go_pi-windows-amd64.exe ./cmd/...
+          go build -o bin/go_pi-windows-amd64.exe ./cmd/gi
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

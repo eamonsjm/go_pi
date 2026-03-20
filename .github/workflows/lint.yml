@@ -28,5 +28,5 @@ jobs:
           go-version: '1.24'
       - name: Run govulncheck
         run: |
-          go install github.com/golang/vuln/cmd/govulncheck@latest
+          go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck ./...
