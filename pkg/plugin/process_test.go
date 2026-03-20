@@ -26,6 +26,7 @@ func newTestProcess(name, jsonl string) *PluginProcess {
 		scanner:     scanner,
 		injectCh:    make(chan PluginMessage, 64),
 		responseCh:  make(chan PluginMessage, 16),
+		uiRequestCh: make(chan PluginMessage, 16),
 		heartbeatCh: make(chan PluginMessage, 4),
 		healthy:     true,
 	}
@@ -244,6 +245,34 @@ func TestHelperPlugin(t *testing.T) {
 		}
 
 		// Keep running until shutdown.
+		for scanner.Scan() {
+			var req HostMessage
+			json.Unmarshal(scanner.Bytes(), &req)
+			if req.Type == "shutdown" {
+				os.Exit(0)
+			}
+		}
+
+	case "ui_requests":
+		// Send UI request messages, then wait for responses.
+		if !scanner.Scan() {
+			os.Exit(1)
+		}
+		// Reply to initialize with capabilities.
+		resp := PluginMessage{Type: "capabilities"}
+		data, _ := json.Marshal(resp)
+		fmt.Fprintln(os.Stdout, string(data))
+
+		// Send some UI requests.
+		for _, msg := range []PluginMessage{
+			{Type: "ui_request", ID: "req1", UIType: "input", UITitle: "Enter name:", UIDefault: "John"},
+			{Type: "ui_request", ID: "req2", UIType: "confirm", UITitle: "Continue?"},
+		} {
+			data, _ := json.Marshal(msg)
+			fmt.Fprintln(os.Stdout, string(data))
+		}
+
+		// Keep running until shutdown, handling ui_response messages.
 		for scanner.Scan() {
 			var req HostMessage
 			json.Unmarshal(scanner.Bytes(), &req)
@@ -1627,4 +1656,73 @@ func TestHandleTimeout_NilCmd(t *testing.T) {
 	}
 	// Should not panic.
 	p.handleTimeout("tool_call", "test", 1*time.Second)
+}
+
+func TestUIRequests_Routing(t *testing.T) {
+	p := startTestPlugin(t, "ui_requests")
+	if err := p.Initialize(PluginConfig{}); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+
+	// Collect UI requests sent by the helper.
+	var msgs []PluginMessage
+	timeout := time.After(5 * time.Second)
+	for i := 0; i < 2; i++ {
+		select {
+		case msg, ok := <-p.UIRequests():
+			if !ok {
+				t.Fatal("uiRequestCh closed prematurely")
+			}
+			msgs = append(msgs, msg)
+		case <-timeout:
+			t.Fatalf("timed out waiting for UI requests, got %d", len(msgs))
+		}
+	}
+
+	if msgs[0].Type != "ui_request" {
+		t.Errorf("msg[0].Type = %q, want %q", msgs[0].Type, "ui_request")
+	}
+	if msgs[0].ID != "req1" {
+		t.Errorf("msg[0].ID = %q, want %q", msgs[0].ID, "req1")
+	}
+	if msgs[0].UIType != "input" {
+		t.Errorf("msg[0].UIType = %q, want %q", msgs[0].UIType, "input")
+	}
+
+	if msgs[1].Type != "ui_request" {
+		t.Errorf("msg[1].Type = %q, want %q", msgs[1].Type, "ui_request")
+	}
+	if msgs[1].ID != "req2" {
+		t.Errorf("msg[1].ID = %q, want %q", msgs[1].ID, "req2")
+	}
+	if msgs[1].UIType != "confirm" {
+		t.Errorf("msg[1].UIType = %q, want %q", msgs[1].UIType, "confirm")
+	}
+
+	p.Stop()
+}
+
+func TestRespondToUIRequest(t *testing.T) {
+	p := startTestPlugin(t, "ui_requests")
+	if err := p.Initialize(PluginConfig{}); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+
+	// Consume the UI requests
+	timeout := time.After(5 * time.Second)
+	for i := 0; i < 2; i++ {
+		select {
+		case <-p.UIRequests():
+		case <-timeout:
+			t.Fatalf("timed out waiting for UI request %d", i)
+		}
+	}
+
+	// Send a response
+	err := p.RespondToUIRequest("req1", "Alice", false, "")
+	if err != nil {
+		t.Fatalf("RespondToUIRequest: %v", err)
+	}
+
+	p.Stop()
 }

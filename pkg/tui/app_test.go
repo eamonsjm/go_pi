@@ -1419,3 +1419,101 @@ func TestApp_MultipleAgentCycles_TickLifecycle(t *testing.T) {
 	}
 	app.Update(AgentDoneMsg{})
 }
+
+func TestApp_Update_PluginUIRequestMsg_InteractiveMode(t *testing.T) {
+	app := NewApp()
+	app.SetHasUI(true) // Interactive mode
+
+	// Store a UI request
+	app.Update(PluginUIRequestMsg{
+		PluginName: "test-plugin",
+		ID:         "req123",
+		UIType:     "input",
+		UITitle:    "Enter your name:",
+		UIDefault:  "John",
+	})
+
+	// Verify the request is stored
+	if app.uiRequestPending == nil {
+		t.Error("UI request should be stored")
+	}
+	if app.uiRequestPending.PluginName != "test-plugin" {
+		t.Errorf("expected plugin name test-plugin, got %s", app.uiRequestPending.PluginName)
+	}
+
+	// Submit a response via the editor
+	responseChan := make(chan *PluginUIResponseMsg, 1)
+	app.SetUIResponseCallback(func(resp *PluginUIResponseMsg) {
+		responseChan <- resp
+	})
+
+	app.Update(editorSubmitMsg{text: "Alice"})
+
+	// Verify the response was sent
+	resp := <-responseChan
+	if resp.ID != "req123" {
+		t.Errorf("expected request ID req123, got %s", resp.ID)
+	}
+	if resp.Value != "Alice" {
+		t.Errorf("expected value Alice, got %s", resp.Value)
+	}
+	if resp.Closed {
+		t.Error("response should not be marked as closed")
+	}
+
+	// Verify the request is cleared
+	if app.uiRequestPending != nil {
+		t.Error("UI request should be cleared after response")
+	}
+}
+
+func TestApp_Update_PluginUIRequestMsg_HeadlessMode(t *testing.T) {
+	app := NewApp()
+	app.SetHasUI(false) // Headless mode
+
+	responseChan := make(chan *PluginUIResponseMsg, 1)
+	app.SetUIResponseCallback(func(resp *PluginUIResponseMsg) {
+		responseChan <- resp
+	})
+
+	// Test select dialog in headless mode
+	app.Update(PluginUIRequestMsg{
+		PluginName: "test-plugin",
+		ID:         "req-select",
+		UIType:     "select",
+		UIOptions:  []string{"red", "green", "blue"},
+	})
+
+	resp := <-responseChan
+	if resp.Value != "red" {
+		t.Errorf("expected first option red, got %s", resp.Value)
+	}
+	if !resp.Closed {
+		t.Error("headless response should be marked as closed")
+	}
+
+	// Test confirm dialog in headless mode
+	app.Update(PluginUIRequestMsg{
+		PluginName: "test-plugin",
+		ID:         "req-confirm",
+		UIType:     "confirm",
+	})
+
+	resp = <-responseChan
+	if resp.Value != "false" {
+		t.Errorf("expected false for confirm, got %s", resp.Value)
+	}
+
+	// Test input dialog in headless mode
+	app.Update(PluginUIRequestMsg{
+		PluginName: "test-plugin",
+		ID:         "req-input",
+		UIType:     "input",
+		UIDefault:  "default-value",
+	})
+
+	resp = <-responseChan
+	if resp.Value != "default-value" {
+		t.Errorf("expected default-value, got %s", resp.Value)
+	}
+}
