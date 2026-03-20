@@ -32,6 +32,15 @@ Thumbs.db
 
 # Build artifacts
 hello-plugin
+# Ignore compiled Go binaries in examples (executables without extension)
+examples/*/[!.]*
+!examples/**/*.go
+!examples/**/*.json
+!examples/**/*.md
+!examples/**/*.py
+!examples/**/*.sh
+!examples/**/*.txt
+!examples/**/README*
 
 # Secrets & credentials
 .env
