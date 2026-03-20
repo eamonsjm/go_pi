@@ -585,5 +585,5 @@ go_pi/
 ## 14. References
 
 - Original pi-rtk-optimizer: https://github.com/MasuRii/pi-rtk-optimizer
-- gi Agent: https://github.com/ejm/go_pi
+- gi Agent: https://github.com/eamonsjm/go_pi
 - RTK Binary (Rust implementation): https://github.com/rtr-tools/rtk
