@@ -46,6 +46,10 @@ type App struct {
 	// this channel instead of the agent.
 	authPendingCodeCh chan string
 
+	// authCancelFn cancels the in-flight OAuth Login goroutine (if any).
+	// Called on TUI exit to prevent goroutine/resource leaks.
+	authCancelFn context.CancelFunc
+
 	// Callbacks wired by the caller that owns the agent loop.
 	onSubmit       func(text string)
 	onCancel       func()
@@ -484,6 +488,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case authOAuthMsg:
+		if a.authCancelFn != nil {
+			a.authCancelFn()
+		}
+		a.authCancelFn = msg.cancelAuth
 		a.authPendingCodeCh = msg.codeCh
 		wrappedURL := wrapLongString(msg.url, a.width-4)
 		if msg.codeCh != nil {
@@ -587,6 +595,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case editorQuitMsg:
+		if a.authCancelFn != nil {
+			a.authCancelFn()
+		}
 		a.quitting = true
 		return a, tea.Quit
 
