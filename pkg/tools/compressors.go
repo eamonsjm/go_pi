@@ -156,7 +156,7 @@ func (e *GoBuildErrorExtractor) AfterExecute(ctx context.Context, toolName strin
 	if !strings.Contains(result, ".go:") && !strings.Contains(result, "cannot find") {
 		return result, err
 	}
-	return e.extract(result), nil
+	return e.extract(result), err
 }
 
 func (e *GoBuildErrorExtractor) extract(output string) string {
@@ -382,10 +382,10 @@ func (g *LinterOutputGrouper) BeforeExecute(ctx context.Context, toolName string
 }
 
 func (g *LinterOutputGrouper) AfterExecute(ctx context.Context, toolName string, params map[string]any, result string, err error) (string, error) {
-	if err == nil && !strings.Contains(result, "error") && !strings.Contains(result, "warning") {
+	if !strings.Contains(result, "error") && !strings.Contains(result, "warning") {
 		return result, err
 	}
-	return g.group(result), nil
+	return g.group(result), err
 }
 
 func (g *LinterOutputGrouper) group(output string) string {
