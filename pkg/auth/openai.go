@@ -140,6 +140,9 @@ func (o *OpenAIOAuth) Login(ctx context.Context, cb OAuthCallbacks) (*Credential
 		_ = server.Shutdown(shutdownCtx)
 	}()
 
+	timeout := time.NewTimer(defaultAuthTimeout)
+	defer timeout.Stop()
+
 	select {
 	case result := <-resultCh:
 		if result.err != nil {
@@ -154,7 +157,7 @@ func (o *OpenAIOAuth) Login(ctx context.Context, cb OAuthCallbacks) (*Credential
 		}
 		return cred, nil
 
-	case <-time.After(defaultAuthTimeout):
+	case <-timeout.C:
 		return nil, fmt.Errorf("login timed out — no callback received within %v", defaultAuthTimeout)
 	}
 }
