@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -436,11 +437,12 @@ func (g *LinterOutputGrouper) group(output string) string {
 	// Build result with files grouped
 	var result []string
 
-	// Sort files for consistent output (using a slice to maintain order)
+	// Sort files for consistent output
 	fileList := make([]string, 0, len(errorsByFile))
 	for file := range errorsByFile {
 		fileList = append(fileList, file)
 	}
+	sort.Strings(fileList)
 
 	// At high compression, only show files with most errors
 	if g.level == CompressionHigh && len(fileList) > 5 {
