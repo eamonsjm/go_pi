@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/ejm/go_pi/pkg/agent"
@@ -17,6 +18,7 @@ import (
 // of all plugins. It bridges plugin-provided tools and commands into the host's
 // registries.
 type Manager struct {
+	mu           sync.RWMutex
 	plugins      []*PluginProcess
 	toolRegistry *tools.Registry
 	restartCfg   *RestartConfig   // if set, enables auto-restart for plugins
@@ -148,7 +150,9 @@ func (m *Manager) startAndRegisterWithManifest(name, execPath string, manifest *
 		}
 	}
 
+	m.mu.Lock()
 	m.plugins = append(m.plugins, proc)
+	m.mu.Unlock()
 	return nil
 }
 
@@ -156,6 +160,9 @@ func (m *Manager) startAndRegisterWithManifest(name, execPath string, manifest *
 // their tools and commands. Plugins that fail initialization or registration
 // are stopped and removed.
 func (m *Manager) Initialize(cfg PluginConfig) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	var alive []*PluginProcess
 
 	for _, p := range m.plugins {
@@ -255,7 +262,12 @@ func (m *Manager) StartHeartbeats(ctx context.Context) {
 
 // heartbeatAll sends a heartbeat to each alive plugin and logs unhealthy ones.
 func (m *Manager) heartbeatAll(timeout time.Duration) {
-	for _, p := range m.plugins {
+	m.mu.RLock()
+	plugins := make([]*PluginProcess, len(m.plugins))
+	copy(plugins, m.plugins)
+	m.mu.RUnlock()
+
+	for _, p := range plugins {
 		if !p.Alive() {
 			continue
 		}
@@ -276,6 +288,9 @@ func (m *Manager) heartbeatAll(timeout time.Duration) {
 // PluginHealthy returns true if the named plugin's last heartbeat succeeded.
 // Returns false if the plugin is not found.
 func (m *Manager) PluginHealthy(name string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
 	for _, p := range m.plugins {
 		if p.name == name {
 			return p.Healthy()
@@ -294,20 +309,29 @@ func (m *Manager) Shutdown() error {
 		m.heartbeatCancel = nil
 	}
 
+	m.mu.Lock()
+	plugins := m.plugins
+	m.plugins = nil
+	m.mu.Unlock()
+
 	var firstErr error
-	for _, p := range m.plugins {
+	for _, p := range plugins {
 		if err := p.Stop(); err != nil && firstErr == nil {
 			firstErr = err
 		}
 	}
-	m.plugins = nil
 	return firstErr
 }
 
 // ForwardEvent forwards an agent lifecycle event to all plugins that are alive.
 func (m *Manager) ForwardEvent(event agent.AgentEvent) {
+	m.mu.RLock()
+	plugins := make([]*PluginProcess, len(m.plugins))
+	copy(plugins, m.plugins)
+	m.mu.RUnlock()
+
 	payload := agentEventToPayload(event)
-	for _, p := range m.plugins {
+	for _, p := range plugins {
 		if p.Alive() {
 			if err := p.SendEvent(payload); err != nil {
 				log.Printf("plugin %s: cleanup: failed to forward event: %v", p.name, err)
@@ -318,11 +342,19 @@ func (m *Manager) ForwardEvent(event agent.AgentEvent) {
 
 // Plugins returns the list of active plugin processes.
 func (m *Manager) Plugins() []*PluginProcess {
-	return m.plugins
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	result := make([]*PluginProcess, len(m.plugins))
+	copy(result, m.plugins)
+	return result
 }
 
 // PluginTools returns all tools provided by all loaded plugins.
 func (m *Manager) PluginTools() []ToolDef {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
 	var result []ToolDef
 	for _, p := range m.plugins {
 		result = append(result, p.tools...)
@@ -332,6 +364,9 @@ func (m *Manager) PluginTools() []ToolDef {
 
 // PluginCommands returns all commands provided by all loaded plugins.
 func (m *Manager) PluginCommands() []CommandDef {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
 	var result []CommandDef
 	for _, p := range m.plugins {
 		result = append(result, p.commands...)

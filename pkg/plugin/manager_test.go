@@ -648,3 +648,61 @@ func (d *dummyTool) Name() string                                               
 func (d *dummyTool) Description() string                                         { return "dummy" }
 func (d *dummyTool) Schema() any                                                 { return nil }
 func (d *dummyTool) Execute(_ context.Context, _ map[string]any) (string, error) { return "", nil }
+
+// TestManagerConcurrentAccess exercises concurrent read/write on m.plugins
+// to verify the RWMutex protects against data races. Run with -race.
+func TestManagerConcurrentAccess(t *testing.T) {
+	reg := tools.NewRegistry()
+	m := NewManager(reg)
+
+	// Seed a plugin marked as closed so readers iterate the slice
+	// without attempting I/O on uninitialized process internals.
+	seed := &PluginProcess{name: "seed"}
+	seed.closed = true
+	m.plugins = append(m.plugins, seed)
+
+	done := make(chan struct{})
+
+	// Reader: ForwardEvent (iterates m.plugins, skips closed)
+	go func() {
+		defer func() { done <- struct{}{} }()
+		for i := 0; i < 100; i++ {
+			m.ForwardEvent(agent.AgentEvent{Type: agent.EventAgentStart})
+		}
+	}()
+
+	// Reader: Plugins
+	go func() {
+		defer func() { done <- struct{}{} }()
+		for i := 0; i < 100; i++ {
+			_ = m.Plugins()
+		}
+	}()
+
+	// Reader: PluginHealthy
+	go func() {
+		defer func() { done <- struct{}{} }()
+		for i := 0; i < 100; i++ {
+			_ = m.PluginHealthy("seed")
+		}
+	}()
+
+	// Reader: PluginTools + PluginCommands
+	go func() {
+		defer func() { done <- struct{}{} }()
+		for i := 0; i < 100; i++ {
+			_ = m.PluginTools()
+			_ = m.PluginCommands()
+		}
+	}()
+
+	// Writer: Shutdown (sets plugins to nil)
+	go func() {
+		defer func() { done <- struct{}{} }()
+		_ = m.Shutdown()
+	}()
+
+	for i := 0; i < 5; i++ {
+		<-done
+	}
+}
