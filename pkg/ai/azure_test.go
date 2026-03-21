@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -116,6 +117,49 @@ func TestAzureOpenAIProvider_EndpointTrailingSlash(t *testing.T) {
 		if strings.Contains(pathOnly, "//") {
 			t.Errorf("URL path should not have double slashes: %q", url)
 		}
+	}
+}
+
+func TestAzureOpenAIProvider_StreamHTTPError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "30")
+		w.WriteHeader(http.StatusTooManyRequests)
+		fmt.Fprint(w, `{"error":{"message":"Rate limit exceeded","type":"rate_limit_error"}}`)
+	}))
+	defer server.Close()
+
+	p := &AzureOpenAIProvider{
+		apiKey:     "test-key",
+		endpoint:   server.URL,
+		deployment: "gpt-4o",
+		apiVersion: azureDefaultAPIVersion,
+		httpClient: server.Client(),
+		inner:      &OpenAIProvider{apiKey: "test-key", httpClient: server.Client()},
+	}
+
+	_, err := p.Stream(context.Background(), StreamRequest{
+		Model:    "gpt-4o",
+		Messages: []Message{NewTextMessage(RoleUser, "Hi")},
+	})
+	if err == nil {
+		t.Fatal("expected error for non-200 response")
+	}
+
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected *APIError, got %T: %v", err, err)
+	}
+	if apiErr.StatusCode != http.StatusTooManyRequests {
+		t.Errorf("expected status %d, got %d", http.StatusTooManyRequests, apiErr.StatusCode)
+	}
+	if apiErr.Provider != "azure" {
+		t.Errorf("expected provider %q, got %q", "azure", apiErr.Provider)
+	}
+	if apiErr.ErrorType != "rate_limit_error" {
+		t.Errorf("expected error type %q, got %q", "rate_limit_error", apiErr.ErrorType)
+	}
+	if apiErr.RetryAfter != 30 {
+		t.Errorf("expected retry-after 30, got %d", apiErr.RetryAfter)
 	}
 }
 
