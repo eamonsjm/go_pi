@@ -47,7 +47,7 @@ var pendingUIRequests = make(map[string]map[string]any)
 
 func send(msg PluginMessage) {
 	data, _ := json.Marshal(msg)
-	fmt.Fprintln(os.Stdout, string(data))
+	_, _ = fmt.Fprintln(os.Stdout, string(data))
 }
 
 func requestUI(uiType, title string, options []string, defaultVal string) (string, error) {

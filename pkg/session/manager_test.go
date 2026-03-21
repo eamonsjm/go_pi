@@ -518,12 +518,7 @@ func TestConcurrentGetMessagesDuringAppend(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for i := 0; i < readsPerReader; i++ {
-				msgs := m.GetMessages()
-				// Message count should be monotonically non-decreasing within
-				// a single reader, but across readers we just check sanity.
-				if len(msgs) < 0 {
-					t.Errorf("negative message count: %d", len(msgs))
-				}
+				_ = m.GetMessages()
 			}
 		}()
 	}

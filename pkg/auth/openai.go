@@ -68,7 +68,7 @@ func (o *OpenAIOAuth) Login(cb OAuthCallbacks) (*Credential, error) {
 	if err != nil {
 		return nil, fmt.Errorf("start callback server on %s: %w", redirectURL.Host, err)
 	}
-	defer listener.Close()
+	defer func() { _ = listener.Close() }()
 
 	// Build authorize URL.
 	params := url.Values{}
@@ -106,7 +106,7 @@ func (o *OpenAIOAuth) Login(cb OAuthCallbacks) (*Credential, error) {
 		if errParam != "" {
 			desc := r.URL.Query().Get("error_description")
 			w.Header().Set("Content-Type", "text/html")
-			fmt.Fprintf(w, "<html><body><h2>Login Failed</h2><p>%s</p></body></html>",
+			_, _ = fmt.Fprintf(w, "<html><body><h2>Login Failed</h2><p>%s</p></body></html>",
 				strings.ReplaceAll(desc, "<", "&lt;"))
 			resultCh <- callbackResult{err: fmt.Errorf("oauth error: %s: %s", errParam, desc)}
 			return
@@ -117,13 +117,13 @@ func (o *OpenAIOAuth) Login(cb OAuthCallbacks) (*Credential, error) {
 
 		if state != pkce.Verifier {
 			w.Header().Set("Content-Type", "text/html")
-			fmt.Fprint(w, "<html><body><h2>Login Failed</h2><p>State mismatch.</p></body></html>")
+			_, _ = fmt.Fprint(w, "<html><body><h2>Login Failed</h2><p>State mismatch.</p></body></html>")
 			resultCh <- callbackResult{err: fmt.Errorf("state mismatch in OAuth callback")}
 			return
 		}
 
 		w.Header().Set("Content-Type", "text/html")
-		fmt.Fprint(w, "<html><body><h2>Login Successful</h2>"+
+		_, _ = fmt.Fprint(w, "<html><body><h2>Login Successful</h2>"+
 			"<p>You can close this tab and return to the terminal.</p></body></html>")
 		resultCh <- callbackResult{code: code}
 	})
@@ -173,7 +173,7 @@ func (o *OpenAIOAuth) exchangeCode(code, codeVerifier string) (*Credential, erro
 	if err != nil {
 		return nil, fmt.Errorf("token exchange: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
@@ -207,7 +207,7 @@ func (o *OpenAIOAuth) RefreshToken(cred *Credential) (*Credential, error) {
 	if err != nil {
 		return nil, fmt.Errorf("refresh request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {

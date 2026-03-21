@@ -124,7 +124,7 @@ func startPlugin(name, path string) (*PluginProcess, error) {
 
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
-		stdinPipe.Close()
+		_ = stdinPipe.Close()
 		return nil, fmt.Errorf("creating stdout pipe: %w", err)
 	}
 
@@ -132,8 +132,8 @@ func startPlugin(name, path string) (*PluginProcess, error) {
 	// for debugging purposes.
 
 	if err := cmd.Start(); err != nil {
-		stdoutPipe.Close()
-		stdinPipe.Close()
+		_ = stdoutPipe.Close()
+		_ = stdinPipe.Close()
 		return nil, fmt.Errorf("starting plugin %s: %w", name, err)
 	}
 
@@ -755,7 +755,7 @@ func (p *PluginProcess) respawn() error {
 
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
-		stdinPipe.Close()
+		_ = stdinPipe.Close()
 		return fmt.Errorf("creating stdout pipe: %w", err)
 	}
 

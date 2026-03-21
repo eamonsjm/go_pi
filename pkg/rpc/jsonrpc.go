@@ -286,7 +286,7 @@ func (s *rpcServer) sendResponse(resp Response) {
 		log.Printf("rpc: failed to marshal response: %v", err)
 		return
 	}
-	fmt.Fprintf(s.writer, "%s\n", data)
+	_, _ = fmt.Fprintf(s.writer, "%s\n", data)
 }
 
 func (s *rpcServer) sendNotification(n Notification) {
@@ -297,5 +297,5 @@ func (s *rpcServer) sendNotification(n Notification) {
 		log.Printf("rpc: failed to marshal notification: %v", err)
 		return
 	}
-	fmt.Fprintf(s.writer, "%s\n", data)
+	_, _ = fmt.Fprintf(s.writer, "%s\n", data)
 }

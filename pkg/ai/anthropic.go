@@ -130,7 +130,7 @@ func (p *AnthropicProvider) Stream(ctx context.Context, req StreamRequest) (<-ch
 		}
 
 		errBody, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		apiErr := parseHTTPError(resp.StatusCode, resp.Header, errBody, p.authMethod())
 		if apiErr.IsRetryable() && attempt < maxRetries {
 			wait := apiErr.RetryAfter
@@ -458,7 +458,7 @@ type blockState struct {
 
 func (p *AnthropicProvider) readSSEStream(ctx context.Context, body io.ReadCloser, ch chan<- StreamEvent) {
 	defer close(ch)
-	defer body.Close()
+	defer func() { _ = body.Close() }()
 
 	scanner := bufio.NewScanner(body)
 	// Allow up to 1MB per line for large tool inputs.

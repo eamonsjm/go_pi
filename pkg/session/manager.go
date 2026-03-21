@@ -193,7 +193,7 @@ func (m *Manager) ListSessions() []SessionInfo {
 			si.Entries = count
 			normalizeParentIDs(allEntries)
 			si.Branches = len(findLeafEntries(allEntries))
-			f.Close()
+			_ = f.Close()
 		}
 		sessions = append(sessions, si)
 	}
@@ -246,7 +246,7 @@ func (m *Manager) AppendEntry(entry Entry) error {
 	}
 
 	if _, err := f.Write(append(data, '\n')); err != nil {
-		f.Close()
+		_ = f.Close()
 		return fmt.Errorf("write entry: %w", err)
 	}
 
@@ -683,7 +683,7 @@ func (m *Manager) FormatTree() string {
 	})
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Session branches (%d):\n", len(leaves)))
+	fmt.Fprintf(&sb, "Session branches (%d):\n", len(leaves))
 	for i, leaf := range leaves {
 		// Count messages on this branch.
 		chain := getEntriesOnBranch(entries, leaf.ID)

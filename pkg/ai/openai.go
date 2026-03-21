@@ -62,7 +62,7 @@ func (p *OpenAIProvider) Stream(ctx context.Context, req StreamRequest) (<-chan 
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		errBody, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("openai: API returned status %d: %s", resp.StatusCode, string(errBody))
 	}
@@ -313,7 +313,7 @@ type toolCallState struct {
 
 func (p *OpenAIProvider) readSSEStream(ctx context.Context, body io.ReadCloser, ch chan<- StreamEvent) {
 	defer close(ch)
-	defer body.Close()
+	defer func() { _ = body.Close() }()
 
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)

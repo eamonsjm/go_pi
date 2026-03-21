@@ -149,7 +149,7 @@ func (a *AnthropicOAuth) ExchangeCode(session *AuthSession, rawCode string) (*Cr
 	if err != nil {
 		return nil, fmt.Errorf("token exchange: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
@@ -225,7 +225,7 @@ func (a *AnthropicOAuth) RefreshToken(cred *Credential) (*Credential, error) {
 	if err != nil {
 		return nil, fmt.Errorf("refresh request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {

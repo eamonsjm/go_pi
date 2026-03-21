@@ -93,12 +93,12 @@ func (t *EditTool) Execute(ctx context.Context, params map[string]any) (string, 
 		case count == 1:
 			matchTarget = oldString
 		case count > 1:
-			return "", fmt.Errorf("old_string found %d times in %s. It must be unique. Provide more surrounding context to make the match unique.", count, filePath)
+			return "", fmt.Errorf("old_string found %d times in %s; it must be unique, provide more surrounding context to make the match unique", count, filePath)
 		default:
 			// Exact match failed — try fuzzy matching with normalization.
 			matched, normName, found := fuzzyFind(content, oldString)
 			if !found {
-				return "", fmt.Errorf("old_string not found in %s. Make sure the string matches exactly, including whitespace and indentation.", filePath)
+				return "", fmt.Errorf("old_string not found in %s; make sure the string matches exactly, including whitespace and indentation", filePath)
 			}
 			matchTarget = matched
 			normNote = fmt.Sprintf("Note: exact match failed. Matched via %s.", normName)

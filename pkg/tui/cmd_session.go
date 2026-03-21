@@ -123,50 +123,50 @@ func NewSessionInfoCommand(sessionMgr *session.Manager, chatView *ChatView, getP
 			// Session Info section.
 			sb.WriteString("Session Info\n")
 			if fp := sessionMgr.FilePath(); fp != "" {
-				sb.WriteString(fmt.Sprintf("  File:     %s\n", fp))
+				fmt.Fprintf(&sb, "  File:     %s\n", fp)
 			}
-			sb.WriteString(fmt.Sprintf("  ID:       %s\n", id))
+			fmt.Fprintf(&sb, "  ID:       %s\n", id)
 			if sessionMgr.HasBranches() {
 				branches := sessionMgr.GetBranches()
-				sb.WriteString(fmt.Sprintf("  Branches: %d\n", len(branches)))
+				fmt.Fprintf(&sb, "  Branches: %d\n", len(branches))
 				if ab := sessionMgr.ActiveBranch(); ab != "" {
-					sb.WriteString(fmt.Sprintf("  Branch:   %s\n", shortID(ab)))
+					fmt.Fprintf(&sb, "  Branch:   %s\n", shortID(ab))
 				}
 			}
 
 			// Provider section.
 			if info.Name != "" {
 				sb.WriteString("\nProvider\n")
-				sb.WriteString(fmt.Sprintf("  Name:     %s\n", info.Name))
-				sb.WriteString(fmt.Sprintf("  Model:    %s\n", info.Model))
-				sb.WriteString(fmt.Sprintf("  API:      %s\n", info.API))
-				sb.WriteString(fmt.Sprintf("  Auth:     %s\n", info.Auth))
-				sb.WriteString(fmt.Sprintf("  Endpoint: %s\n", info.Endpoint))
+				fmt.Fprintf(&sb, "  Name:     %s\n", info.Name)
+				fmt.Fprintf(&sb, "  Model:    %s\n", info.Model)
+				fmt.Fprintf(&sb, "  API:      %s\n", info.API)
+				fmt.Fprintf(&sb, "  Auth:     %s\n", info.Auth)
+				fmt.Fprintf(&sb, "  Endpoint: %s\n", info.Endpoint)
 			}
 
 			// Messages section.
 			userN, assistantN, toolCallsN, toolResultsN := countMessageTypes(msgs)
 			total := userN + assistantN + toolCallsN + toolResultsN
 			sb.WriteString("\nMessages\n")
-			sb.WriteString(fmt.Sprintf("  User:         %d\n", userN))
-			sb.WriteString(fmt.Sprintf("  Assistant:    %d\n", assistantN))
-			sb.WriteString(fmt.Sprintf("  Tool Calls:   %d\n", toolCallsN))
-			sb.WriteString(fmt.Sprintf("  Tool Results: %d\n", toolResultsN))
-			sb.WriteString(fmt.Sprintf("  Total:        %d\n", total))
+			fmt.Fprintf(&sb, "  User:         %d\n", userN)
+			fmt.Fprintf(&sb, "  Assistant:    %d\n", assistantN)
+			fmt.Fprintf(&sb, "  Tool Calls:   %d\n", toolCallsN)
+			fmt.Fprintf(&sb, "  Tool Results: %d\n", toolResultsN)
+			fmt.Fprintf(&sb, "  Total:        %d\n", total)
 
 			// Tokens section.
 			tokenTotal := usage.InputTokens + usage.OutputTokens
 			sb.WriteString("\nTokens\n")
-			sb.WriteString(fmt.Sprintf("  Input:        %s\n", formatTokens(usage.InputTokens)))
-			sb.WriteString(fmt.Sprintf("  Output:       %s\n", formatTokens(usage.OutputTokens)))
-			sb.WriteString(fmt.Sprintf("  Cache Read:   %s\n", formatTokens(usage.CacheRead)))
-			sb.WriteString(fmt.Sprintf("  Cache Write:  %s\n", formatTokens(usage.CacheWrite)))
-			sb.WriteString(fmt.Sprintf("  Total:        %s\n", formatTokens(tokenTotal)))
+			fmt.Fprintf(&sb, "  Input:        %s\n", formatTokens(usage.InputTokens))
+			fmt.Fprintf(&sb, "  Output:       %s\n", formatTokens(usage.OutputTokens))
+			fmt.Fprintf(&sb, "  Cache Read:   %s\n", formatTokens(usage.CacheRead))
+			fmt.Fprintf(&sb, "  Cache Write:  %s\n", formatTokens(usage.CacheWrite))
+			fmt.Fprintf(&sb, "  Total:        %s\n", formatTokens(tokenTotal))
 
 			// Cost section.
 			cost := calculateCost(usage, info.Model)
 			sb.WriteString("\nCost\n")
-			sb.WriteString(fmt.Sprintf("  Total:        $%.4f\n", cost))
+			fmt.Fprintf(&sb, "  Total:        $%.4f\n", cost)
 
 			chatView.AddSystemMessage(sb.String())
 			return nil
@@ -383,9 +383,10 @@ func rebuildChatFromMessages(chatView *ChatView, msgs []ai.Message) {
 		for _, block := range msg.Content {
 			switch block.Type {
 			case ai.ContentTypeText:
-				if msg.Role == ai.RoleUser {
+				switch msg.Role {
+				case ai.RoleUser:
 					chatView.AddUserMessage(block.Text)
-				} else if msg.Role == ai.RoleAssistant {
+				case ai.RoleAssistant:
 					chatView.HandleEvent(agent.AgentEvent{
 						Type:  agent.EventAssistantText,
 						Delta: block.Text,

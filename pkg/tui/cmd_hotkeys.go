@@ -28,7 +28,7 @@ func NewHotkeysCommand(kb *KeybindingConfig) *SlashCommand {
 				{"Escape", "Cancel running agent"},
 			}
 			for _, f := range fixed {
-				sb.WriteString(fmt.Sprintf("    %-20s  %s\n", f[0], f[1]))
+				fmt.Fprintf(&sb, "    %-20s  %s\n", f[0], f[1])
 			}
 
 			// Viewport navigation.
@@ -40,7 +40,7 @@ func NewHotkeysCommand(kb *KeybindingConfig) *SlashCommand {
 				{"Mouse wheel", "Scroll viewport"},
 			}
 			for _, v := range viewport {
-				sb.WriteString(fmt.Sprintf("    %-20s  %s\n", v[0], v[1]))
+				fmt.Fprintf(&sb, "    %-20s  %s\n", v[0], v[1])
 			}
 
 			// Customizable bindings.
@@ -50,7 +50,7 @@ func NewHotkeysCommand(kb *KeybindingConfig) *SlashCommand {
 				if desc == "" {
 					desc = string(b.Action)
 				}
-				sb.WriteString(fmt.Sprintf("    %-20s  %s\n", b.Key, desc))
+				fmt.Fprintf(&sb, "    %-20s  %s\n", b.Key, desc)
 			}
 
 			sb.WriteString("\n  Override in ~/.gi/keybindings.json")

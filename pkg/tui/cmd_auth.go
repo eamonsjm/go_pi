@@ -260,7 +260,7 @@ func NewAuthStatusCommand(store *auth.Store, resolver *auth.Resolver) *SlashComm
 					cred := store.Get(p)
 
 					if key != "" {
-						sb.WriteString(fmt.Sprintf("\n  %s: authenticated", p))
+						fmt.Fprintf(&sb, "\n  %s: authenticated", p)
 						if cred != nil {
 							switch cred.Type {
 							case auth.CredentialOAuth:
@@ -268,8 +268,8 @@ func NewAuthStatusCommand(store *auth.Store, resolver *auth.Resolver) *SlashComm
 									sb.WriteString(" (OAuth, token expired)")
 								} else if cred.ExpiresAt > 0 {
 									expires := time.UnixMilli(cred.ExpiresAt)
-									sb.WriteString(fmt.Sprintf(" (OAuth, expires %s)",
-										expires.Format("Jan 2 15:04")))
+									fmt.Fprintf(&sb, " (OAuth, expires %s)",
+										expires.Format("Jan 2 15:04"))
 								} else {
 									sb.WriteString(" (OAuth)")
 								}
@@ -280,7 +280,7 @@ func NewAuthStatusCommand(store *auth.Store, resolver *auth.Resolver) *SlashComm
 							sb.WriteString(" (env var)")
 						}
 					} else {
-						sb.WriteString(fmt.Sprintf("\n  %s: not configured", p))
+						fmt.Fprintf(&sb, "\n  %s: not configured", p)
 					}
 				}
 				sb.WriteString("\n")

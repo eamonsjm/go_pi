@@ -73,7 +73,7 @@ func main() {
 		fmt.Println("ERROR: Failed to reach GitHub API:", err)
 		os.Exit(1)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, _ := io.ReadAll(resp.Body)
 

@@ -46,10 +46,6 @@ func TestReadTool_ReadFile(t *testing.T) {
 func TestReadTool_OffsetAndLimit(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "multi.txt")
-	var lines []string
-	for i := 1; i <= 10; i++ {
-		lines = append(lines, "line"+string(rune('0'+i)))
-	}
 	// Use explicit line content for clarity.
 	content := "aaa\nbbb\nccc\nddd\neee\nfff\nggg\nhhh\niii\njjj\n"
 	os.WriteFile(path, []byte(content), 0644)

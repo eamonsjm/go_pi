@@ -54,7 +54,7 @@ func runModelComparison(ctx context.Context, provider, model, prompt string) {
 		log.Printf("Error creating session for %s: %v\n", provider, err)
 		return
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	events := s.Events()
 	errCh := make(chan error, 1)

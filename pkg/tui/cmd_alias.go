@@ -133,7 +133,7 @@ func NewAliasesCommand(registry *CommandRegistry) *SlashCommand {
 				sb.WriteString("Aliases:\n")
 				for _, alias := range keys {
 					target := aliases[alias]
-					sb.WriteString(fmt.Sprintf("  /%s → /%s\n", alias, target))
+					fmt.Fprintf(&sb, "  /%s → /%s\n", alias, target)
 				}
 
 				return CommandResultMsg{Text: sb.String()}

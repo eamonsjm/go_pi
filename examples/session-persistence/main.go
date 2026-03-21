@@ -86,7 +86,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	// Multi-turn conversation example
 	conversationStarters := []string{

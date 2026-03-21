@@ -71,7 +71,7 @@ func (t *ReadTool) Execute(ctx context.Context, params map[string]any) (string, 
 		return "", fmt.Errorf("cannot read file: %w", err)
 	}
 	if info.IsDir() {
-		return "", fmt.Errorf("%s is a directory, not a file. Use bash with 'ls' to list directory contents.", filePath)
+		return "", fmt.Errorf("%s is a directory, not a file; use bash with 'ls' to list directory contents", filePath)
 	}
 
 	data, err := os.ReadFile(filePath)

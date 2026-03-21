@@ -97,7 +97,7 @@ func NewShareCommand(sessionMgr *session.Manager) *SlashCommand {
 // suitable for sharing.
 func renderSessionMarkdown(sessionID string, msgs []ai.Message) string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("# Session %s\n\n", shortID(sessionID)))
+	fmt.Fprintf(&sb, "# Session %s\n\n", shortID(sessionID))
 
 	for _, msg := range msgs {
 		role := string(msg.Role)
@@ -105,20 +105,20 @@ func renderSessionMarkdown(sessionID string, msgs []ai.Message) string {
 		for _, block := range msg.Content {
 			switch block.Type {
 			case ai.ContentTypeText:
-				sb.WriteString(fmt.Sprintf("### %s\n\n%s\n\n", role, block.Text))
+				fmt.Fprintf(&sb, "### %s\n\n%s\n\n", role, block.Text)
 
 			case ai.ContentTypeToolUse:
-				sb.WriteString(fmt.Sprintf("<details><summary>🔧 %s</summary>\n\n```json\n%v\n```\n\n</details>\n\n", block.ToolName, block.Input))
+				fmt.Fprintf(&sb, "<details><summary>🔧 %s</summary>\n\n```json\n%v\n```\n\n</details>\n\n", block.ToolName, block.Input)
 
 			case ai.ContentTypeToolResult:
 				label := "result"
 				if block.IsError {
 					label = "error"
 				}
-				sb.WriteString(fmt.Sprintf("<details><summary>📎 %s</summary>\n\n```\n%s\n```\n\n</details>\n\n", label, block.Content))
+				fmt.Fprintf(&sb, "<details><summary>📎 %s</summary>\n\n```\n%s\n```\n\n</details>\n\n", label, block.Content)
 
 			case ai.ContentTypeThinking:
-				sb.WriteString(fmt.Sprintf("<details><summary>💭 thinking</summary>\n\n%s\n\n</details>\n\n", block.Thinking))
+				fmt.Fprintf(&sb, "<details><summary>💭 thinking</summary>\n\n%s\n\n</details>\n\n", block.Thinking)
 			}
 		}
 	}

@@ -249,18 +249,18 @@ func buildTranscript(msgs []ai.Message) string {
 		role := string(msg.Role)
 		text := msg.GetText()
 		if text != "" {
-			b.WriteString(fmt.Sprintf("[%s]: %s\n\n", role, text))
+			fmt.Fprintf(&b, "[%s]: %s\n\n", role, text)
 		}
 		for _, c := range msg.Content {
 			switch c.Type {
 			case ai.ContentTypeToolUse:
-				b.WriteString(fmt.Sprintf("[tool_call]: %s\n", c.ToolName))
+				fmt.Fprintf(&b, "[tool_call]: %s\n", c.ToolName)
 			case ai.ContentTypeToolResult:
 				result := c.Content
 				if len(result) > 500 {
 					result = result[:500] + "..."
 				}
-				b.WriteString(fmt.Sprintf("[tool_result]: %s\n\n", result))
+				fmt.Fprintf(&b, "[tool_result]: %s\n\n", result)
 			}
 		}
 	}

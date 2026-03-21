@@ -188,7 +188,7 @@ func searchFile(path string, re *regexp.Regexp, contextLines, maxMatches int) ([
 	if err != nil {
 		return nil, 0
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	var allLines []string
 	var matchLineNums []int

@@ -99,7 +99,7 @@ func (p *AzureOpenAIProvider) Stream(ctx context.Context, req StreamRequest) (<-
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		errBody, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("azure openai: API returned status %d: %s", resp.StatusCode, string(errBody))
 	}

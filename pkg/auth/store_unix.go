@@ -20,7 +20,7 @@ func (s *Store) Lock() error {
 	}
 
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
-		f.Close()
+		_ = f.Close()
 		return fmt.Errorf("acquire lock: %w", err)
 	}
 
@@ -32,7 +32,7 @@ func (s *Store) Lock() error {
 func (s *Store) Unlock() {
 	if s.lockFile != nil {
 		_ = syscall.Flock(int(s.lockFile.Fd()), syscall.LOCK_UN)
-		s.lockFile.Close()
+		_ = s.lockFile.Close()
 		s.lockFile = nil
 	}
 }

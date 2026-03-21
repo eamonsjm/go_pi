@@ -214,7 +214,7 @@ func (p *BedrockProvider) readEventStream(ctx context.Context, output *bedrockru
 	defer close(ch)
 
 	stream := output.GetStream()
-	defer stream.Close()
+	defer func() { _ = stream.Close() }()
 
 	var usage Usage
 	// Track active tool calls by content block index for emitting ToolUseEnd.

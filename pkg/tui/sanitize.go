@@ -178,7 +178,7 @@ func formatSecretWarning(findings []secretFinding) string {
 	}
 
 	for name, count := range groups {
-		sb.WriteString(fmt.Sprintf("  • %s (%d match", name, count))
+		fmt.Fprintf(&sb, "  • %s (%d match", name, count)
 		if count > 1 {
 			sb.WriteString("es")
 		}

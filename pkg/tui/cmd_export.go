@@ -74,41 +74,33 @@ func renderSessionHTML(sessionID string, msgs []ai.Message) string {
 			case ai.ContentTypeText:
 				text := html.EscapeString(block.Text)
 				text = renderCodeBlocks(text)
-				body.WriteString(fmt.Sprintf(
-					"<div class=\"message %s\"><div class=\"role\">%s</div><div class=\"content\">%s</div></div>\n",
-					roleClass, role, text,
-				))
+				fmt.Fprintf(&body, "<div class=\"message %s\"><div class=\"role\">%s</div><div class=\"content\">%s</div></div>\n",
+					roleClass, role, text)
 
 			case ai.ContentTypeToolUse:
 				inputJSON, err := json.MarshalIndent(block.Input, "", "  ")
 				if err != nil {
 					inputJSON = []byte(fmt.Sprintf("%v", block.Input))
 				}
-				body.WriteString(fmt.Sprintf(
-					"<div class=\"message tool\"><div class=\"role\">tool_use</div>"+
-						"<details><summary>%s</summary><pre><code>%s</code></pre></details></div>\n",
+				fmt.Fprintf(&body, "<div class=\"message tool\"><div class=\"role\">tool_use</div>"+
+					"<details><summary>%s</summary><pre><code>%s</code></pre></details></div>\n",
 					html.EscapeString(block.ToolName),
-					html.EscapeString(string(inputJSON)),
-				))
+					html.EscapeString(string(inputJSON)))
 
 			case ai.ContentTypeToolResult:
 				errClass := ""
 				if block.IsError {
 					errClass = " error"
 				}
-				body.WriteString(fmt.Sprintf(
-					"<div class=\"message tool-result%s\"><div class=\"role\">tool_result</div>"+
-						"<details><summary>result</summary><pre><code>%s</code></pre></details></div>\n",
+				fmt.Fprintf(&body, "<div class=\"message tool-result%s\"><div class=\"role\">tool_result</div>"+
+					"<details><summary>result</summary><pre><code>%s</code></pre></details></div>\n",
 					errClass,
-					html.EscapeString(block.Content),
-				))
+					html.EscapeString(block.Content))
 
 			case ai.ContentTypeThinking:
-				body.WriteString(fmt.Sprintf(
-					"<div class=\"message thinking\"><div class=\"role\">thinking</div>"+
-						"<details><summary>thinking</summary><pre>%s</pre></details></div>\n",
-					html.EscapeString(block.Thinking),
-				))
+				fmt.Fprintf(&body, "<div class=\"message thinking\"><div class=\"role\">thinking</div>"+
+					"<details><summary>thinking</summary><pre>%s</pre></details></div>\n",
+					html.EscapeString(block.Thinking))
 			}
 		}
 	}
@@ -131,7 +123,7 @@ func renderCodeBlocks(escaped string) string {
 			if lang != "" {
 				cls = fmt.Sprintf(" class=\"language-%s\"", lang)
 			}
-			out.WriteString(fmt.Sprintf("<pre><code%s>", cls))
+			fmt.Fprintf(&out, "<pre><code%s>", cls)
 			inCode = true
 			continue
 		}

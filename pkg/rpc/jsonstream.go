@@ -29,7 +29,7 @@ func RunJSONStream(agentLoop *agent.AgentLoop, prompt string) {
 		prompt = readStdin()
 		if prompt == "" {
 			data, _ := json.Marshal(Event{Type: "error", Error: "no prompt provided"})
-			fmt.Fprintf(os.Stdout, "%s\n", data)
+			_, _ = fmt.Fprintf(os.Stdout, "%s\n", data)
 			os.Exit(1)
 		}
 	}
@@ -38,9 +38,7 @@ func RunJSONStream(agentLoop *agent.AgentLoop, prompt string) {
 	events := agentLoop.Events()
 
 	go func() {
-		if err := agentLoop.Prompt(ctx, prompt); err != nil {
-			// Error is emitted as an agent_error event via the events channel.
-		}
+		_ = agentLoop.Prompt(ctx, prompt)
 	}()
 
 	for event := range events {

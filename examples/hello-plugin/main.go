@@ -177,7 +177,7 @@ func send(resp PluginResponse) {
 		fmt.Fprintf(os.Stderr, "hello-plugin: failed to marshal response: %v\n", err)
 		return
 	}
-	fmt.Fprintln(os.Stdout, string(data))
+	_, _ = fmt.Fprintln(os.Stdout, string(data))
 }
 
 // sendLog sends a log message to the host.

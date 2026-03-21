@@ -72,7 +72,7 @@ func (p *GeminiProvider) Stream(ctx context.Context, req StreamRequest) (<-chan 
 		}
 
 		errBody, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 
 		// Retry on 429 (rate limit) and 503 (overloaded).
 		if (resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusServiceUnavailable) && attempt < maxRetries {
@@ -340,7 +340,7 @@ type gemUsage struct {
 
 func (p *GeminiProvider) readSSEStream(ctx context.Context, body io.ReadCloser, ch chan<- StreamEvent) {
 	defer close(ch)
-	defer body.Close()
+	defer func() { _ = body.Close() }()
 
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
