@@ -461,7 +461,7 @@ func (p *GeminiProvider) readSSEStream(ctx context.Context, body io.ReadCloser, 
 			if part.FunctionCall != nil {
 				// Generate a tool call ID since Gemini doesn't provide one.
 				toolCallIdx++
-				toolID := fmt.Sprintf("gemini_call_%d", toolCallIdx)
+				toolID := nextToolCallID("gemini_call")
 
 				ch <- StreamEvent{
 					Type:       EventToolUseStart,
