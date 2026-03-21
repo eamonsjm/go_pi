@@ -106,10 +106,3 @@ func main() {
 	fmt.Println("\n✓ Step 3: GitHub API connectivity verified")
 	fmt.Println("\nPolecat can access GitHub APIs. Private key loaded successfully.")
 }
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
