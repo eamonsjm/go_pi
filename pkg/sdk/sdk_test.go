@@ -236,7 +236,7 @@ func TestResolveProviderDefaults(t *testing.T) {
 		}
 		// resolveProvider will fail on actual provider creation (invalid key),
 		// but the model default should be set.
-		resolveProvider(cfg)
+		resolveProvider(context.Background(), cfg)
 		if cfg.Model != tt.wantModel {
 			t.Errorf("provider %s: expected model %q, got %q", tt.provider, tt.wantModel, cfg.Model)
 		}

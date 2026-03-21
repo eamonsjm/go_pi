@@ -346,7 +346,7 @@ func resolveProvider(ctx context.Context, cfg *config.Config, resolver *auth.Res
 
 	// Bedrock uses AWS credential chain, not API keys.
 	if providerName == "bedrock" {
-		return ai.NewBedrockProvider(os.Getenv("AWS_REGION"))
+		return ai.NewBedrockProvider(ctx, os.Getenv("AWS_REGION"))
 	}
 
 	// Ollama is local and needs no API key — just a host URL.

@@ -186,7 +186,7 @@ func NewSession(opts ...SessionOption) (*Session, error) {
 	}
 
 	// Resolve provider.
-	provider, err := resolveProvider(cfg)
+	provider, err := resolveProvider(context.Background(), cfg)
 	if err != nil {
 		return nil, fmt.Errorf("sdk: %w", err)
 	}
@@ -364,7 +364,7 @@ func (s *Session) Resume(sessionID string) error {
 }
 
 // resolveProvider creates an AI provider from the session config.
-func resolveProvider(cfg *SessionConfig) (ai.Provider, error) {
+func resolveProvider(ctx context.Context, cfg *SessionConfig) (ai.Provider, error) {
 	if cfg.providerInstance != nil {
 		return cfg.providerInstance, nil
 	}
@@ -407,7 +407,7 @@ func resolveProvider(cfg *SessionConfig) (ai.Provider, error) {
 	case "azure":
 		return ai.NewAzureOpenAIProvider(cfg.APIKey, "", "")
 	case "bedrock":
-		return ai.NewBedrockProvider(cfg.APIKey)
+		return ai.NewBedrockProvider(ctx, cfg.APIKey)
 	case "ollama":
 		return ai.NewOllamaProvider(cfg.APIKey)
 	default:

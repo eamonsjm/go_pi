@@ -19,17 +19,18 @@ type BedrockProvider struct {
 }
 
 // NewBedrockProvider creates a new AWS Bedrock provider.
+// The ctx parameter controls cancellation of the AWS config loading (e.g. IMDS fetches).
 // The region parameter is optional; if empty, it uses the AWS_REGION environment variable
 // or the default region from the AWS config. Authentication uses the standard AWS
 // credential chain (AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY, ~/.aws/credentials,
 // IAM roles, etc.).
-func NewBedrockProvider(region string) (*BedrockProvider, error) {
+func NewBedrockProvider(ctx context.Context, region string) (*BedrockProvider, error) {
 	var opts []func(*awsconfig.LoadOptions) error
 	if region != "" {
 		opts = append(opts, awsconfig.WithRegion(region))
 	}
 
-	cfg, err := awsconfig.LoadDefaultConfig(context.Background(), opts...)
+	cfg, err := awsconfig.LoadDefaultConfig(ctx, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("bedrock: failed to load AWS config: %w", err)
 	}
