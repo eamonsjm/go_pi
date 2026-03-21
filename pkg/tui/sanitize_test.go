@@ -294,3 +294,107 @@ func TestExcerptAround(t *testing.T) {
 		t.Error("excerpt should be at most 80 characters")
 	}
 }
+
+func TestExcerptAround_EdgeCases(t *testing.T) {
+	tests := []struct {
+		name  string
+		text  string
+		start int
+		end   int
+	}{
+		{
+			name:  "match at very start",
+			text:  "SECRET=value rest of text",
+			start: 0,
+			end:   12,
+		},
+		{
+			name:  "match at very end",
+			text:  "prefix SECRET=value",
+			start: 7,
+			end:   19,
+		},
+		{
+			name:  "match right after newline",
+			text:  "line1\nSECRET=value\nline3",
+			start: 6,
+			end:   18,
+		},
+		{
+			name:  "match starts at newline boundary idx 0",
+			text:  "\nSECRET=value",
+			start: 1,
+			end:   13,
+		},
+		{
+			name:  "multiline match text",
+			text:  "before\nSECRET=\nmultiline\nvalue\nafter",
+			start: 7,
+			end:   30,
+		},
+		{
+			name:  "single character text",
+			text:  "x",
+			start: 0,
+			end:   1,
+		},
+		{
+			name:  "short text match at start",
+			text:  "ab",
+			start: 0,
+			end:   2,
+		},
+		{
+			name:  "text is all newlines",
+			text:  "\n\n\n",
+			start: 1,
+			end:   2,
+		},
+		{
+			name:  "negative start clamped",
+			text:  "some text",
+			start: -5,
+			end:   4,
+		},
+		{
+			name:  "end beyond text length clamped",
+			text:  "some text",
+			start: 0,
+			end:   100,
+		},
+		{
+			name:  "start equals end returns empty",
+			text:  "some text",
+			start: 3,
+			end:   3,
+		},
+		{
+			name:  "start beyond text length returns empty",
+			text:  "short",
+			start: 100,
+			end:   200,
+		},
+		{
+			name:  "start greater than end returns empty",
+			text:  "some text",
+			start: 5,
+			end:   2,
+		},
+		{
+			name:  "match near newline with short prefix",
+			text:  "a\nSECRET=val",
+			start: 2,
+			end:   12,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Must not panic
+			excerpt := excerptAround(tt.text, tt.start, tt.end)
+			if len(excerpt) > 80 {
+				t.Errorf("excerpt too long: %d chars", len(excerpt))
+			}
+		})
+	}
+}

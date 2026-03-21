@@ -99,6 +99,17 @@ func scanMessagesForSecrets(msgs []ai.Message) []secretFinding {
 // excerptAround returns a short snippet of text around [start, end), with
 // the matched portion partially masked.
 func excerptAround(text string, start, end int) string {
+	// Clamp inputs to valid range to prevent slice bounds panics.
+	if start < 0 {
+		start = 0
+	}
+	if end > len(text) {
+		end = len(text)
+	}
+	if start >= end || start >= len(text) {
+		return ""
+	}
+
 	// Get some surrounding context
 	ctxStart := start - 20
 	if ctxStart < 0 {
@@ -110,9 +121,16 @@ func excerptAround(text string, start, end int) string {
 	}
 
 	excerpt := text[ctxStart:ctxEnd]
-	// Trim to line boundaries for cleaner display
-	if idx := strings.LastIndexByte(excerpt[:start-ctxStart], '\n'); idx >= 0 {
-		excerpt = excerpt[idx+1:]
+
+	// Track match position within the excerpt so newline trimming
+	// doesn't use a stale offset after the string is shifted.
+	matchOffset := start - ctxStart
+
+	// Trim to the last newline before the match for cleaner display.
+	if matchOffset > 0 && matchOffset <= len(excerpt) {
+		if idx := strings.LastIndexByte(excerpt[:matchOffset], '\n'); idx >= 0 {
+			excerpt = excerpt[idx+1:]
+		}
 	}
 	if idx := strings.IndexByte(excerpt, '\n'); idx >= 0 {
 		excerpt = excerpt[:idx]
