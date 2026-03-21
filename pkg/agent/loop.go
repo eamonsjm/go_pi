@@ -362,7 +362,7 @@ func (a *AgentLoop) doTurn(ctx context.Context) (*ai.Message, error) {
 				var input any
 				if currentTool.inputJSON != "" {
 					if err := json.Unmarshal([]byte(currentTool.inputJSON), &input); err != nil {
-						// Keep raw string as input if it doesn't parse.
+						log.Printf("agent: invalid tool input JSON for %s (id=%s): %v", currentTool.name, currentTool.id, err)
 						input = currentTool.inputJSON
 					}
 				}
@@ -404,6 +404,21 @@ func (a *AgentLoop) executeTool(ctx context.Context, tc ai.ContentBlock) ai.Mess
 		ToolName:   tc.ToolName,
 		ToolArgs:   params,
 	})
+
+	// If the model sent non-nil input but it couldn't be parsed as a JSON
+	// object, toParamsMap returns nil. Return an error result so the model
+	// can retry with valid input instead of executing with nil params.
+	if params == nil && tc.Input != nil {
+		errMsg := fmt.Sprintf("invalid tool input for %s: could not parse as JSON object", tc.ToolName)
+		a.emit(ctx, AgentEvent{
+			Type:       EventToolExecEnd,
+			ToolCallID: tc.ToolUseID,
+			ToolName:   tc.ToolName,
+			ToolResult: errMsg,
+			ToolError:  true,
+		})
+		return ai.NewToolResultMessage(tc.ToolUseID, errMsg, true)
+	}
 
 	tool, ok := a.tools.Get(tc.ToolName)
 	if !ok {

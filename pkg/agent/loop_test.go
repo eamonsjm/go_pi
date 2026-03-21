@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -549,6 +550,45 @@ func TestUnknownToolReturnsError(t *testing.T) {
 	}
 	if !found {
 		t.Error("expected EventToolExecEnd for unknown tool")
+	}
+}
+
+func TestInvalidToolInputJSONReturnsError(t *testing.T) {
+	// Send tool input that is not valid JSON — executeTool should return
+	// an error result instead of executing the tool with nil params.
+	provider := &mockProvider{
+		streamFn: toolThenText("my_tool", "tc-bad", `not valid json`, "ok"),
+	}
+	reg := tools.NewRegistry()
+	reg.Register(&callbackTool{name: "my_tool", fn: func() (string, error) {
+		t.Error("tool should not have been called with invalid input")
+		return "", nil
+	}})
+	a := NewAgentLoop(provider, reg)
+
+	ch := a.Events()
+	go func() {
+		if err := a.Prompt(context.Background(), "call with bad json"); err != nil {
+			t.Errorf("Prompt returned error: %v", err)
+		}
+	}()
+
+	events := drainEvents(ch, 2*time.Second)
+
+	found := false
+	for _, ev := range events {
+		if ev.Type == EventToolExecEnd && ev.ToolCallID == "tc-bad" {
+			if !ev.ToolError {
+				t.Error("expected ToolError=true for invalid tool input JSON")
+			}
+			if !strings.Contains(ev.ToolResult, "invalid tool input") {
+				t.Errorf("unexpected tool result: %q", ev.ToolResult)
+			}
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected EventToolExecEnd for invalid tool input")
 	}
 }
 
