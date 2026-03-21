@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
 )
 
 // Store manages persisted authentication credentials for all providers.
@@ -14,7 +15,8 @@ import (
 type Store struct {
 	path     string                 // path to auth.json
 	entries  map[string]*Credential // provider ID → credential
-	lockFile *os.File               // held while locked; nil when unlocked
+	lockFile *os.File               // held while locked; nil when unlocked (unix)
+	mu       sync.Mutex             // per-instance mutex for locking (windows)
 }
 
 // NewStore creates a Store backed by the given file path.
