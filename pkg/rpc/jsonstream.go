@@ -57,16 +57,26 @@ func RunJSONStream(agentLoop *agent.AgentLoop, prompt string) {
 	events := agentLoop.Events()
 
 	done := make(chan struct{})
+	var promptErr error
 	go func() {
 		defer close(done)
-		_ = agentLoop.Prompt(ctx, prompt)
+		promptErr = agentLoop.Prompt(ctx, prompt)
 	}()
 
+	var sawError bool
 	for event := range events {
 		ev := EventFromAgent(event)
-		enc.Encode(ev) //nolint: errcheck
+		if err := enc.Encode(ev); err != nil {
+			log.Printf("jsonstream: write failed: %v", err)
+			cancel()
+			break
+		}
 
-		if event.Type == agent.EventAgentEnd || event.Type == agent.EventAgentError {
+		if event.Type == agent.EventAgentError {
+			sawError = true
+			break
+		}
+		if event.Type == agent.EventAgentEnd {
 			break
 		}
 	}
@@ -75,4 +85,13 @@ func RunJSONStream(agentLoop *agent.AgentLoop, prompt string) {
 	// function. Context cancellation (via defer cancel above) ensures
 	// Prompt returns promptly even if the event loop exited early.
 	<-done
+
+	// If Prompt returned an error but no error event was emitted to the
+	// stream, write a synthetic error event so callers see the failure.
+	if promptErr != nil && !sawError {
+		ev := Event{Type: "error", Error: promptErr.Error()}
+		if err := enc.Encode(ev); err != nil {
+			log.Printf("jsonstream: failed to write error: %v", err)
+		}
+	}
 }
