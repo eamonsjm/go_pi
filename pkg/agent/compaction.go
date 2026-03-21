@@ -2,11 +2,17 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
 
 	"github.com/ejm/go_pi/pkg/ai"
+)
+
+var (
+	errEmptySummary   = errors.New("compaction produced empty summary")
+	errNoMessages     = errors.New("no messages to compact")
 )
 
 // runCompaction streams a one-shot compaction request and returns the summary text.
@@ -43,7 +49,7 @@ func (a *AgentLoop) runCompaction(ctx context.Context, prompt string) (string, e
 
 	text := summary.String()
 	if text == "" {
-		return "", fmt.Errorf("compaction produced empty summary")
+		return "", errEmptySummary
 	}
 	return text, nil
 }
@@ -58,7 +64,7 @@ func (a *AgentLoop) Compact(ctx context.Context, instructions string) error {
 	a.mu.Unlock()
 
 	if len(msgs) == 0 {
-		return fmt.Errorf("no messages to compact")
+		return errNoMessages
 	}
 
 	transcript := buildTranscript(msgs)
