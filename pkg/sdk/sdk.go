@@ -253,7 +253,7 @@ func (s *Session) Prompt(ctx context.Context, text string) error {
 
 	// Persist user message.
 	if err := s.sessionMgr.SaveMessage(ai.NewTextMessage(ai.RoleUser, text)); err != nil {
-		return err
+		return fmt.Errorf("sdk prompt: save user message: %w", err)
 	}
 
 	err := s.loop.Prompt(ctx, text)
@@ -264,11 +264,14 @@ func (s *Session) Prompt(ctx context.Context, text string) error {
 	allMsgs := s.loop.Messages()
 	for i := beforeCount + 1; i < len(allMsgs); i++ {
 		if err := s.sessionMgr.SaveMessage(allMsgs[i]); err != nil {
-			return err
+			return fmt.Errorf("sdk prompt: save generated message: %w", err)
 		}
 	}
 
-	return err
+	if err != nil {
+		return fmt.Errorf("sdk prompt: agent loop: %w", err)
+	}
+	return nil
 }
 
 // Events returns the channel on which agent events are emitted.
