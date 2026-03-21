@@ -355,10 +355,10 @@ type editorQuitMsg struct{}
 
 // editorShellResultMsg is sent when a shell command execution completes.
 type editorShellResultMsg struct {
-	command   string // The original command (without ! or !!)
-	output    string // Command output
-	sendToAI  bool   // true for !, false for !!
-	errorMsg  string // Non-empty if command failed
+	command  string // The original command (without ! or !!)
+	output   string // Command output
+	sendToAI bool   // true for !, false for !!
+	errorMsg string // Non-empty if command failed
 }
 
 // executeShellCommand runs a shell command and returns output and any error.
