@@ -621,36 +621,6 @@ func cloneMessages(msgs []ai.Message) []ai.Message {
 	return cp
 }
 
-// appendTextDelta appends text to the last text content block of an assistant
-// message, or creates a new text block if there isn't one.
-func appendTextDelta(msg *ai.Message, delta string) {
-	for i := len(msg.Content) - 1; i >= 0; i-- {
-		if msg.Content[i].Type == ai.ContentTypeText {
-			msg.Content[i].Text += delta
-			return
-		}
-	}
-	msg.Content = append(msg.Content, ai.ContentBlock{
-		Type: ai.ContentTypeText,
-		Text: delta,
-	})
-}
-
-// appendThinkingDelta appends thinking text to the last thinking content block,
-// or creates a new one.
-func appendThinkingDelta(msg *ai.Message, delta string) {
-	for i := len(msg.Content) - 1; i >= 0; i-- {
-		if msg.Content[i].Type == ai.ContentTypeThinking {
-			msg.Content[i].Thinking += delta
-			return
-		}
-	}
-	msg.Content = append(msg.Content, ai.ContentBlock{
-		Type:     ai.ContentTypeThinking,
-		Thinking: delta,
-	})
-}
-
 // toParamsMap converts a tool input (which may be a map or raw JSON) into
 // a map[string]any suitable for passing to Tool.Execute.
 func toParamsMap(input any) map[string]any {
