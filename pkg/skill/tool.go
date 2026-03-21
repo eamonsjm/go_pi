@@ -99,7 +99,7 @@ func SkillSystemReminder(reg *Registry) string {
 		if s.Trigger != "" {
 			desc += "\nTRIGGER when: " + s.Trigger
 		}
-		b.WriteString(fmt.Sprintf("- %s: %s\n", s.Name, desc))
+		fmt.Fprintf(&b, "- %s: %s\n", s.Name, desc)
 	}
 	return b.String()
 }

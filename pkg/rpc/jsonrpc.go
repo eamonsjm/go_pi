@@ -35,13 +35,13 @@ func newStdinProxy(cancel context.CancelFunc) *stdinProxy {
 func (sp *stdinProxy) copy() {
 	defer close(sp.done)
 	_, _ = io.Copy(sp.pw, os.Stdin)
-	sp.pw.Close()
+	_ = sp.pw.Close()
 	sp.cancel() // stdin closed — cancel running prompts
 }
 
 // close shuts down the proxy, unblocking any pending scanner reads.
 func (sp *stdinProxy) close() {
-	sp.pr.Close()
+	_ = sp.pr.Close()
 	<-sp.done
 }
 
