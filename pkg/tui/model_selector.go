@@ -24,7 +24,10 @@ type modelSelectedMsg struct {
 type modelCancelledMsg struct{}
 
 // showModelSelectorMsg tells the App to show the model selector overlay.
-type showModelSelectorMsg struct{}
+// If filter is non-empty, the selector opens pre-filtered to that query.
+type showModelSelectorMsg struct {
+	filter string
+}
 
 // ---------------------------------------------------------------------------
 // ModelOption — a single entry in the model list
@@ -133,6 +136,16 @@ func (ms *ModelSelector) Show() {
 	ms.cursor = 0
 	ms.providerIdx = 0
 	ms.applyProviderFilter()
+}
+
+// ShowWithFilter makes the selector visible with a pre-populated filter,
+// showing matches across all providers.
+func (ms *ModelSelector) ShowWithFilter(query string) {
+	ms.visible = true
+	ms.cursor = 0
+	ms.providerIdx = 0
+	ms.filter = query
+	ms.applyFilterAllProviders()
 }
 
 // Hide hides the selector.
@@ -404,6 +417,44 @@ func (ms *ModelSelector) applyFilter() {
 	}
 }
 
+// applyFilterAllProviders filters across ALL providers (used for pre-filtered show).
+func (ms *ModelSelector) applyFilterAllProviders() {
+	if ms.filter == "" {
+		ms.applyProviderFilter()
+		return
+	}
+
+	query := strings.ToLower(ms.filter)
+	ms.filtered = ms.filtered[:0]
+	for i, opt := range ms.models {
+		haystack := strings.ToLower(opt.Label + " " + opt.Model + " " + opt.Provider)
+		if strings.Contains(haystack, query) {
+			ms.filtered = append(ms.filtered, i)
+		}
+	}
+	if ms.cursor >= len(ms.filtered) {
+		ms.cursor = 0
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Fuzzy matching
+// ---------------------------------------------------------------------------
+
+// fuzzyMatchModels returns all models whose Label, Model ID, or Provider
+// contain the query as a case-insensitive substring.
+func fuzzyMatchModels(query string) []ModelOption {
+	q := strings.ToLower(query)
+	var matches []ModelOption
+	for _, opt := range defaultModels {
+		haystack := strings.ToLower(opt.Label + " " + opt.Model + " " + opt.Provider)
+		if strings.Contains(haystack, q) {
+			matches = append(matches, opt)
+		}
+	}
+	return matches
+}
+
 // ---------------------------------------------------------------------------
 // SlashCommand registration
 // ---------------------------------------------------------------------------
@@ -420,25 +471,66 @@ func RegisterModelCommand() SlashCommand {
 				// No args — show the interactive selector.
 				return func() tea.Msg { return showModelSelectorMsg{} }
 			}
-			// Direct model switch: try to match against known models first.
+
+			// 1. Exact match on model ID (case-insensitive).
 			for _, opt := range defaultModels {
 				if strings.EqualFold(opt.Model, args) {
-					provider := opt.Provider
-					model := opt.Model
-					return func() tea.Msg {
-						return modelSelectedMsg{provider: provider, model: model}
-					}
+					return modelSwitchWithAuthCheck(opt)
 				}
 			}
-			// Unknown model — return error with list of available models.
-			var availableModels []string
-			for _, opt := range defaultModels {
-				availableModels = append(availableModels, fmt.Sprintf("%s (%s/%s)", opt.Label, opt.Provider, opt.Model))
-			}
-			errorMsg := fmt.Sprintf("Unknown model: %s\n\nAvailable models:\n%s", args, strings.Join(availableModels, "\n"))
-			return func() tea.Msg {
-				return CommandResultMsg{Text: errorMsg, IsError: true}
+
+			// 2. Fuzzy match: substring across Label, Model, Provider.
+			matches := fuzzyMatchModels(args)
+
+			switch len(matches) {
+			case 0:
+				// No match — error with available models.
+				var availableModels []string
+				for _, opt := range defaultModels {
+					availableModels = append(availableModels, fmt.Sprintf("  %s (%s/%s)", opt.Label, opt.Provider, opt.Model))
+				}
+				errorMsg := fmt.Sprintf("No model matching %q\n\nAvailable models:\n%s", args, strings.Join(availableModels, "\n"))
+				return func() tea.Msg {
+					return CommandResultMsg{Text: errorMsg, IsError: true}
+				}
+
+			case 1:
+				// Single fuzzy match — switch directly (with auth check).
+				return modelSwitchWithAuthCheck(matches[0])
+
+			default:
+				// Multiple matches — show selector pre-filtered.
+				filter := args
+				return func() tea.Msg { return showModelSelectorMsg{filter: filter} }
 			}
 		},
+	}
+}
+
+// modelSwitchWithAuthCheck returns a tea.Cmd that verifies the user is
+// authenticated to the model's provider before emitting modelSelectedMsg.
+// If not authenticated, it returns an error prompting the user to log in.
+func modelSwitchWithAuthCheck(opt ModelOption) tea.Cmd {
+	return func() tea.Msg {
+		authStore, err := auth.NewStore("")
+		if err != nil {
+			// Can't check auth — proceed anyway.
+			return modelSelectedMsg{provider: opt.Provider, model: opt.Model}
+		}
+		if err := authStore.Load(); err != nil {
+			return modelSelectedMsg{provider: opt.Provider, model: opt.Model}
+		}
+
+		if authStore.Get(opt.Provider) == nil {
+			return CommandResultMsg{
+				Text: fmt.Sprintf(
+					"Not authenticated to %s. Run /login %s first, then retry /model %s",
+					opt.Provider, opt.Provider, opt.Model,
+				),
+				IsError: true,
+			}
+		}
+
+		return modelSelectedMsg{provider: opt.Provider, model: opt.Model}
 	}
 }

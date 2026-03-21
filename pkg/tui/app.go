@@ -525,7 +525,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// ---- Model selector events ----
 	case showModelSelectorMsg:
 		a.modelSelector.SetSize(a.width, a.height)
-		a.modelSelector.Show()
+		if msg.filter != "" {
+			a.modelSelector.ShowWithFilter(msg.filter)
+		} else {
+			a.modelSelector.Show()
+		}
 		a.editor.Blur()
 		return a, nil
 

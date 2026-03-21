@@ -332,7 +332,7 @@ func TestRegisterModelCommand_WithKnownModel(t *testing.T) {
 
 func TestRegisterModelCommand_WithUnknownModel(t *testing.T) {
 	cmd := RegisterModelCommand()
-	result := cmd.Execute("haiku")
+	result := cmd.Execute("xyznonexistent999")
 	if result == nil {
 		t.Fatal("expected command to return a tea.Cmd")
 	}
@@ -344,11 +344,85 @@ func TestRegisterModelCommand_WithUnknownModel(t *testing.T) {
 	if !cmdResult.IsError {
 		t.Errorf("expected IsError to be true for unknown model, got false")
 	}
-	if !strings.Contains(cmdResult.Text, "Unknown model") {
-		t.Errorf("expected error message to contain 'Unknown model', got %q", cmdResult.Text)
+	if !strings.Contains(cmdResult.Text, "No model matching") {
+		t.Errorf("expected error message to contain 'No model matching', got %q", cmdResult.Text)
 	}
 	if !strings.Contains(cmdResult.Text, "Available models") {
 		t.Errorf("expected error message to contain 'Available models', got %q", cmdResult.Text)
+	}
+}
+
+func TestRegisterModelCommand_FuzzyMatch_SingleResult(t *testing.T) {
+	cmd := RegisterModelCommand()
+	// "haiku" should fuzzy-match exactly one model: claude-haiku-4-5-20251001
+	result := cmd.Execute("haiku")
+	if result == nil {
+		t.Fatal("expected command to return a tea.Cmd")
+	}
+	msg := result()
+	// Without auth, this may be a modelSelectedMsg or a CommandResultMsg (auth error).
+	// We check that it's NOT a showModelSelectorMsg (since there's only one match).
+	switch m := msg.(type) {
+	case modelSelectedMsg:
+		if m.model != "claude-haiku-4-5-20251001" {
+			t.Errorf("expected model claude-haiku-4-5-20251001, got %q", m.model)
+		}
+		if m.provider != "anthropic" {
+			t.Errorf("expected provider anthropic, got %q", m.provider)
+		}
+	case CommandResultMsg:
+		// Auth error is acceptable — the important thing is it resolved to one model.
+		if !m.IsError {
+			t.Error("expected auth error if not modelSelectedMsg")
+		}
+		if !strings.Contains(m.Text, "anthropic") {
+			t.Errorf("expected auth error to mention provider, got %q", m.Text)
+		}
+	default:
+		t.Fatalf("expected modelSelectedMsg or CommandResultMsg, got %T", msg)
+	}
+}
+
+func TestRegisterModelCommand_FuzzyMatch_MultipleResults(t *testing.T) {
+	cmd := RegisterModelCommand()
+	// "opus" matches multiple models (Opus 4.6, Opus 4, OpenRouter Opus) → show selector
+	result := cmd.Execute("opus")
+	if result == nil {
+		t.Fatal("expected command to return a tea.Cmd")
+	}
+	msg := result()
+	selectorMsg, ok := msg.(showModelSelectorMsg)
+	if !ok {
+		t.Fatalf("expected showModelSelectorMsg for ambiguous query, got %T", msg)
+	}
+	if selectorMsg.filter != "opus" {
+		t.Errorf("expected filter 'opus', got %q", selectorMsg.filter)
+	}
+}
+
+func TestRegisterModelCommand_FuzzyMatch_GPT(t *testing.T) {
+	cmd := RegisterModelCommand()
+	// "gpt" should match multiple GPT variants → show selector
+	result := cmd.Execute("gpt")
+	if result == nil {
+		t.Fatal("expected command to return a tea.Cmd")
+	}
+	msg := result()
+	if _, ok := msg.(showModelSelectorMsg); !ok {
+		t.Fatalf("expected showModelSelectorMsg for 'gpt', got %T", msg)
+	}
+}
+
+func TestRegisterModelCommand_FuzzyMatch_ByProvider(t *testing.T) {
+	cmd := RegisterModelCommand()
+	// "gemini" matches provider and model names → multiple matches → selector
+	result := cmd.Execute("gemini")
+	if result == nil {
+		t.Fatal("expected command to return a tea.Cmd")
+	}
+	msg := result()
+	if _, ok := msg.(showModelSelectorMsg); !ok {
+		t.Fatalf("expected showModelSelectorMsg for 'gemini', got %T", msg)
 	}
 }
 
@@ -482,6 +556,93 @@ func TestRegisterModelCommand_WhitespaceOnly(t *testing.T) {
 	// Whitespace-only args should be treated as "show selector" after trimming.
 	if _, ok := msg.(showModelSelectorMsg); !ok {
 		t.Errorf("expected showModelSelectorMsg for whitespace args, got %T", msg)
+	}
+}
+
+func TestFuzzyMatchModels(t *testing.T) {
+	tests := []struct {
+		query    string
+		minMatch int
+		mustHave string // at least one match must contain this in its Model field
+	}{
+		{"haiku", 1, "haiku"},
+		{"opus", 3, "opus"},     // Opus 4.6, Opus 4, OpenRouter Opus
+		{"sonnet", 3, "sonnet"}, // Sonnet 4.6, Sonnet 4, OpenRouter Sonnet
+		{"gpt", 4, "gpt"},
+		{"gemini", 4, "gemini"},
+		{"flash", 2, "flash"},
+		{"openrouter", 4, ""},
+		{"xyznothing", 0, ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.query, func(t *testing.T) {
+			matches := fuzzyMatchModels(tt.query)
+			if len(matches) < tt.minMatch {
+				t.Errorf("fuzzyMatchModels(%q): got %d matches, want at least %d", tt.query, len(matches), tt.minMatch)
+			}
+			if tt.mustHave != "" && len(matches) > 0 {
+				found := false
+				for _, m := range matches {
+					if strings.Contains(strings.ToLower(m.Model), tt.mustHave) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("fuzzyMatchModels(%q): no match contains %q in Model", tt.query, tt.mustHave)
+				}
+			}
+		})
+	}
+}
+
+func TestFuzzyMatchModels_CaseInsensitive(t *testing.T) {
+	lower := fuzzyMatchModels("haiku")
+	upper := fuzzyMatchModels("HAIKU")
+	mixed := fuzzyMatchModels("Haiku")
+
+	if len(lower) != len(upper) || len(lower) != len(mixed) {
+		t.Errorf("case sensitivity issue: lower=%d upper=%d mixed=%d", len(lower), len(upper), len(mixed))
+	}
+}
+
+func TestModelSelector_ShowWithFilter(t *testing.T) {
+	ms := NewModelSelector()
+	ms.ShowWithFilter("opus")
+
+	if !ms.Visible() {
+		t.Error("expected visible after ShowWithFilter")
+	}
+	if ms.filter != "opus" {
+		t.Errorf("expected filter 'opus', got %q", ms.filter)
+	}
+	// Should have matches across all providers (not just the first provider)
+	if len(ms.filtered) < 2 {
+		t.Errorf("expected at least 2 opus matches across all providers, got %d", len(ms.filtered))
+	}
+	// Verify matches actually contain "opus"
+	for _, idx := range ms.filtered {
+		opt := ms.models[idx]
+		haystack := strings.ToLower(opt.Label + " " + opt.Model + " " + opt.Provider)
+		if !strings.Contains(haystack, "opus") {
+			t.Errorf("unexpected match: %q (provider: %s)", opt.Label, opt.Provider)
+		}
+	}
+}
+
+func TestModelSelector_ShowWithFilter_Empty(t *testing.T) {
+	ms := NewModelSelector()
+	ms.ShowWithFilter("")
+
+	if !ms.Visible() {
+		t.Error("expected visible")
+	}
+	// Empty filter should show models from current provider
+	provider := ms.providers[ms.providerIdx]
+	expected := len(ms.modelsByProv[provider])
+	if len(ms.filtered) != expected {
+		t.Errorf("empty filter: expected %d models from provider %s, got %d", expected, provider, len(ms.filtered))
 	}
 }
 
