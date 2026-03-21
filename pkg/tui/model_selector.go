@@ -6,6 +6,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/ejm/go_pi/pkg/auth"
 )
 
 // ---------------------------------------------------------------------------
@@ -72,21 +74,46 @@ var defaultModels = []ModelOption{
 
 // ModelSelector is an overlay that lets the user pick from a list of models.
 type ModelSelector struct {
-	models   []ModelOption
-	filtered []int // indices into models that match the current filter
-	cursor   int   // position within filtered
-	visible  bool
-	width    int
-	height   int
-	filter   string // current search text
+	models       []ModelOption
+	providers    []string           // unique providers in display order
+	modelsByProv map[string][]int   // provider -> indices of models for that provider
+	authStatus   map[string]bool    // provider -> authenticated
+	filtered     []int              // indices into models that match the current filter
+	cursor       int                // position within filtered (model index)
+	providerIdx  int                // which provider is selected (for provider-centric view)
+	visible      bool
+	width        int
+	height       int
+	filter       string             // current search text
+	authStore    *auth.Store        // for checking auth status
+	providerMode bool               // if true, navigating providers; if false, navigating models
 }
 
 // NewModelSelector creates a ModelSelector pre-populated with common models.
 func NewModelSelector() *ModelSelector {
+	authStore, _ := auth.NewStore("") // Use default path
+	authStore.Load()                    // Load credentials (ignore errors, just proceed)
+
 	ms := &ModelSelector{
-		models: make([]ModelOption, len(defaultModels)),
+		models:       make([]ModelOption, len(defaultModels)),
+		modelsByProv: make(map[string][]int),
+		authStatus:   make(map[string]bool),
+		authStore:    authStore,
 	}
 	copy(ms.models, defaultModels)
+
+	// Build provider list and model indices
+	seenProviders := make(map[string]bool)
+	for i, opt := range ms.models {
+		if !seenProviders[opt.Provider] {
+			ms.providers = append(ms.providers, opt.Provider)
+			seenProviders[opt.Provider] = true
+			// Check if authenticated
+			ms.authStatus[opt.Provider] = ms.authStore.Get(opt.Provider) != nil
+		}
+		ms.modelsByProv[opt.Provider] = append(ms.modelsByProv[opt.Provider], i)
+	}
+
 	ms.resetFilter()
 	return ms
 }
@@ -102,7 +129,8 @@ func (ms *ModelSelector) Show() {
 	ms.visible = true
 	ms.filter = ""
 	ms.cursor = 0
-	ms.resetFilter()
+	ms.providerIdx = 0
+	ms.applyProviderFilter()
 }
 
 // Hide hides the selector.
@@ -143,6 +171,37 @@ func (ms *ModelSelector) Update(msg tea.Msg) tea.Cmd {
 				return modelSelectedMsg{provider: opt.Provider, model: opt.Model}
 			}
 
+		case tea.KeyTab:
+			// Tab switches to next provider
+			ms.providerIdx = (ms.providerIdx + 1) % len(ms.providers)
+			ms.applyProviderFilter()
+			return nil
+
+		case tea.KeyShiftTab:
+			// Shift+Tab switches to previous provider
+			ms.providerIdx--
+			if ms.providerIdx < 0 {
+				ms.providerIdx = len(ms.providers) - 1
+			}
+			ms.applyProviderFilter()
+			return nil
+
+		case tea.KeyLeft:
+			// Left arrow switches to previous provider
+			if ms.providerIdx > 0 {
+				ms.providerIdx--
+				ms.applyProviderFilter()
+			}
+			return nil
+
+		case tea.KeyRight:
+			// Right arrow switches to next provider
+			if ms.providerIdx < len(ms.providers)-1 {
+				ms.providerIdx++
+				ms.applyProviderFilter()
+			}
+			return nil
+
 		case tea.KeyUp:
 			if ms.cursor > 0 {
 				ms.cursor--
@@ -163,8 +222,18 @@ func (ms *ModelSelector) Update(msg tea.Msg) tea.Cmd {
 			return nil
 
 		default:
-			// Accumulate printable runes for the filter.
+			// Number keys (1-9) jump to provider
 			if msg.Type == tea.KeyRunes {
+				rune := []rune(msg.String())[0]
+				if rune >= '1' && rune <= '9' {
+					idx := int(rune - '1')
+					if idx < len(ms.providers) {
+						ms.providerIdx = idx
+						ms.applyProviderFilter()
+						return nil
+					}
+				}
+				// Regular character: accumulate for filter
 				ms.filter += msg.String()
 				ms.applyFilter()
 			}
@@ -185,7 +254,7 @@ func (ms *ModelSelector) View() string {
 		return ""
 	}
 
-	boxWidth := 52
+	boxWidth := 60
 	if ms.width > 0 && boxWidth > ms.width-4 {
 		boxWidth = ms.width - 4
 	}
@@ -200,7 +269,34 @@ func (ms *ModelSelector) View() string {
 		Render("Select Model")
 	sb.WriteString(title + "\n\n")
 
-	// Filter prompt.
+	// Provider tabs with auth status
+	providerTabs := ""
+	for i, provider := range ms.providers {
+		authStatus := "✗"
+		if ms.authStatus[provider] {
+			authStatus = "✓"
+		}
+		displayName := provider + " " + authStatus
+
+		if i == ms.providerIdx {
+			// Highlight current provider
+			providerTabs += lipgloss.NewStyle().
+				Foreground(ColorPrimary).
+				Bold(true).
+				Render("[" + displayName + "]")
+		} else {
+			providerTabs += lipgloss.NewStyle().
+				Foreground(ColorMuted).
+				Render("[" + displayName + "]")
+		}
+
+		if i < len(ms.providers)-1 {
+			providerTabs += " "
+		}
+	}
+	sb.WriteString(providerTabs + "\n\n")
+
+	// Filter prompt if active.
 	if ms.filter != "" {
 		filterLine := lipgloss.NewStyle().
 			Foreground(ColorSecondary).
@@ -208,32 +304,34 @@ func (ms *ModelSelector) View() string {
 		sb.WriteString(filterLine + "\n\n")
 	}
 
-	// Model list.
-	for i, idx := range ms.filtered {
-		opt := ms.models[idx]
-		label := opt.Label
-		detail := lipgloss.NewStyle().Foreground(ColorMuted).Render(
-			fmt.Sprintf("  %s / %s", opt.Provider, opt.Model),
-		)
+	// Model list (filtered).
+	if len(ms.filtered) > 0 {
+		for i, idx := range ms.filtered {
+			opt := ms.models[idx]
+			label := opt.Label
+			detail := lipgloss.NewStyle().Foreground(ColorMuted).Render(
+				fmt.Sprintf("  %s", opt.Model),
+			)
 
-		if i == ms.cursor {
-			pointer := lipgloss.NewStyle().Foreground(ColorPrimary).Bold(true).Render("> ")
-			name := lipgloss.NewStyle().Foreground(ColorText).Bold(true).Render(label)
-			sb.WriteString(pointer + name + "\n")
-			sb.WriteString("  " + detail + "\n")
-		} else {
-			name := lipgloss.NewStyle().Foreground(ColorText).Render("  " + label)
-			sb.WriteString(name + "\n")
+			if i == ms.cursor {
+				pointer := lipgloss.NewStyle().Foreground(ColorPrimary).Bold(true).Render("> ")
+				name := lipgloss.NewStyle().Foreground(ColorText).Bold(true).Render(label)
+				sb.WriteString(pointer + name + "\n")
+				sb.WriteString("  " + detail + "\n")
+			} else {
+				name := lipgloss.NewStyle().Foreground(ColorText).Render("  " + label)
+				sb.WriteString(name + "\n")
+			}
 		}
-	}
-
-	if len(ms.filtered) == 0 {
+	} else {
 		noMatch := lipgloss.NewStyle().Foreground(ColorMuted).Italic(true).Render("  No matching models")
 		sb.WriteString(noMatch + "\n")
 	}
 
 	sb.WriteString("\n")
-	help := lipgloss.NewStyle().Foreground(ColorMuted).Render("↑/↓ navigate  enter select  esc cancel  type to filter")
+	help := lipgloss.NewStyle().Foreground(ColorMuted).Render(
+		"↑/↓ models  ← → providers  tab next  1-9 jump  enter select  esc cancel  type filter",
+	)
 	sb.WriteString(help)
 
 	// Wrap in a styled box.
@@ -266,20 +364,37 @@ func (ms *ModelSelector) resetFilter() {
 	for i := range ms.models {
 		ms.filtered[i] = i
 	}
+	ms.cursor = 0
+}
+
+// applyProviderFilter shows only models from the current provider.
+func (ms *ModelSelector) applyProviderFilter() {
+	if ms.providerIdx >= len(ms.providers) {
+		ms.providerIdx = 0
+	}
+	provider := ms.providers[ms.providerIdx]
+	ms.filtered = make([]int, len(ms.modelsByProv[provider]))
+	copy(ms.filtered, ms.modelsByProv[provider])
+	ms.cursor = 0
 }
 
 func (ms *ModelSelector) applyFilter() {
 	if ms.filter == "" {
-		ms.resetFilter()
-		ms.cursor = 0
+		ms.applyProviderFilter()
 		return
 	}
+
+	// Filter models from the current provider only
+	provider := ms.providers[ms.providerIdx]
+	providerModels := ms.modelsByProv[provider]
+
 	query := strings.ToLower(ms.filter)
 	ms.filtered = ms.filtered[:0]
-	for i, opt := range ms.models {
-		haystack := strings.ToLower(opt.Label + " " + opt.Provider + " " + opt.Model)
+	for _, idx := range providerModels {
+		opt := ms.models[idx]
+		haystack := strings.ToLower(opt.Label + " " + opt.Model)
 		if strings.Contains(haystack, query) {
-			ms.filtered = append(ms.filtered, i)
+			ms.filtered = append(ms.filtered, idx)
 		}
 	}
 	if ms.cursor >= len(ms.filtered) {

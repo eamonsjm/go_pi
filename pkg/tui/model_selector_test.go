@@ -103,12 +103,14 @@ func TestModelSelector_ApplyFilter_EmptyResetsAll(t *testing.T) {
 	ms := NewModelSelector()
 	ms.filter = "opus"
 	ms.applyFilter()
-	before := len(ms.filtered)
 
 	ms.filter = ""
 	ms.applyFilter()
-	if len(ms.filtered) != len(ms.models) {
-		t.Errorf("empty filter should show all models, got %d (was %d)", len(ms.filtered), before)
+	// Empty filter should show all models from current provider.
+	provider := ms.providers[ms.providerIdx]
+	expectedCount := len(ms.modelsByProv[provider])
+	if len(ms.filtered) != expectedCount {
+		t.Errorf("empty filter should show all models from current provider, got %d (expected %d)", len(ms.filtered), expectedCount)
 	}
 }
 
@@ -451,9 +453,11 @@ func TestModelSelector_BackspaceAfterFullClear(t *testing.T) {
 	if ms.filter != "" {
 		t.Errorf("expected empty filter, got %q", ms.filter)
 	}
-	// All models should be shown after clearing filter.
-	if len(ms.filtered) != len(ms.models) {
-		t.Errorf("expected all models after clearing filter, got %d", len(ms.filtered))
+	// All models from current provider should be shown after clearing filter.
+	provider := ms.providers[ms.providerIdx]
+	expectedCount := len(ms.modelsByProv[provider])
+	if len(ms.filtered) != expectedCount {
+		t.Errorf("expected all models from current provider after clearing filter, got %d (expected %d)", len(ms.filtered), expectedCount)
 	}
 }
 
