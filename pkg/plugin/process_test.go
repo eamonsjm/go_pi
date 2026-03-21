@@ -597,6 +597,7 @@ func startTestPlugin(t *testing.T, mode string) *PluginProcess {
 		scanner:     scanner,
 		injectCh:    make(chan PluginMessage, 64),
 		responseCh:  make(chan PluginMessage, 16),
+		uiRequestCh: make(chan PluginMessage, 16),
 		heartbeatCh: make(chan PluginMessage, 4),
 		healthy:     true,
 		timeouts:    DefaultTimeoutConfig(),
