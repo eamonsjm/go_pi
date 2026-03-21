@@ -401,7 +401,11 @@ type SchemaOption func(map[string]any)
 // Prop adds a property to the schema.
 func Prop(name, typ, description string) SchemaOption {
 	return func(s map[string]any) {
-		props := s["properties"].(map[string]any)
+		props, ok := s["properties"].(map[string]any)
+		if !ok {
+			props = map[string]any{}
+			s["properties"] = props
+		}
 		props[name] = map[string]any{
 			"type":        typ,
 			"description": description,

@@ -350,6 +350,25 @@ func TestRunExitsOnWriteError(t *testing.T) {
 	<-done
 }
 
+func TestPropSafeOnMissingProperties(t *testing.T) {
+	// Prop applied to a map without "properties" key must not panic.
+	s := map[string]any{"type": "object"}
+	opt := Prop("name", "string", "A name")
+	opt(s)
+
+	props, ok := s["properties"].(map[string]any)
+	if !ok {
+		t.Fatal("expected properties to be created")
+	}
+	entry, ok := props["name"].(map[string]any)
+	if !ok {
+		t.Fatal("expected name property")
+	}
+	if entry["type"] != "string" {
+		t.Errorf("expected type=string, got %v", entry["type"])
+	}
+}
+
 func TestSchemaHelper(t *testing.T) {
 	s := Schema(
 		Prop("text", "string", "The input text"),
