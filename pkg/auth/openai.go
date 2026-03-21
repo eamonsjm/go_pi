@@ -175,7 +175,10 @@ func (o *OpenAIOAuth) exchangeCode(code, codeVerifier string) (*Credential, erro
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read token response body: %w", err)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("token exchange failed (%d): %s",
 			resp.StatusCode, strings.TrimSpace(string(body)))
@@ -209,7 +212,10 @@ func (o *OpenAIOAuth) RefreshToken(cred *Credential) (*Credential, error) {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read refresh response body: %w", err)
+	}
 	if resp.StatusCode != http.StatusOK {
 		var errResp tokenErrorResponse
 		_ = json.Unmarshal(body, &errResp)

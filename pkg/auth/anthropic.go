@@ -151,7 +151,10 @@ func (a *AnthropicOAuth) ExchangeCode(session *AuthSession, rawCode string) (*Cr
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read token response body: %w", err)
+	}
 	if resp.StatusCode != http.StatusOK {
 		var errResp tokenErrorResponse
 		_ = json.Unmarshal(body, &errResp)
@@ -239,7 +242,10 @@ func (a *AnthropicOAuth) RefreshToken(cred *Credential) (*Credential, error) {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read refresh response body: %w", err)
+	}
 	if resp.StatusCode != http.StatusOK {
 		var errResp tokenErrorResponse
 		_ = json.Unmarshal(body, &errResp)

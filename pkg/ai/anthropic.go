@@ -129,8 +129,11 @@ func (p *AnthropicProvider) Stream(ctx context.Context, req StreamRequest) (<-ch
 			return ch, nil
 		}
 
-		errBody, _ := io.ReadAll(resp.Body)
+		errBody, readErr := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
+		if readErr != nil {
+			errBody = []byte(fmt.Sprintf("failed to read response body: %v", readErr))
+		}
 		apiErr := parseHTTPError(resp.StatusCode, resp.Header, errBody, p.authMethod())
 		if apiErr.IsRetryable() && attempt < maxRetries {
 			wait := apiErr.RetryAfter

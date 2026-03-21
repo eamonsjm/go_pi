@@ -63,7 +63,10 @@ func (p *OpenAIProvider) Stream(ctx context.Context, req StreamRequest) (<-chan 
 
 	if resp.StatusCode != http.StatusOK {
 		defer func() { _ = resp.Body.Close() }()
-		errBody, _ := io.ReadAll(resp.Body)
+		errBody, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			errBody = []byte(fmt.Sprintf("failed to read response body: %v", readErr))
+		}
 		return nil, &APIError{
 			StatusCode: resp.StatusCode,
 			Message:    strings.TrimSpace(string(errBody)),

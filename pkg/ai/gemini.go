@@ -71,8 +71,11 @@ func (p *GeminiProvider) Stream(ctx context.Context, req StreamRequest) (<-chan 
 			return ch, nil
 		}
 
-		errBody, _ := io.ReadAll(resp.Body)
+		errBody, readErr := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
+		if readErr != nil {
+			errBody = []byte(fmt.Sprintf("failed to read response body: %v", readErr))
+		}
 
 		// Retry on 429 (rate limit) and 503 (overloaded).
 		if (resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusServiceUnavailable) && attempt < maxRetries {
