@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -20,7 +21,7 @@ func TestCompactEmptyMessages(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for empty messages")
 	}
-	if err.Error() != "no messages to compact" {
+	if !errors.Is(err, errNoMessages) {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
