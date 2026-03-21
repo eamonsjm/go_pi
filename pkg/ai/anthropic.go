@@ -87,15 +87,18 @@ func (p *AnthropicProvider) Stream(ctx context.Context, req StreamRequest) (<-ch
 	// OAuth requires system to be a string, not an array. Convert if needed.
 	if p.useBearer && req.SystemPrompt != "" {
 		var bodyObj map[string]interface{}
-		if err := json.Unmarshal(body, &bodyObj); err == nil {
-			if systemArray, ok := bodyObj["system"].([]interface{}); ok && len(systemArray) > 0 {
-				if systemBlock, ok := systemArray[0].(map[string]interface{}); ok {
-					if text, ok := systemBlock["text"].(string); ok {
-						bodyObj["system"] = text
-						if newBody, err := json.Marshal(bodyObj); err == nil {
-							body = newBody
-						}
+		if err := json.Unmarshal(body, &bodyObj); err != nil {
+			return nil, fmt.Errorf("anthropic: failed to unmarshal request body for OAuth rewrite: %w", err)
+		}
+		if systemArray, ok := bodyObj["system"].([]interface{}); ok && len(systemArray) > 0 {
+			if systemBlock, ok := systemArray[0].(map[string]interface{}); ok {
+				if text, ok := systemBlock["text"].(string); ok {
+					bodyObj["system"] = text
+					newBody, err := json.Marshal(bodyObj)
+					if err != nil {
+						return nil, fmt.Errorf("anthropic: failed to re-marshal request body for OAuth rewrite: %w", err)
 					}
+					body = newBody
 				}
 			}
 		}

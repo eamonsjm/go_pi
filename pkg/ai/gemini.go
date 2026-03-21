@@ -398,7 +398,11 @@ func (p *GeminiProvider) readSSEStream(ctx context.Context, body io.ReadCloser, 
 
 				// Emit the full args as a single delta.
 				if part.FunctionCall.Args != nil {
-					argsJSON, _ := json.Marshal(part.FunctionCall.Args)
+					argsJSON, err := json.Marshal(part.FunctionCall.Args)
+					if err != nil {
+						ch <- StreamEvent{Type: EventError, Error: fmt.Errorf("gemini: failed to marshal tool call arguments: %w", err)}
+						return
+					}
 					ch <- StreamEvent{
 						Type:         EventToolUseDelta,
 						ToolCallID:   toolID,

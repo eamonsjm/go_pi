@@ -303,7 +303,11 @@ func (p *OllamaProvider) readStream(ctx context.Context, body io.ReadCloser, ch 
 			}
 
 			// Serialize the arguments as a single delta.
-			argsJSON, _ := json.Marshal(tc.Function.Arguments)
+			argsJSON, err := json.Marshal(tc.Function.Arguments)
+			if err != nil {
+				ch <- StreamEvent{Type: EventError, Error: fmt.Errorf("ollama: failed to marshal tool call arguments: %w", err)}
+				return
+			}
 			ch <- StreamEvent{
 				Type:         EventToolUseDelta,
 				ToolCallID:   callID,

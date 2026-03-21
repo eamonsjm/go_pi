@@ -166,7 +166,11 @@ func (p *OpenAIProvider) buildRequestBody(req StreamRequest) ([]byte, error) {
 	}
 
 	for _, m := range req.Messages {
-		msgs = append(msgs, mapToOpenAIMessage(m))
+		om, err := mapToOpenAIMessage(m)
+		if err != nil {
+			return nil, fmt.Errorf("openai: %w", err)
+		}
+		msgs = append(msgs, om)
 	}
 	body.Messages = msgs
 
@@ -188,7 +192,7 @@ func (p *OpenAIProvider) buildRequestBody(req StreamRequest) ([]byte, error) {
 	return json.Marshal(body)
 }
 
-func mapToOpenAIMessage(m Message) oaiMessage {
+func mapToOpenAIMessage(m Message) (oaiMessage, error) {
 	om := oaiMessage{Role: string(m.Role)}
 
 	// Check for tool result messages.
@@ -202,7 +206,7 @@ func mapToOpenAIMessage(m Message) oaiMessage {
 		} else {
 			om.Content = cb.Content
 		}
-		return om
+		return om, nil
 	}
 
 	// Build text content, image content, and tool calls.
@@ -228,7 +232,10 @@ func mapToOpenAIMessage(m Message) oaiMessage {
 				},
 			})
 		case ContentTypeToolUse:
-			inputJSON, _ := json.Marshal(cb.Input)
+			inputJSON, err := json.Marshal(cb.Input)
+			if err != nil {
+				return oaiMessage{}, fmt.Errorf("failed to marshal tool call input: %w", err)
+			}
 			toolCalls = append(toolCalls, oaiToolCall{
 				ID:   cb.ToolUseID,
 				Type: "function",
@@ -251,7 +258,7 @@ func mapToOpenAIMessage(m Message) oaiMessage {
 		om.ToolCalls = toolCalls
 	}
 
-	return om
+	return om, nil
 }
 
 // mapContentBlocksToOAI converts ContentBlocks to OpenAI content parts.
