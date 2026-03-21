@@ -17,9 +17,3 @@ func contentHash(line string) string {
 	return hexHash
 }
 
-// formatLineWithHash formats a line with its content hash for display.
-// Format: "linenum<TAB>hash<TAB>content"
-func formatLineWithHash(lineNum int, content string) string {
-	hash := contentHash(content)
-	return fmt.Sprintf("%d\t%s\t%s", lineNum, hash, content)
-}

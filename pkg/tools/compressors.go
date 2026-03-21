@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -235,13 +236,6 @@ func (e *GoBuildErrorExtractor) extract(output string) string {
 	return compressed
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 // GitLogCompactor reduces git log output size.
 type GitLogCompactor struct {
 	level CompressionLevel
@@ -372,7 +366,6 @@ func (c *GitLogCompactor) compact(output string) string {
 // LinterOutputGrouper aggregates linter output by file.
 type LinterOutputGrouper struct {
 	level CompressionLevel
-	mu    sync.Mutex
 }
 
 // NewLinterOutputGrouper creates a linter output grouper.
@@ -461,24 +454,13 @@ func (g *LinterOutputGrouper) group(output string) string {
 		}
 
 		if g.level == CompressionHigh && len(errors) > maxErrors {
-			result = append(result, "  ... and "+itoa(len(errors)-maxErrors)+" more")
+			result = append(result, "  ... and "+strconv.Itoa(len(errors)-maxErrors)+" more")
 		}
 	}
 
 	compressed := strings.Join(result, "\n")
 	GlobalMetrics.Record(CategoryOther, len(output), len(compressed), 0)
 	return compressed
-}
-
-// Helper function to convert int to string
-func itoa(n int) string {
-	if n < 0 {
-		return "-" + itoa(-n)
-	}
-	if n < 10 {
-		return string(rune('0' + n))
-	}
-	return itoa(n/10) + string(rune('0'+n%10))
 }
 
 // CompressionConfig allows configuring compression per tool.
