@@ -91,9 +91,9 @@ func main() {
 						break
 					}
 					if runMap, ok := run.(map[string]interface{}); ok {
-						name, _ := runMap["name"]
-						status, _ := runMap["status"]
-						conclusion, _ := runMap["conclusion"]
+						name := runMap["name"]
+						status := runMap["status"]
+						conclusion := runMap["conclusion"]
 						fmt.Printf("    - %v (status: %v, conclusion: %v)\n", name, status, conclusion)
 					}
 				}
