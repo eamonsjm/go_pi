@@ -1,7 +1,9 @@
 package auth
 
 import (
+	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -173,6 +175,67 @@ func TestResolve_GetOAuthProvider(t *testing.T) {
 	got := r.GetOAuthProvider("anthropic")
 	if got == nil || got.ID() != "anthropic" {
 		t.Errorf("expected anthropic provider, got %v", got)
+	}
+}
+
+func TestResolve_OAuthRefreshError_SurfacedNotSwallowed(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "auth.json")
+	s, _ := NewStore(path)
+	s.Set("anthropic", &Credential{
+		Type:         CredentialOAuth,
+		AccessToken:  "expired-tok",
+		RefreshToken: "bad-refresh",
+		ExpiresAt:    time.Now().Add(-time.Hour).UnixMilli(),
+	})
+	if err := s.Save(); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	r := NewResolver(s)
+	r.RegisterProvider(&mockProvider{
+		id:         "anthropic",
+		refreshErr: fmt.Errorf("refresh failed (400): invalid_grant"),
+	})
+
+	// OAuth refresh errors must be surfaced, not silently swallowed.
+	_, err := r.Resolve("anthropic")
+	if err == nil {
+		t.Fatal("expected error when OAuth refresh fails, got nil")
+	}
+	if !strings.Contains(err.Error(), "invalid_grant") {
+		t.Errorf("error should contain refresh failure detail, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "/login") {
+		t.Errorf("error should suggest /login re-auth, got: %v", err)
+	}
+}
+
+func TestResolve_OAuthRefreshError_EnvVarNotUsedAsFallback(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "auth.json")
+	s, _ := NewStore(path)
+	s.Set("anthropic", &Credential{
+		Type:         CredentialOAuth,
+		AccessToken:  "expired-tok",
+		RefreshToken: "bad-refresh",
+		ExpiresAt:    time.Now().Add(-time.Hour).UnixMilli(),
+	})
+	if err := s.Save(); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	r := NewResolver(s)
+	r.RegisterProvider(&mockProvider{
+		id:         "anthropic",
+		refreshErr: fmt.Errorf("refresh failed (400): token revoked"),
+	})
+
+	// Even with an env var set, OAuth errors must not silently fall through.
+	t.Setenv("ANTHROPIC_API_KEY", "env-key")
+	_, err := r.Resolve("anthropic")
+	if err == nil {
+		t.Fatal("expected error — OAuth refresh failure should not fall through to env var")
 	}
 }
 

@@ -153,8 +153,20 @@ func (a *AnthropicOAuth) ExchangeCode(session *AuthSession, rawCode string) (*Cr
 
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
+		var errResp tokenErrorResponse
+		_ = json.Unmarshal(body, &errResp)
+		detail := errResp.ErrorDescription
+		if detail == "" {
+			detail = errResp.Error
+		}
+		if detail == "" {
+			detail = strings.TrimSpace(string(body))
+		}
+		if detail == "" {
+			detail = http.StatusText(resp.StatusCode)
+		}
 		return nil, fmt.Errorf("token exchange failed (%d): %s",
-			resp.StatusCode, strings.TrimSpace(string(body)))
+			resp.StatusCode, detail)
 	}
 
 	var token tokenResponse
@@ -231,8 +243,17 @@ func (a *AnthropicOAuth) RefreshToken(cred *Credential) (*Credential, error) {
 	if resp.StatusCode != http.StatusOK {
 		var errResp tokenErrorResponse
 		_ = json.Unmarshal(body, &errResp)
-		return nil, fmt.Errorf("refresh failed (%d): %s",
-			resp.StatusCode, errResp.ErrorDescription)
+		detail := errResp.ErrorDescription
+		if detail == "" {
+			detail = errResp.Error
+		}
+		if detail == "" {
+			detail = strings.TrimSpace(string(body))
+		}
+		if detail == "" {
+			detail = http.StatusText(resp.StatusCode)
+		}
+		return nil, fmt.Errorf("refresh failed (%d): %s", resp.StatusCode, detail)
 	}
 
 	var token tokenResponse

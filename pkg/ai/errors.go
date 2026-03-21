@@ -96,7 +96,7 @@ func (e *APIError) defaultUserMessage() string {
 	}
 
 	if e.AuthMethod == "oauth" {
-		base += " [auth: OAuth]"
+		base += " [auth: OAuth — try /login to re-authenticate]"
 	}
 	return base
 }

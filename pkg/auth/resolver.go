@@ -71,7 +71,12 @@ func (r *Resolver) Resolve(provider string) (string, error) {
 		if err == nil && key != "" {
 			return key, nil
 		}
-		// Fall through on error — try env vars.
+		// For OAuth, surface the error — silently falling through masks
+		// refresh failures and produces opaque API errors downstream.
+		if err != nil && cred.Type == CredentialOAuth {
+			return "", fmt.Errorf("%s: %w (use /login to re-authenticate)", provider, err)
+		}
+		// Fall through on error for non-OAuth — try env vars.
 	}
 
 	// 4. Environment variable.

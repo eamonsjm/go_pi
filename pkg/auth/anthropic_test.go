@@ -385,6 +385,109 @@ func TestAnthropicOAuth_RefreshToken_NoRefreshToken(t *testing.T) {
 	}
 }
 
+func TestAnthropicOAuth_RefreshToken_ErrorDetailFallback(t *testing.T) {
+	tests := []struct {
+		name       string
+		body       string
+		wantDetail string
+	}{
+		{
+			name:       "error_description present",
+			body:       `{"error":"invalid_grant","error_description":"refresh token expired"}`,
+			wantDetail: "refresh token expired",
+		},
+		{
+			name:       "only error field, no description",
+			body:       `{"error":"invalid_grant"}`,
+			wantDetail: "invalid_grant",
+		},
+		{
+			name:       "non-JSON body",
+			body:       `Bad Request`,
+			wantDetail: "Bad Request",
+		},
+		{
+			name:       "empty body",
+			body:       ``,
+			wantDetail: "Bad Request", // falls back to http.StatusText
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mux := http.NewServeMux()
+			mux.HandleFunc("/v1/oauth/token", func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusBadRequest)
+				w.Write([]byte(tt.body))
+			})
+			server := httptest.NewServer(mux)
+			defer server.Close()
+
+			a := NewAnthropicOAuth()
+			a.TokenURL = server.URL
+
+			_, err := a.RefreshToken(&Credential{
+				Type:         CredentialOAuth,
+				RefreshToken: "some-token",
+			})
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			if !strings.Contains(err.Error(), tt.wantDetail) {
+				t.Errorf("error = %q, want to contain %q", err.Error(), tt.wantDetail)
+			}
+		})
+	}
+}
+
+func TestAnthropicOAuth_ExchangeCode_ErrorDetailFallback(t *testing.T) {
+	tests := []struct {
+		name       string
+		body       string
+		wantDetail string
+	}{
+		{
+			name:       "error_description present",
+			body:       `{"error":"invalid_grant","error_description":"code expired"}`,
+			wantDetail: "code expired",
+		},
+		{
+			name:       "only error field",
+			body:       `{"error":"invalid_grant"}`,
+			wantDetail: "invalid_grant",
+		},
+		{
+			name:       "non-JSON body",
+			body:       `Server Error`,
+			wantDetail: "Server Error",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mux := http.NewServeMux()
+			mux.HandleFunc("/v1/oauth/token", func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusBadRequest)
+				w.Write([]byte(tt.body))
+			})
+			server := httptest.NewServer(mux)
+			defer server.Close()
+
+			a := NewAnthropicOAuth()
+			a.TokenURL = server.URL
+
+			session, _ := a.StartAuthFlow()
+			_, err := a.ExchangeCode(session, "bad-code")
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			if !strings.Contains(err.Error(), tt.wantDetail) {
+				t.Errorf("error = %q, want to contain %q", err.Error(), tt.wantDetail)
+			}
+		})
+	}
+}
+
 func TestAnthropicOAuth_Login_FullFlow(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/oauth/token", func(w http.ResponseWriter, r *http.Request) {

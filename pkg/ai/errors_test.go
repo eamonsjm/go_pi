@@ -97,9 +97,9 @@ func TestAPIError_UserMessage(t *testing.T) {
 			contains: "HTTP 500",
 		},
 		{
-			name:     "unknown error oauth includes auth method",
+			name:     "unknown error oauth includes auth method and re-auth hint",
 			err:      &APIError{StatusCode: 400, Message: "Error", Provider: "anthropic", AuthMethod: "oauth"},
-			contains: "auth: OAuth",
+			contains: "auth: OAuth — try /login to re-authenticate",
 		},
 	}
 
