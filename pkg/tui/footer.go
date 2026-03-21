@@ -70,7 +70,7 @@ func (f *Footer) View() string {
 	right := MutedStyle.Render(strings.Join([]string{tokens, costStr, ctxStr}, "  "))
 
 	// Pad so left is left-aligned and right is right-aligned.
-	gap := f.width - lipglossWidth(left) - lipglossWidth(right)
+	gap := f.width - ansi.StringWidth(left) - ansi.StringWidth(right)
 	if gap < 1 {
 		gap = 1
 	}
@@ -120,7 +120,3 @@ func estimateCost(u ai.Usage) float64 {
 	return total
 }
 
-// lipglossWidth returns the visible (printed) width of a styled string.
-func lipglossWidth(s string) int {
-	return ansi.StringWidth(s)
-}

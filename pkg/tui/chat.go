@@ -10,7 +10,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
-	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/ejm/go_pi/pkg/agent"
 	"github.com/ejm/go_pi/pkg/ai"
 	"github.com/muesli/reflow/wordwrap"
@@ -446,7 +446,7 @@ func (c *ChatView) View() string {
 	}
 
 	indicator := NewContentBelowStyle.Render("↓ new content below ↓")
-	indicatorWidth := lipgloss.Width(indicator)
+	indicatorWidth := ansi.StringWidth(indicator)
 
 	padding := (c.width - indicatorWidth) / 2
 	if padding < 0 {
@@ -527,7 +527,7 @@ func (c *ChatView) renderBlock(sb *strings.Builder, blk *chatBlock) {
 func (c *ChatView) renderUser(sb *strings.Builder, blk chatBlock) {
 	label := UserRoleStyle.Render("You:")
 	sb.WriteString(label + " ")
-	w := c.width - lipgloss.Width(label) - 1
+	w := c.width - ansi.StringWidth(label) - 1
 	if w < 20 {
 		w = 20
 	}
@@ -629,7 +629,7 @@ func (c *ChatView) renderPlugin(sb *strings.Builder, blk chatBlock) {
 
 	if blk.logLevel != "" {
 		// Log message with level-appropriate styling, wrapped to fit.
-		w := c.width - lipgloss.Width(label) - 1
+		w := c.width - ansi.StringWidth(label) - 1
 		if w < 20 {
 			w = 20
 		}

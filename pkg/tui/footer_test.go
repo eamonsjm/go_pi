@@ -3,6 +3,7 @@ package tui
 import (
 	"testing"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/ejm/go_pi/pkg/ai"
 )
 
@@ -91,15 +92,15 @@ func TestStripAnsi(t *testing.T) {
 	}
 }
 
-func TestLipglossWidth(t *testing.T) {
+func TestAnsiStringWidth(t *testing.T) {
 	// Plain text should return len.
-	if w := lipglossWidth("hello"); w != 5 {
+	if w := ansi.StringWidth("hello"); w != 5 {
 		t.Errorf("expected 5, got %d", w)
 	}
 
 	// Styled text should strip ANSI.
 	styled := "\x1b[31mhi\x1b[0m"
-	if w := lipglossWidth(styled); w != 2 {
+	if w := ansi.StringWidth(styled); w != 2 {
 		t.Errorf("expected 2, got %d", w)
 	}
 }
