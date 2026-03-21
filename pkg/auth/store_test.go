@@ -3,6 +3,8 @@ package auth
 import (
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -230,6 +232,34 @@ func TestStoreLoadJSONNull(t *testing.T) {
 	cred := s.Get("anthropic")
 	if cred == nil || cred.Key != "sk-test" {
 		t.Errorf("after Set: got %+v", cred)
+	}
+}
+
+func TestStoreLoadRejectsInsecurePermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("permission check is Unix-only")
+	}
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "auth.json")
+
+	// Write a valid auth file with secure permissions first.
+	if err := os.WriteFile(path, []byte(`{"test":{"type":"api_key","key":"k"}}`), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	// Widen permissions to group-readable.
+	if err := os.Chmod(path, 0o640); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+
+	s, _ := NewStore(path)
+	err := s.Load()
+	if err == nil {
+		t.Fatal("Load should fail with insecure permissions")
+	}
+	if !strings.Contains(err.Error(), "insecure permissions") {
+		t.Errorf("unexpected error: %v", err)
 	}
 }
 

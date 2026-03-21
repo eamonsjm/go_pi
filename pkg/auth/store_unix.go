@@ -8,6 +8,24 @@ import (
 	"syscall"
 )
 
+// checkFilePermissions verifies the auth store file is not group/world accessible.
+// This prevents loading (and executing !commands from) a file that another user
+// could have tampered with. Similar to OpenSSH's private key permission check.
+func checkFilePermissions(path string) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("stat auth store: %w", err)
+	}
+	perm := info.Mode().Perm()
+	if perm&0o077 != 0 {
+		return fmt.Errorf(
+			"auth store %s has insecure permissions %04o; must not be accessible by group or others. Fix with: chmod 600 %s",
+			path, perm, path,
+		)
+	}
+	return nil
+}
+
 // Lock acquires an exclusive file lock on the auth store.
 // Callers must call Unlock when done (typically via defer).
 // The lock file is adjacent to auth.json (auth.json.lock).
