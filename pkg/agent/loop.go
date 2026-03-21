@@ -437,7 +437,11 @@ func (a *AgentLoop) executeTool(ctx context.Context, tc ai.ContentBlock) ai.Mess
 		}
 
 		// Fire after-execution hooks
-		resultText, _ = a.hooks.After(ctx, tc.ToolName, params, resultText, nil)
+		resultText, hookErr := a.hooks.After(ctx, tc.ToolName, params, resultText, nil)
+		if hookErr != nil {
+			isError = true
+			resultText = hookErr.Error()
+		}
 
 		a.emit(ctx, AgentEvent{
 			Type:       EventToolExecEnd,
