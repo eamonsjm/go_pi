@@ -1338,6 +1338,74 @@ func TestApp_ViewportScrollDuringStreaming(t *testing.T) {
 	}
 }
 
+func TestApp_UpArrowAtBottomDoesNotScrollViewport(t *testing.T) {
+	app := NewApp()
+	app.Update(tea.WindowSizeMsg{Width: 80, Height: 10})
+
+	// Populate editor history so Up has something to recall.
+	app.editor.history = []string{"previous prompt"}
+	app.editor.historyIdx = 1
+
+	// Add enough content to make the viewport scrollable.
+	for i := 0; i < 50; i++ {
+		app.Update(StreamEventMsg{
+			Event: agent.AgentEvent{
+				Type:  agent.EventAssistantText,
+				Delta: fmt.Sprintf("Line %d\n", i),
+			},
+		})
+	}
+	app.Update(renderTickMsg{})
+
+	// Viewport should be at bottom before we press Up.
+	if !app.chat.AtBottom() {
+		t.Fatal("viewport should start at bottom")
+	}
+
+	// Press Up — should recall history, NOT scroll viewport.
+	app.Update(tea.KeyMsg{Type: tea.KeyUp})
+
+	if !app.chat.AtBottom() {
+		t.Error("viewport should remain at bottom when Up arrow recalls history")
+	}
+	if got := app.editor.Value(); got != "previous prompt" {
+		t.Errorf("editor should show recalled history, got %q", got)
+	}
+}
+
+func TestApp_UpArrowScrolledUpDoesNotRecallHistory(t *testing.T) {
+	app := NewApp()
+	app.Update(tea.WindowSizeMsg{Width: 80, Height: 10})
+
+	// Populate editor history.
+	app.editor.history = []string{"should not appear"}
+	app.editor.historyIdx = 1
+
+	// Add scrollable content.
+	for i := 0; i < 50; i++ {
+		app.Update(StreamEventMsg{
+			Event: agent.AgentEvent{
+				Type:  agent.EventAssistantText,
+				Delta: fmt.Sprintf("Line %d\n", i),
+			},
+		})
+	}
+	app.Update(renderTickMsg{})
+
+	// Scroll up via PageUp so viewport is no longer at bottom.
+	app.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	if app.chat.AtBottom() {
+		t.Fatal("viewport should not be at bottom after PageUp")
+	}
+
+	// Press Up — should scroll viewport, NOT recall history.
+	app.Update(tea.KeyMsg{Type: tea.KeyUp})
+
+	if got := app.editor.Value(); got != "" {
+		t.Errorf("editor should remain empty when scrolled up, got %q", got)
+	}
+}
+
 func TestApp_RenderOnlyOnDirty(t *testing.T) {
 	app := NewApp()
 	app.agentRunning = true

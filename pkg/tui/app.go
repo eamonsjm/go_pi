@@ -605,12 +605,21 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		// If viewport is scrolled up (not at bottom), up/down arrows should
-		// scroll the chat view, not trigger editor history recall.
-		if (msg.Type == tea.KeyUp || msg.Type == tea.KeyDown) && !a.chat.AtBottom() {
-			chatCmd := a.chat.Update(msg)
-			if chatCmd != nil {
-				cmds = append(cmds, chatCmd)
+		// Route up/down arrows exclusively: either to the viewport
+		// (when scrolled up) or to the editor (when at bottom).
+		// Without this, both components receive the event and the
+		// user sees history recall AND viewport scroll simultaneously.
+		if msg.Type == tea.KeyUp || msg.Type == tea.KeyDown {
+			if !a.chat.AtBottom() {
+				chatCmd := a.chat.Update(msg)
+				if chatCmd != nil {
+					cmds = append(cmds, chatCmd)
+				}
+			} else {
+				editorCmd := a.editor.Update(msg)
+				if editorCmd != nil {
+					cmds = append(cmds, editorCmd)
+				}
 			}
 			return a, tea.Batch(cmds...)
 		}
