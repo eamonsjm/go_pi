@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -67,16 +68,48 @@ func (p *OpenAIProvider) Stream(ctx context.Context, req StreamRequest) (<-chan 
 		if readErr != nil {
 			errBody = []byte(fmt.Sprintf("failed to read response body: %v", readErr))
 		}
-		return nil, &APIError{
-			StatusCode: resp.StatusCode,
-			Message:    strings.TrimSpace(string(errBody)),
-			Provider:   "openai",
-		}
+		return nil, parseOpenAIError(resp.StatusCode, resp.Header, errBody)
 	}
 
 	ch := make(chan StreamEvent, 64)
 	go p.readSSEStream(ctx, resp.Body, ch)
 	return ch, nil
+}
+
+// parseOpenAIError parses a non-200 HTTP response from OpenAI into an APIError.
+// OpenAI error format: {"error":{"message":"...","type":"invalid_request_error","param":null,"code":null}}
+func parseOpenAIError(statusCode int, header http.Header, body []byte) *APIError {
+	apiErr := &APIError{
+		StatusCode: statusCode,
+		Provider:   "openai",
+		AuthMethod: "api-key",
+	}
+
+	if ra := header.Get("Retry-After"); ra != "" {
+		if secs, err := strconv.Atoi(ra); err == nil {
+			apiErr.RetryAfter = secs
+		}
+	}
+
+	var errResp struct {
+		Error struct {
+			Message string `json:"message"`
+			Type    string `json:"type"`
+			Code    any    `json:"code"` // can be string or null
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(body, &errResp); err == nil && errResp.Error.Type != "" {
+		apiErr.ErrorType = errResp.Error.Type
+		apiErr.Message = errResp.Error.Message
+		return apiErr
+	}
+
+	raw := strings.TrimSpace(string(body))
+	if raw == "" {
+		raw = fmt.Sprintf("empty response body (HTTP %d)", statusCode)
+	}
+	apiErr.Message = raw
+	return apiErr
 }
 
 // -- Request construction --

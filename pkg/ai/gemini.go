@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -89,10 +90,77 @@ func (p *GeminiProvider) Stream(ctx context.Context, req StreamRequest) (<-chan 
 			}
 		}
 
-		return nil, &APIError{
-			StatusCode: resp.StatusCode,
-			Message:    strings.TrimSpace(string(errBody)),
-			Provider:   "gemini",
+		return nil, parseGeminiError(resp.StatusCode, resp.Header, errBody)
+	}
+}
+
+// parseGeminiError parses a non-200 HTTP response from Gemini into an APIError.
+// Gemini error format: {"error":{"code":429,"message":"...","status":"RESOURCE_EXHAUSTED"}}
+func parseGeminiError(statusCode int, header http.Header, body []byte) *APIError {
+	apiErr := &APIError{
+		StatusCode: statusCode,
+		Provider:   "gemini",
+		AuthMethod: "api-key",
+	}
+
+	if ra := header.Get("Retry-After"); ra != "" {
+		if secs, err := strconv.Atoi(ra); err == nil {
+			apiErr.RetryAfter = secs
+		}
+	}
+
+	var errResp struct {
+		Error struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+			Status  string `json:"status"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(body, &errResp); err == nil && errResp.Error.Status != "" {
+		apiErr.ErrorType = geminiStatusToErrorType(errResp.Error.Status, statusCode)
+		apiErr.Message = errResp.Error.Message
+		return apiErr
+	}
+
+	raw := strings.TrimSpace(string(body))
+	if raw == "" {
+		raw = fmt.Sprintf("empty response body (HTTP %d)", statusCode)
+	}
+	apiErr.Message = raw
+	return apiErr
+}
+
+// geminiStatusToErrorType maps Gemini status strings and HTTP codes to
+// canonical error types matching the APIError.ErrorType convention.
+func geminiStatusToErrorType(status string, statusCode int) string {
+	switch status {
+	case "RESOURCE_EXHAUSTED":
+		return "rate_limit_error"
+	case "UNAVAILABLE":
+		return "overloaded_error"
+	case "INVALID_ARGUMENT":
+		return "invalid_request_error"
+	case "NOT_FOUND":
+		return "not_found_error"
+	case "PERMISSION_DENIED":
+		return "permission_error"
+	case "UNAUTHENTICATED":
+		return "authentication_error"
+	default:
+		// Fall back to HTTP status code mapping.
+		switch statusCode {
+		case http.StatusTooManyRequests:
+			return "rate_limit_error"
+		case http.StatusServiceUnavailable:
+			return "overloaded_error"
+		case http.StatusUnauthorized:
+			return "authentication_error"
+		case http.StatusForbidden:
+			return "permission_error"
+		case http.StatusNotFound:
+			return "not_found_error"
+		default:
+			return status
 		}
 	}
 }

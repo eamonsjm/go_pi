@@ -61,16 +61,48 @@ func (p *OllamaProvider) Stream(ctx context.Context, req StreamRequest) (<-chan 
 		if readErr != nil {
 			errBody = []byte(fmt.Sprintf("failed to read response body: %v", readErr))
 		}
-		return nil, &APIError{
-			StatusCode: resp.StatusCode,
-			Message:    string(errBody),
-			Provider:   "ollama",
-		}
+		return nil, parseOllamaError(resp.StatusCode, errBody)
 	}
 
 	ch := make(chan StreamEvent, 64)
 	go p.readStream(ctx, resp.Body, ch)
 	return ch, nil
+}
+
+// parseOllamaError parses a non-200 HTTP response from Ollama into an APIError.
+// Ollama error format: {"error":"..."} or plain text.
+func parseOllamaError(statusCode int, body []byte) *APIError {
+	apiErr := &APIError{
+		StatusCode: statusCode,
+		Provider:   "ollama",
+	}
+
+	var errResp struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(body, &errResp); err == nil && errResp.Error != "" {
+		apiErr.Message = errResp.Error
+	} else {
+		raw := strings.TrimSpace(string(body))
+		if raw == "" {
+			raw = fmt.Sprintf("empty response body (HTTP %d)", statusCode)
+		}
+		apiErr.Message = raw
+	}
+
+	// Map HTTP status codes to canonical error types.
+	switch statusCode {
+	case http.StatusNotFound:
+		apiErr.ErrorType = "not_found_error"
+	case http.StatusTooManyRequests:
+		apiErr.ErrorType = "rate_limit_error"
+	case http.StatusServiceUnavailable:
+		apiErr.ErrorType = "overloaded_error"
+	case http.StatusBadRequest:
+		apiErr.ErrorType = "invalid_request_error"
+	}
+
+	return apiErr
 }
 
 // -- Request construction --
