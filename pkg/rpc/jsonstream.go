@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
 
@@ -39,7 +40,9 @@ func RunJSONStream(agentLoop *agent.AgentLoop, prompt string) {
 		}
 		if prompt == "" {
 			data, _ := json.Marshal(Event{Type: "error", Error: "no prompt provided"})
-			_, _ = fmt.Fprintf(os.Stdout, "%s\n", data)
+			if _, err := fmt.Fprintf(os.Stdout, "%s\n", data); err != nil {
+				log.Printf("jsonstream: failed to write error: %v", err)
+			}
 			os.Exit(1)
 		}
 	}
