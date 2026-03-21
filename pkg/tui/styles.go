@@ -55,6 +55,11 @@ var (
 				Border(lipgloss.RoundedBorder()).
 				BorderForeground(ColorThinking).
 				Padding(0, 0)
+
+	EditorSearchStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(ColorWarning).
+				Padding(0, 0)
 )
 
 // ---------------------------------------------------------------------------

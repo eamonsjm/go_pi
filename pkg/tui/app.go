@@ -588,6 +588,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 
+		// When editor is in search mode, route all keys to it directly.
+		if a.editor.IsSearching() {
+			editorCmd := a.editor.Update(msg)
+			a.layout() // search hint may change editor height
+			return a, editorCmd
+		}
+
 		if action, ok := a.keybindings.ActionFor(msg.String()); ok {
 			if cmd := a.handleAction(action); cmd != nil {
 				return a, cmd
@@ -702,6 +709,30 @@ func (a *App) handleAction(action Action) tea.Cmd {
 		}
 		a.chat.AddSystemMessage("Mouse capture OFF — select and copy text freely, Alt+M to toggle back for scrolling")
 		return func() tea.Msg { return tea.DisableMouse() }
+
+	case ActionHistorySearch:
+		if a.agentRunning {
+			return nil
+		}
+		var prompts []string
+		if a.sessionMgr != nil {
+			prompts = a.sessionMgr.CollectUserPrompts(1000)
+		}
+		// Merge in-memory editor history (most recent first), deduplicating.
+		seen := make(map[string]bool, len(prompts))
+		for _, p := range prompts {
+			seen[p] = true
+		}
+		for i := len(a.editor.history) - 1; i >= 0; i-- {
+			h := a.editor.history[i]
+			if !seen[h] {
+				seen[h] = true
+				prompts = append([]string{h}, prompts...)
+			}
+		}
+		a.editor.EnterSearchMode(prompts)
+		a.layout()
+		return nil
 	}
 
 	return nil

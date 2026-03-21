@@ -757,6 +757,73 @@ func (m *Manager) GetUserEntries() []Entry {
 	return userEntries
 }
 
+// CollectUserPrompts reads all session files and extracts unique user prompt
+// texts, returned most-recent-first. The result is deduplicated and limited
+// to at most maxPrompts entries. This is used for reverse-search (ctrl+r).
+func (m *Manager) CollectUserPrompts(maxPrompts int) []string {
+	pattern := filepath.Join(m.dir, "*.jsonl")
+	matches, err := filepath.Glob(pattern)
+	if err != nil || len(matches) == 0 {
+		return nil
+	}
+
+	// Collect (text, timestamp) pairs from all sessions.
+	type promptEntry struct {
+		text string
+		ts   time.Time
+	}
+	seen := make(map[string]bool)
+	var prompts []promptEntry
+
+	for _, path := range matches {
+		f, err := os.Open(path)
+		if err != nil {
+			continue
+		}
+		scanner := bufio.NewScanner(f)
+		scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if line == "" {
+				continue
+			}
+			var e Entry
+			if err := json.Unmarshal([]byte(line), &e); err != nil {
+				continue
+			}
+			if e.Type != "message" {
+				continue
+			}
+			msg, ok := entryToMessage(e)
+			if !ok || msg.Role != ai.RoleUser {
+				continue
+			}
+			text := strings.TrimSpace(msg.GetText())
+			if text == "" || seen[text] {
+				continue
+			}
+			seen[text] = true
+			prompts = append(prompts, promptEntry{text: text, ts: e.Timestamp})
+		}
+		_ = f.Close()
+	}
+
+	// Sort most-recent-first.
+	sort.Slice(prompts, func(i, j int) bool {
+		return prompts[i].ts.After(prompts[j].ts)
+	})
+
+	if len(prompts) > maxPrompts {
+		prompts = prompts[:maxPrompts]
+	}
+
+	result := make([]string, len(prompts))
+	for i, p := range prompts {
+		result[i] = p.text
+	}
+	return result
+}
+
 // --- internal ---------------------------------------------------------------
 
 func (m *Manager) sessionPath(id string) string {

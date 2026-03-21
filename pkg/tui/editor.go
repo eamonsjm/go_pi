@@ -242,6 +242,14 @@ type Editor struct {
 	// yankLen is the rune length of the last yanked text. Zero means the
 	// last operation was not a yank (disables yank-pop).
 	yankLen int
+
+	// Search mode state (ctrl+r reverse history search).
+	searching     bool     // true when in reverse-search mode
+	searchQuery   string   // the user's search string
+	searchAll     []string // all prompts available to search (most-recent-first)
+	searchResults []string // prompts matching searchQuery
+	searchIdx     int      // current position in searchResults
+	searchDraft   string   // text in editor before search started
 }
 
 // NewEditor creates an Editor ready for use.
@@ -323,7 +331,10 @@ func (e *Editor) Height() int {
 	// textarea lines + 2 for top/bottom border
 	h := e.textarea.Height() + 2
 
-	hint := e.fileCompletionHint()
+	hint := e.searchHint()
+	if hint == "" {
+		hint = e.fileCompletionHint()
+	}
 	if hint == "" {
 		hint = e.commandHint()
 	}
@@ -417,6 +428,11 @@ func executeShellCommand(fullText string) tea.Cmd {
 func (e *Editor) Update(msg tea.Msg) tea.Cmd {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// In search mode, route all keys to the search handler.
+		if e.searching {
+			return e.updateSearch(msg)
+		}
+
 		// Snapshot for undo before any editing key.
 		if isEditingKey(msg) {
 			e.undo.push(
@@ -642,7 +658,10 @@ func (e *Editor) View() string {
 	style := e.borderStyle()
 	style = style.Width(e.width - 2) // account for border chars
 
-	hint := e.fileCompletionHint()
+	hint := e.searchHint()
+	if hint == "" {
+		hint = e.fileCompletionHint()
+	}
 	if hint == "" {
 		hint = e.commandHint()
 	}
@@ -812,6 +831,9 @@ func (e *Editor) commandHint() string {
 
 // borderStyle returns the appropriate border style based on the current state.
 func (e *Editor) borderStyle() lipgloss.Style {
+	if e.searching {
+		return EditorSearchStyle
+	}
 	switch e.state {
 	case editorRunning:
 		return EditorActiveStyle
@@ -871,6 +893,160 @@ func (e *Editor) handleTab() tea.Cmd {
 		e.textarea.CursorEnd()
 	}
 	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Reverse history search (ctrl+r)
+// ---------------------------------------------------------------------------
+
+// IsSearching returns true when the editor is in reverse-search mode.
+func (e *Editor) IsSearching() bool {
+	return e.searching
+}
+
+// EnterSearchMode activates reverse-search with the given prompt corpus.
+// Prompts should be ordered most-recent-first.
+func (e *Editor) EnterSearchMode(prompts []string) {
+	if e.searching {
+		// Already searching — pressing ctrl+r again advances to the next match.
+		e.searchNextMatch()
+		return
+	}
+	e.searching = true
+	e.searchQuery = ""
+	e.searchAll = prompts
+	e.searchResults = prompts // empty query matches everything
+	e.searchIdx = 0
+	e.searchDraft = e.textarea.Value()
+	if len(e.searchResults) > 0 {
+		e.textarea.SetValue(e.searchResults[0])
+		e.textarea.CursorEnd()
+	}
+}
+
+// exitSearchMode leaves search mode. If accept is true, the matched text
+// remains in the textarea; otherwise the pre-search draft is restored.
+func (e *Editor) exitSearchMode(accept bool) {
+	if !accept {
+		e.textarea.SetValue(e.searchDraft)
+		e.textarea.CursorEnd()
+	}
+	e.searching = false
+	e.searchQuery = ""
+	e.searchAll = nil
+	e.searchResults = nil
+	e.searchIdx = 0
+	e.searchDraft = ""
+}
+
+// searchFilter updates searchResults based on the current searchQuery.
+func (e *Editor) searchFilter() {
+	if e.searchQuery == "" {
+		e.searchResults = e.searchAll
+	} else {
+		query := strings.ToLower(e.searchQuery)
+		var matches []string
+		for _, p := range e.searchAll {
+			if strings.Contains(strings.ToLower(p), query) {
+				matches = append(matches, p)
+			}
+		}
+		e.searchResults = matches
+	}
+	e.searchIdx = 0
+	if len(e.searchResults) > 0 {
+		e.textarea.SetValue(e.searchResults[0])
+		e.textarea.CursorEnd()
+	} else {
+		e.textarea.SetValue("")
+	}
+}
+
+// searchNextMatch advances to the next (older) matching prompt.
+func (e *Editor) searchNextMatch() {
+	if len(e.searchResults) == 0 {
+		return
+	}
+	e.searchIdx = (e.searchIdx + 1) % len(e.searchResults)
+	e.textarea.SetValue(e.searchResults[e.searchIdx])
+	e.textarea.CursorEnd()
+}
+
+// updateSearch handles a key event while in search mode. Returns a tea.Cmd
+// if the event was consumed, or nil if it should propagate.
+func (e *Editor) updateSearch(msg tea.KeyMsg) tea.Cmd {
+	switch msg.Type {
+	case tea.KeyEnter:
+		// Accept the current match. If no results, cancel instead.
+		if len(e.searchResults) == 0 {
+			e.exitSearchMode(false)
+			return nil
+		}
+		text := e.textarea.Value()
+		e.exitSearchMode(true)
+		if text == "" {
+			return nil
+		}
+		// Add to history and submit.
+		if len(e.history) == 0 || e.history[len(e.history)-1] != text {
+			e.history = append(e.history, text)
+		}
+		e.historyIdx = len(e.history)
+		e.draft = ""
+		e.textarea.Reset()
+		e.ctrlCCount = 0
+
+		if strings.HasPrefix(text, "!") && !strings.HasPrefix(text, "//") {
+			if strings.HasPrefix(text, "!!") || strings.HasPrefix(text, "!") {
+				return executeShellCommand(text)
+			}
+		}
+		if strings.HasPrefix(text, "/") {
+			name, args := parseSlashCommand(text)
+			return func() tea.Msg { return editorCommandMsg{name: name, args: args} }
+		}
+		if e.state == editorIdle {
+			return func() tea.Msg { return editorSubmitMsg{text: text} }
+		}
+		return func() tea.Msg { return editorSteerMsg{text: text} }
+
+	case tea.KeyEscape, tea.KeyCtrlC:
+		e.exitSearchMode(false)
+		return nil
+
+	case tea.KeyCtrlR:
+		// Next match.
+		e.searchNextMatch()
+		return nil
+
+	case tea.KeyBackspace:
+		if len(e.searchQuery) > 0 {
+			e.searchQuery = e.searchQuery[:len(e.searchQuery)-1]
+			e.searchFilter()
+		}
+		return nil
+
+	case tea.KeyRunes:
+		e.searchQuery += string(msg.Runes)
+		e.searchFilter()
+		return nil
+	}
+
+	return nil
+}
+
+// searchHint returns the search mode indicator line shown above the editor.
+func (e *Editor) searchHint() string {
+	if !e.searching {
+		return ""
+	}
+	matchInfo := ""
+	if len(e.searchResults) > 0 {
+		matchInfo = fmt.Sprintf(" (%d/%d)", e.searchIdx+1, len(e.searchResults))
+	} else if e.searchQuery != "" {
+		matchInfo = " (no matches)"
+	}
+	return MutedStyle.Render(fmt.Sprintf("reverse-search: %s%s", e.searchQuery, matchInfo))
 }
 
 // parseSlashCommand splits "/name some args" into ("name", "some args").

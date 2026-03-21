@@ -1081,3 +1081,191 @@ func TestEditor_Update_ShellCommand_DoubleBang(t *testing.T) {
 		t.Errorf("expected output containing 'local', got %q", shellMsg.output)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Reverse history search (ctrl+r)
+// ---------------------------------------------------------------------------
+
+func TestEditor_EnterSearchMode(t *testing.T) {
+	e := NewEditor()
+	e.textarea.SetValue("draft text")
+
+	prompts := []string{"hello world", "foo bar", "hello again"}
+	e.EnterSearchMode(prompts)
+
+	if !e.IsSearching() {
+		t.Fatal("expected searching=true")
+	}
+	if e.searchDraft != "draft text" {
+		t.Errorf("expected searchDraft=%q, got %q", "draft text", e.searchDraft)
+	}
+	// First prompt should be shown.
+	if e.Value() != "hello world" {
+		t.Errorf("expected textarea=%q, got %q", "hello world", e.Value())
+	}
+}
+
+func TestEditor_SearchFilter(t *testing.T) {
+	e := NewEditor()
+	prompts := []string{"hello world", "foo bar", "hello again", "baz"}
+	e.EnterSearchMode(prompts)
+
+	// Type "hello" to filter.
+	e.updateSearch(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("hello")})
+
+	if len(e.searchResults) != 2 {
+		t.Fatalf("expected 2 matches, got %d", len(e.searchResults))
+	}
+	if e.Value() != "hello world" {
+		t.Errorf("expected first match %q, got %q", "hello world", e.Value())
+	}
+}
+
+func TestEditor_SearchNextMatch(t *testing.T) {
+	e := NewEditor()
+	prompts := []string{"hello world", "foo", "hello again"}
+	e.EnterSearchMode(prompts)
+
+	// Filter to "hello".
+	e.updateSearch(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("hello")})
+	if e.Value() != "hello world" {
+		t.Fatalf("expected first match %q, got %q", "hello world", e.Value())
+	}
+
+	// Ctrl+R to go to next match.
+	e.updateSearch(tea.KeyMsg{Type: tea.KeyCtrlR})
+	if e.Value() != "hello again" {
+		t.Errorf("expected second match %q, got %q", "hello again", e.Value())
+	}
+
+	// Wrap around.
+	e.updateSearch(tea.KeyMsg{Type: tea.KeyCtrlR})
+	if e.Value() != "hello world" {
+		t.Errorf("expected wrap to first match %q, got %q", "hello world", e.Value())
+	}
+}
+
+func TestEditor_SearchAccept(t *testing.T) {
+	e := NewEditor()
+	e.textarea.SetValue("draft")
+	prompts := []string{"accepted prompt", "other"}
+	e.EnterSearchMode(prompts)
+
+	cmd := e.updateSearch(tea.KeyMsg{Type: tea.KeyEnter})
+	if e.IsSearching() {
+		t.Error("expected searching=false after Enter")
+	}
+	if cmd == nil {
+		t.Fatal("expected a command from Enter")
+	}
+	msg := cmd()
+	submit, ok := msg.(editorSubmitMsg)
+	if !ok {
+		t.Fatalf("expected editorSubmitMsg, got %T", msg)
+	}
+	if submit.text != "accepted prompt" {
+		t.Errorf("expected submitted %q, got %q", "accepted prompt", submit.text)
+	}
+}
+
+func TestEditor_SearchCancel(t *testing.T) {
+	e := NewEditor()
+	e.textarea.SetValue("my draft")
+	prompts := []string{"other"}
+	e.EnterSearchMode(prompts)
+
+	if e.Value() != "other" {
+		t.Fatalf("expected search match, got %q", e.Value())
+	}
+
+	e.updateSearch(tea.KeyMsg{Type: tea.KeyEscape})
+	if e.IsSearching() {
+		t.Error("expected searching=false after Escape")
+	}
+	if e.Value() != "my draft" {
+		t.Errorf("expected draft restored %q, got %q", "my draft", e.Value())
+	}
+}
+
+func TestEditor_SearchBackspace(t *testing.T) {
+	e := NewEditor()
+	prompts := []string{"hello", "help", "world"}
+	e.EnterSearchMode(prompts)
+
+	e.updateSearch(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("hel")})
+	if len(e.searchResults) != 2 {
+		t.Fatalf("expected 2 matches for 'hel', got %d", len(e.searchResults))
+	}
+
+	// Backspace widens the search.
+	e.updateSearch(tea.KeyMsg{Type: tea.KeyBackspace})
+	if e.searchQuery != "he" {
+		t.Errorf("expected query %q after backspace, got %q", "he", e.searchQuery)
+	}
+	if len(e.searchResults) != 2 {
+		t.Errorf("expected 2 matches for 'he', got %d", len(e.searchResults))
+	}
+}
+
+func TestEditor_SearchNoMatches(t *testing.T) {
+	e := NewEditor()
+	prompts := []string{"hello", "world"}
+	e.EnterSearchMode(prompts)
+
+	e.updateSearch(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("xyz")})
+	if len(e.searchResults) != 0 {
+		t.Errorf("expected 0 matches, got %d", len(e.searchResults))
+	}
+	if e.Value() != "" {
+		t.Errorf("expected empty textarea, got %q", e.Value())
+	}
+}
+
+func TestEditor_SearchHint(t *testing.T) {
+	e := NewEditor()
+	if e.searchHint() != "" {
+		t.Error("expected empty hint when not searching")
+	}
+
+	prompts := []string{"hello", "world"}
+	e.EnterSearchMode(prompts)
+
+	hint := e.searchHint()
+	if !strings.Contains(hint, "reverse-search") {
+		t.Errorf("expected hint to contain 'reverse-search', got %q", hint)
+	}
+	if !strings.Contains(hint, "1/2") {
+		t.Errorf("expected hint to show match count, got %q", hint)
+	}
+}
+
+func TestEditor_SearchEmptyPrompts(t *testing.T) {
+	e := NewEditor()
+	e.textarea.SetValue("draft")
+	e.EnterSearchMode(nil)
+
+	if !e.IsSearching() {
+		t.Error("expected searching=true even with nil prompts")
+	}
+	// Enter on empty results should not panic.
+	cmd := e.updateSearch(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd != nil {
+		t.Error("expected nil cmd when no match selected")
+	}
+}
+
+func TestEditor_SearchCtrlRReenters(t *testing.T) {
+	e := NewEditor()
+	prompts := []string{"a", "b", "c"}
+	e.EnterSearchMode(prompts)
+
+	if e.Value() != "a" {
+		t.Fatalf("expected first prompt, got %q", e.Value())
+	}
+
+	// Calling EnterSearchMode again (ctrl+r while searching) advances.
+	e.EnterSearchMode(prompts)
+	if e.Value() != "b" {
+		t.Errorf("expected second prompt after re-enter, got %q", e.Value())
+	}
+}

@@ -19,6 +19,7 @@ const (
 	ActionCycleModelBackward Action = "cycle_model_backward"
 	ActionSuspend            Action = "suspend"
 	ActionToggleMouse        Action = "toggle_mouse"
+	ActionHistorySearch      Action = "history_search"
 )
 
 // actionDescriptions provides human-readable descriptions for /hotkeys display.
@@ -30,6 +31,7 @@ var actionDescriptions = map[Action]string{
 	ActionCycleModelBackward: "Cycle to previous model",
 	ActionSuspend:            "Suspend (Ctrl+Z)",
 	ActionToggleMouse:        "Toggle mouse capture (for scroll vs text selection)",
+	ActionHistorySearch:      "Reverse-search prompt history",
 }
 
 // Binding represents a key-to-action mapping.
@@ -47,7 +49,8 @@ type KeybindingConfig struct {
 // defaultBindings are the built-in keybindings for app-level actions.
 var defaultBindings = []Binding{
 	{Key: "ctrl+t", Action: ActionToggleThinking},
-	{Key: "ctrl+r", Action: ActionToggleToolResult},
+	{Key: "alt+r", Action: ActionToggleToolResult},
+	{Key: "ctrl+r", Action: ActionHistorySearch},
 	{Key: "shift+tab", Action: ActionCycleThinking},
 	{Key: "ctrl+p", Action: ActionCycleModelForward},
 	{Key: "alt+p", Action: ActionCycleModelBackward},

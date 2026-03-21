@@ -996,9 +996,10 @@ func TestApp_Update_KeyR_ToggleToolResult(t *testing.T) {
 	app.chat.HandleEvent(agent.AgentEvent{Type: agent.EventToolExecStart, ToolCallID: "tc-1", ToolName: "bash"})
 	app.chat.HandleEvent(agent.AgentEvent{Type: agent.EventToolExecEnd, ToolCallID: "tc-1", ToolResult: "output"})
 
-	app.Update(tea.KeyMsg{Type: tea.KeyCtrlR})
+	// toggle_tool_result is bound to alt+r (moved from ctrl+r to make room for history_search).
+	app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}, Alt: true})
 	if app.chat.blocks[0].collapsed {
-		t.Error("should be expanded after Ctrl+R while running")
+		t.Error("should be expanded after Alt+R while running")
 	}
 }
 

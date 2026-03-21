@@ -1545,3 +1545,73 @@ func countJSONLLines(t *testing.T, path string) int {
 	}
 	return count
 }
+
+// ---------------------------------------------------------------------------
+// CollectUserPrompts tests
+// ---------------------------------------------------------------------------
+
+func TestCollectUserPrompts_Basic(t *testing.T) {
+	dir := t.TempDir()
+	m := NewManager(dir)
+
+	// Create two sessions with user messages.
+	id1 := m.NewSession()
+	_ = id1
+	_ = m.SaveMessage(ai.Message{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "first prompt"}}})
+	_ = m.SaveMessage(ai.Message{Role: ai.RoleAssistant, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "response"}}})
+	_ = m.SaveMessage(ai.Message{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "second prompt"}}})
+
+	id2 := m.NewSession()
+	_ = id2
+	_ = m.SaveMessage(ai.Message{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "third prompt"}}})
+
+	prompts := m.CollectUserPrompts(100)
+	if len(prompts) != 3 {
+		t.Fatalf("expected 3 prompts, got %d: %v", len(prompts), prompts)
+	}
+
+	// Most recent first.
+	if prompts[0] != "third prompt" {
+		t.Errorf("expected most recent first, got %q", prompts[0])
+	}
+}
+
+func TestCollectUserPrompts_Deduplicates(t *testing.T) {
+	dir := t.TempDir()
+	m := NewManager(dir)
+
+	m.NewSession()
+	_ = m.SaveMessage(ai.Message{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "duplicate"}}})
+	_ = m.SaveMessage(ai.Message{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "duplicate"}}})
+	_ = m.SaveMessage(ai.Message{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "unique"}}})
+
+	prompts := m.CollectUserPrompts(100)
+	if len(prompts) != 2 {
+		t.Fatalf("expected 2 unique prompts, got %d: %v", len(prompts), prompts)
+	}
+}
+
+func TestCollectUserPrompts_RespectsMax(t *testing.T) {
+	dir := t.TempDir()
+	m := NewManager(dir)
+	m.NewSession()
+
+	for i := 0; i < 20; i++ {
+		_ = m.SaveMessage(ai.Message{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: fmt.Sprintf("prompt %d", i)}}})
+	}
+
+	prompts := m.CollectUserPrompts(5)
+	if len(prompts) != 5 {
+		t.Fatalf("expected 5 prompts (capped), got %d", len(prompts))
+	}
+}
+
+func TestCollectUserPrompts_EmptyDir(t *testing.T) {
+	dir := t.TempDir()
+	m := NewManager(dir)
+
+	prompts := m.CollectUserPrompts(100)
+	if len(prompts) != 0 {
+		t.Errorf("expected 0 prompts from empty dir, got %d", len(prompts))
+	}
+}
