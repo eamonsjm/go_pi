@@ -254,6 +254,11 @@ type ollamaChunkMsg struct {
 
 func (p *OllamaProvider) readStream(ctx context.Context, body io.ReadCloser, ch chan<- StreamEvent) {
 	defer close(ch)
+	defer func() {
+		if r := recover(); r != nil {
+			ch <- StreamEvent{Type: EventError, Error: fmt.Errorf("ollama: stream goroutine panicked: %v", r)}
+		}
+	}()
 	defer func() { _ = body.Close() }()
 
 	scanner := bufio.NewScanner(body)

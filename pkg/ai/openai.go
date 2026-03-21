@@ -327,6 +327,11 @@ type toolCallState struct {
 
 func (p *OpenAIProvider) readSSEStream(ctx context.Context, body io.ReadCloser, ch chan<- StreamEvent) {
 	defer close(ch)
+	defer func() {
+		if r := recover(); r != nil {
+			ch <- StreamEvent{Type: EventError, Error: fmt.Errorf("openai: stream goroutine panicked: %v", r)}
+		}
+	}()
 	defer func() { _ = body.Close() }()
 
 	scanner := bufio.NewScanner(body)

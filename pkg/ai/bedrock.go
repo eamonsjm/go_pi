@@ -211,6 +211,11 @@ type bedrockToolState struct {
 
 func (p *BedrockProvider) readEventStream(ctx context.Context, output *bedrockruntime.ConverseStreamOutput, ch chan<- StreamEvent) {
 	defer close(ch)
+	defer func() {
+		if r := recover(); r != nil {
+			ch <- StreamEvent{Type: EventError, Error: fmt.Errorf("bedrock: stream goroutine panicked: %v", r)}
+		}
+	}()
 
 	stream := output.GetStream()
 	defer func() { _ = stream.Close() }()
