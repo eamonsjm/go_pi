@@ -129,16 +129,14 @@ func RunRPC(agentLoop *agent.AgentLoop) {
 
 	s := &rpcServer{
 		agentLoop: agentLoop,
-		ctx:       ctx,
 		cancel:    cancel,
 		writer:    os.Stdout,
 	}
-	s.serve(proxy.pr)
+	s.serve(ctx, proxy.pr)
 }
 
 type rpcServer struct {
 	agentLoop *agent.AgentLoop
-	ctx       context.Context
 	cancel    context.CancelFunc
 	writer    io.Writer
 
@@ -146,12 +144,12 @@ type rpcServer struct {
 	running bool       // true while a prompt is executing
 }
 
-func (s *rpcServer) serve(r io.Reader) {
+func (s *rpcServer) serve(ctx context.Context, r io.Reader) {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
 
 	for scanner.Scan() {
-		if s.ctx.Err() != nil {
+		if ctx.Err() != nil {
 			return
 		}
 		line := scanner.Bytes()
@@ -184,7 +182,7 @@ func (s *rpcServer) serve(r io.Reader) {
 			continue
 		}
 
-		s.handleRequest(req)
+		s.handleRequest(ctx, req)
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -192,10 +190,10 @@ func (s *rpcServer) serve(r io.Reader) {
 	}
 }
 
-func (s *rpcServer) handleRequest(req Request) {
+func (s *rpcServer) handleRequest(ctx context.Context, req Request) {
 	switch req.Method {
 	case "prompt":
-		s.handlePrompt(req)
+		s.handlePrompt(ctx, req)
 	case "cancel":
 		s.agentLoop.Cancel()
 		s.sendResponse(Response{
@@ -241,7 +239,7 @@ func (s *rpcServer) handleRequest(req Request) {
 	}
 }
 
-func (s *rpcServer) handlePrompt(req Request) {
+func (s *rpcServer) handlePrompt(ctx context.Context, req Request) {
 	s.mu.Lock()
 	if s.running {
 		s.mu.Unlock()
@@ -282,7 +280,7 @@ func (s *rpcServer) handlePrompt(req Request) {
 	var promptErr error
 	done := make(chan struct{})
 	go func() {
-		promptErr = s.agentLoop.Prompt(s.ctx, params.Text)
+		promptErr = s.agentLoop.Prompt(ctx, params.Text)
 		close(done)
 	}()
 
