@@ -8,6 +8,15 @@ import (
 	"sync"
 )
 
+// Package-level compiled regexps (avoid recompiling on every call).
+var (
+	buildErrorPattern   = regexp.MustCompile(`^([^:]+\.go):(\d+):(\d+): (.+)$`)
+	buildSummaryPattern = regexp.MustCompile(`(cannot find|undefined|no such file|type mismatch)`)
+	gitCommitPattern    = regexp.MustCompile(`^commit ([a-f0-9]+)`)
+	gitAuthorPattern    = regexp.MustCompile(`^Author:\s*(.+)`)
+	linterFilePattern   = regexp.MustCompile(`^([^:]+):(\d+)?:?(\d+)?: (.+)$`)
+)
+
 // CompressionLevel defines the intensity of compression.
 type CompressionLevel int
 
@@ -165,9 +174,8 @@ func (e *GoBuildErrorExtractor) extract(output string) string {
 	summaryErrors := make([]string, 0)
 	seenErrors := make(map[string]bool)
 
-	// Patterns for Go build errors
-	errorPattern := regexp.MustCompile(`^([^:]+\.go):(\d+):(\d+): (.+)$`)
-	summaryPattern := regexp.MustCompile(`(cannot find|undefined|no such file|type mismatch)`)
+	errorPattern := buildErrorPattern
+	summaryPattern := buildSummaryPattern
 
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
@@ -271,8 +279,8 @@ func (c *GitLogCompactor) compact(output string) string {
 	var messageLines int
 	var currentCommit string
 
-	commitPattern := regexp.MustCompile(`^commit ([a-f0-9]+)`)
-	authorPattern := regexp.MustCompile(`^Author:\s*(.+)`)
+	commitPattern := gitCommitPattern
+	authorPattern := gitAuthorPattern
 
 	for i := 0; i < len(lines); i++ {
 		line := lines[i]
@@ -391,8 +399,7 @@ func (g *LinterOutputGrouper) AfterExecute(ctx context.Context, toolName string,
 func (g *LinterOutputGrouper) group(output string) string {
 	lines := strings.Split(output, "\n")
 
-	// Pattern for linter output: file:line:col: message or file: error
-	filePattern := regexp.MustCompile(`^([^:]+):(\d+)?:?(\d+)?: (.+)$`)
+	filePattern := linterFilePattern
 
 	errorsByFile := make(map[string][]string)
 	errorCounts := make(map[string]int)

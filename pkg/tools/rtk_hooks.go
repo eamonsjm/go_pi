@@ -9,6 +9,9 @@ import (
 	"time"
 )
 
+// ansiPattern matches ANSI escape sequences (compiled once at package level).
+var ansiPattern = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
+
 // Hook interface allows tools to be intercepted and modified.
 type Hook interface {
 	BeforeExecute(ctx context.Context, toolName string, params map[string]any) error
@@ -80,9 +83,7 @@ func (s *ANSIStripper) AfterExecute(ctx context.Context, toolName string, params
 
 // stripANSI removes ANSI escape sequences using a regex pattern.
 func stripANSI(s string) string {
-	// Match ANSI escape sequences: ESC [ ... (letters)
-	ansiRe := regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
-	return ansiRe.ReplaceAllString(s, "")
+	return ansiPattern.ReplaceAllString(s, "")
 }
 
 // Compressor collapses excess whitespace to reduce output size.
