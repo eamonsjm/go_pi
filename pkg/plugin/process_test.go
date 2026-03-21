@@ -95,6 +95,7 @@ func TestReadLoop_ResponseDroppedWhenFull(t *testing.T) {
 		scanner:     scanner,
 		injectCh:    make(chan PluginMessage, 64),
 		responseCh:  make(chan PluginMessage, 2), // small buffer
+		uiRequestCh: make(chan PluginMessage, 16),
 		heartbeatCh: make(chan PluginMessage, 4),
 		healthy:     true,
 	}
@@ -139,6 +140,7 @@ func TestReadLoop_InjectDroppedWhenFull(t *testing.T) {
 		scanner:     scanner,
 		injectCh:    make(chan PluginMessage, 2), // small buffer
 		responseCh:  make(chan PluginMessage, 16),
+		uiRequestCh: make(chan PluginMessage, 16),
 		heartbeatCh: make(chan PluginMessage, 4),
 		healthy:     true,
 	}

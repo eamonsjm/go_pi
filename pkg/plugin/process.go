@@ -188,10 +188,26 @@ func (p *PluginProcess) readLoop() {
 	scanner := p.scanner
 	p.mu.Unlock()
 
-	defer close(injectCh)
-	defer close(responseCh)
-	defer close(uiRequestCh)
-	defer close(heartbeatCh)
+	defer func() {
+		if injectCh != nil {
+			close(injectCh)
+		}
+	}()
+	defer func() {
+		if responseCh != nil {
+			close(responseCh)
+		}
+	}()
+	defer func() {
+		if uiRequestCh != nil {
+			close(uiRequestCh)
+		}
+	}()
+	defer func() {
+		if heartbeatCh != nil {
+			close(heartbeatCh)
+		}
+	}()
 
 	for scanner.Scan() {
 		var msg PluginMessage
