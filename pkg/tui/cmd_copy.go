@@ -24,7 +24,28 @@ func NewCopyCommand(sessionMgr *session.Manager) *SlashCommand {
 					return CommandResultMsg{Text: "No assistant message to copy.", IsError: true}
 				}
 
-				if err := copyToClipboard(text); err != nil {
+				var clipCmd *exec.Cmd
+				switch runtime.GOOS {
+				case "darwin":
+					clipCmd = exec.Command("pbcopy")
+				default:
+					// Try wayland first, then X11.
+					if _, err := exec.LookPath("wl-copy"); err == nil {
+						clipCmd = exec.Command("wl-copy")
+					} else if _, err := exec.LookPath("xclip"); err == nil {
+						clipCmd = exec.Command("xclip", "-selection", "clipboard")
+					} else if _, err := exec.LookPath("xsel"); err == nil {
+						clipCmd = exec.Command("xsel", "--clipboard", "--input")
+					} else {
+						return CommandResultMsg{
+							Text:    "Failed to copy: " + exec.ErrNotFound.Error(),
+							IsError: true,
+						}
+					}
+				}
+
+				clipCmd.Stdin = strings.NewReader(text)
+				if err := clipCmd.Run(); err != nil {
 					return CommandResultMsg{
 						Text:    "Failed to copy: " + err.Error(),
 						IsError: true,
@@ -54,28 +75,4 @@ func lastAssistantText(msgs []ai.Message) string {
 		}
 	}
 	return ""
-}
-
-// copyToClipboard writes text to the system clipboard using platform-specific
-// tools. It tries xclip, xsel, and wl-copy on Linux, pbcopy on macOS.
-func copyToClipboard(text string) error {
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "darwin":
-		cmd = exec.Command("pbcopy")
-	default:
-		// Try wayland first, then X11.
-		if _, err := exec.LookPath("wl-copy"); err == nil {
-			cmd = exec.Command("wl-copy")
-		} else if _, err := exec.LookPath("xclip"); err == nil {
-			cmd = exec.Command("xclip", "-selection", "clipboard")
-		} else if _, err := exec.LookPath("xsel"); err == nil {
-			cmd = exec.Command("xsel", "--clipboard", "--input")
-		} else {
-			return exec.ErrNotFound
-		}
-	}
-
-	cmd.Stdin = strings.NewReader(text)
-	return cmd.Run()
 }
