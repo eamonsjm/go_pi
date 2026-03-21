@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 
 	"github.com/ejm/go_pi/pkg/agent"
 )
@@ -37,12 +38,14 @@ func RunJSONStream(agentLoop *agent.AgentLoop, prompt string) {
 		if err == nil && info.Mode()&os.ModeCharDevice == 0 {
 			scanner := bufio.NewScanner(os.Stdin)
 			scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
+			var sb strings.Builder
 			for scanner.Scan() {
-				if prompt != "" {
-					prompt += "\n"
+				if sb.Len() > 0 {
+					sb.WriteByte('\n')
 				}
-				prompt += scanner.Text()
+				sb.WriteString(scanner.Text())
 			}
+			prompt = sb.String()
 		}
 		if prompt == "" {
 			data, _ := json.Marshal(Event{Type: "error", Error: "no prompt provided"})

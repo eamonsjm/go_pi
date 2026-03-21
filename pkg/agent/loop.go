@@ -330,11 +330,18 @@ func (a *AgentLoop) doTurn(ctx context.Context) (*ai.Message, error) {
 
 	assistantMsg := ai.Message{Role: ai.RoleAssistant, Content: []ai.ContentBlock{}}
 
+	// Accumulate streaming deltas with strings.Builder (O(n) amortized)
+	// instead of repeated string concatenation (O(n²)).
+	var textBuilder strings.Builder
+	textIdx := -1 // index of current text block in assistantMsg.Content
+	var thinkingBuilder strings.Builder
+	thinkingIdx := -1
+
 	// State for accumulating the current tool use input JSON.
 	type toolAccum struct {
-		id        string
-		name      string
-		inputJSON string
+		id    string
+		name  string
+		input strings.Builder
 	}
 	var currentTool *toolAccum
 
@@ -344,13 +351,36 @@ func (a *AgentLoop) doTurn(ctx context.Context) (*ai.Message, error) {
 
 		case ai.EventTextDelta:
 			a.emit(ctx, AgentEvent{Type: EventAssistantText, Delta: event.Delta})
-			appendTextDelta(&assistantMsg, event.Delta)
+			if textIdx < 0 {
+				textIdx = len(assistantMsg.Content)
+				assistantMsg.Content = append(assistantMsg.Content, ai.ContentBlock{
+					Type: ai.ContentTypeText,
+				})
+			}
+			textBuilder.WriteString(event.Delta)
 
 		case ai.EventThinkingDelta:
 			a.emit(ctx, AgentEvent{Type: EventAssistantThinking, Delta: event.Delta})
-			appendThinkingDelta(&assistantMsg, event.Delta)
+			if thinkingIdx < 0 {
+				thinkingIdx = len(assistantMsg.Content)
+				assistantMsg.Content = append(assistantMsg.Content, ai.ContentBlock{
+					Type: ai.ContentTypeThinking,
+				})
+			}
+			thinkingBuilder.WriteString(event.Delta)
 
 		case ai.EventToolUseStart:
+			// Flush text/thinking builders before the tool use block.
+			if textIdx >= 0 {
+				assistantMsg.Content[textIdx].Text = textBuilder.String()
+				textBuilder.Reset()
+				textIdx = -1
+			}
+			if thinkingIdx >= 0 {
+				assistantMsg.Content[thinkingIdx].Thinking = thinkingBuilder.String()
+				thinkingBuilder.Reset()
+				thinkingIdx = -1
+			}
 			currentTool = &toolAccum{
 				id:   event.ToolCallID,
 				name: event.ToolName,
@@ -358,16 +388,17 @@ func (a *AgentLoop) doTurn(ctx context.Context) (*ai.Message, error) {
 
 		case ai.EventToolUseDelta:
 			if currentTool != nil {
-				currentTool.inputJSON += event.PartialInput
+				currentTool.input.WriteString(event.PartialInput)
 			}
 
 		case ai.EventToolUseEnd:
 			if currentTool != nil {
+				inputJSON := currentTool.input.String()
 				var input any
-				if currentTool.inputJSON != "" {
-					if err := json.Unmarshal([]byte(currentTool.inputJSON), &input); err != nil {
+				if inputJSON != "" {
+					if err := json.Unmarshal([]byte(inputJSON), &input); err != nil {
 						log.Printf("agent: invalid tool input JSON for %s (id=%s): %v", currentTool.name, currentTool.id, err)
-						input = currentTool.inputJSON
+						input = inputJSON
 					}
 				}
 				assistantMsg.Content = append(assistantMsg.Content, ai.ContentBlock{
@@ -390,6 +421,14 @@ func (a *AgentLoop) doTurn(ctx context.Context) (*ai.Message, error) {
 		case ai.EventError:
 			return nil, fmt.Errorf("stream error: %w", event.Error)
 		}
+	}
+
+	// Flush any remaining accumulated text/thinking.
+	if textIdx >= 0 {
+		assistantMsg.Content[textIdx].Text = textBuilder.String()
+	}
+	if thinkingIdx >= 0 {
+		assistantMsg.Content[thinkingIdx].Thinking = thinkingBuilder.String()
 	}
 
 	a.appendMessage(assistantMsg)
