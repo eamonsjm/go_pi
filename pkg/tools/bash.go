@@ -73,7 +73,7 @@ func (t *BashTool) Execute(ctx context.Context, params map[string]any) (string, 
 
 	err := cmd.Start()
 	if err != nil {
-		return "", fmt.Errorf("failed to start command: %v", err)
+		return "", fmt.Errorf("failed to start command: %w", err)
 	}
 
 	// Wait for completion.
@@ -99,7 +99,7 @@ func (t *BashTool) Execute(ctx context.Context, params map[string]any) (string, 
 			if exitErr, ok := waitErr.(*exec.ExitError); ok {
 				exitCode = exitErr.ExitCode()
 			} else {
-				return "", fmt.Errorf("command error: %v", waitErr)
+				return "", fmt.Errorf("command error: %w", waitErr)
 			}
 		}
 	}

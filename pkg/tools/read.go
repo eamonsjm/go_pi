@@ -68,7 +68,7 @@ func (t *ReadTool) Execute(ctx context.Context, params map[string]any) (string, 
 	// Check file exists and is not a directory.
 	info, err := os.Stat(filePath)
 	if err != nil {
-		return "", fmt.Errorf("cannot read file: %v", err)
+		return "", fmt.Errorf("cannot read file: %w", err)
 	}
 	if info.IsDir() {
 		return "", fmt.Errorf("%s is a directory, not a file. Use bash with 'ls' to list directory contents.", filePath)
@@ -76,7 +76,7 @@ func (t *ReadTool) Execute(ctx context.Context, params map[string]any) (string, 
 
 	data, err := os.ReadFile(filePath)
 	if err != nil {
-		return "", fmt.Errorf("cannot read file: %v", err)
+		return "", fmt.Errorf("cannot read file: %w", err)
 	}
 
 	if isBinary(data) {

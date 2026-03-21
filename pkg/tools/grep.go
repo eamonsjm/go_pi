@@ -57,7 +57,7 @@ func (t *GrepTool) Execute(ctx context.Context, params map[string]any) (string, 
 
 	re, err := regexp.Compile(patternStr)
 	if err != nil {
-		return "", fmt.Errorf("invalid regex pattern: %v", err)
+		return "", fmt.Errorf("invalid regex pattern: %w", err)
 	}
 
 	searchPath := "."
@@ -67,7 +67,7 @@ func (t *GrepTool) Execute(ctx context.Context, params map[string]any) (string, 
 
 	absPath, err := filepath.Abs(searchPath)
 	if err != nil {
-		return "", fmt.Errorf("cannot resolve path: %v", err)
+		return "", fmt.Errorf("cannot resolve path: %w", err)
 	}
 
 	include := ""
@@ -91,7 +91,7 @@ func (t *GrepTool) Execute(ctx context.Context, params map[string]any) (string, 
 
 	info, err := os.Stat(absPath)
 	if err != nil {
-		return "", fmt.Errorf("path does not exist: %v", err)
+		return "", fmt.Errorf("path does not exist: %w", err)
 	}
 
 	if info.IsDir() {
@@ -152,7 +152,7 @@ func (t *GrepTool) Execute(ctx context.Context, params map[string]any) (string, 
 	}
 
 	if err != nil {
-		return "", fmt.Errorf("search error: %v", err)
+		return "", fmt.Errorf("search error: %w", err)
 	}
 
 	if len(results) == 0 {

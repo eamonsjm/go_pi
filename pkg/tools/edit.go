@@ -60,7 +60,7 @@ func (t *EditTool) Execute(ctx context.Context, params map[string]any) (string, 
 
 	data, err := os.ReadFile(filePath)
 	if err != nil {
-		return "", fmt.Errorf("cannot read file: %v", err)
+		return "", fmt.Errorf("cannot read file: %w", err)
 	}
 
 	// Detect and strip BOM — we'll re-prepend it on write.
@@ -127,7 +127,7 @@ func (t *EditTool) Execute(ctx context.Context, params map[string]any) (string, 
 	}
 
 	if err := os.WriteFile(filePath, output, mode); err != nil {
-		return "", fmt.Errorf("cannot write file: %v", err)
+		return "", fmt.Errorf("cannot write file: %w", err)
 	}
 
 	// Generate a unified diff (use LF-normalized content for readable diffs).

@@ -48,12 +48,12 @@ func (t *WriteTool) Execute(ctx context.Context, params map[string]any) (string,
 	// Create parent directories if needed.
 	dir := filepath.Dir(filePath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return "", fmt.Errorf("cannot create directory %s: %v", dir, err)
+		return "", fmt.Errorf("cannot create directory %s: %w", dir, err)
 	}
 
 	data := []byte(content)
 	if err := os.WriteFile(filePath, data, 0644); err != nil {
-		return "", fmt.Errorf("cannot write file: %v", err)
+		return "", fmt.Errorf("cannot write file: %w", err)
 	}
 
 	return fmt.Sprintf("Successfully wrote %d bytes to %s", len(data), filePath), nil

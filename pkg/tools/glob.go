@@ -60,12 +60,12 @@ func (t *GlobTool) Execute(ctx context.Context, params map[string]any) (string, 
 	// Resolve to absolute path.
 	absBase, err := filepath.Abs(basePath)
 	if err != nil {
-		return "", fmt.Errorf("cannot resolve path: %v", err)
+		return "", fmt.Errorf("cannot resolve path: %w", err)
 	}
 
 	info, err := os.Stat(absBase)
 	if err != nil {
-		return "", fmt.Errorf("path does not exist: %v", err)
+		return "", fmt.Errorf("path does not exist: %w", err)
 	}
 	if !info.IsDir() {
 		return "", fmt.Errorf("%s is not a directory", absBase)
@@ -87,7 +87,7 @@ func (t *GlobTool) Execute(ctx context.Context, params map[string]any) (string, 
 		matches, err = filepath.Glob(fullPattern)
 	}
 	if err != nil {
-		return "", fmt.Errorf("glob error: %v", err)
+		return "", fmt.Errorf("glob error: %w", err)
 	}
 
 	sort.Strings(matches)
