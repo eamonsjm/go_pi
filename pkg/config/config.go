@@ -55,36 +55,27 @@ func DefaultConfig() *Config {
 		RTK: &RTKConfig{
 			Enabled:           true,
 			MetricsEnabled:    true,
-			CompressionLevels: defaultCompressionLevels(),
-			EnabledCategories: defaultEnabledCategories(),
+			CompressionLevels: map[string]string{
+				"go-test":  "medium",
+				"go-build": "high",
+				"git-log":  "medium",
+				"linter":   "medium",
+				"generic":  "low",
+			},
+			EnabledCategories: map[string]bool{
+				"git":     true,
+				"docker":  true,
+				"build":   true,
+				"package": true,
+				"test":    true,
+				"file":    true,
+				"other":   true,
+			},
 			ExportPath:        filepath.Join(giDir, "metrics.json"),
 		},
 	}
 }
 
-// defaultCompressionLevels returns default compression settings.
-func defaultCompressionLevels() map[string]string {
-	return map[string]string{
-		"go-test":  "medium",
-		"go-build": "high",
-		"git-log":  "medium",
-		"linter":   "medium",
-		"generic":  "low",
-	}
-}
-
-// defaultEnabledCategories returns which categories are enabled by default.
-func defaultEnabledCategories() map[string]bool {
-	return map[string]bool{
-		"git":     true,
-		"docker":  true,
-		"build":   true,
-		"package": true,
-		"test":    true,
-		"file":    true,
-		"other":   true,
-	}
-}
 
 // LoadConfig loads configuration by merging (in order):
 //  1. Built-in defaults
