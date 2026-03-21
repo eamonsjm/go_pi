@@ -102,7 +102,10 @@ func SetTheme(t Theme) {
 func ResolveTheme(name string) (Theme, error) {
 	switch name {
 	case "", "auto":
-		return detectTheme(), nil
+		if termenv.NewOutput(os.Stderr).HasDarkBackground() {
+			return DarkTheme, nil
+		}
+		return LightTheme, nil
 	case "dark":
 		return DarkTheme, nil
 	case "light":
@@ -110,14 +113,6 @@ func ResolveTheme(name string) (Theme, error) {
 	default:
 		return loadCustomTheme(name)
 	}
-}
-
-// detectTheme uses terminal background color heuristics to pick dark or light.
-func detectTheme() Theme {
-	if termenv.NewOutput(os.Stderr).HasDarkBackground() {
-		return DarkTheme
-	}
-	return LightTheme
 }
 
 // loadCustomTheme searches for a JSON theme file and parses it.
