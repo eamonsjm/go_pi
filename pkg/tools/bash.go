@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"log"
 	"os/exec"
 	"strings"
 	"time"
@@ -90,7 +91,9 @@ func (t *BashTool) Execute(ctx context.Context, params map[string]any) (string, 
 		// Timeout or context cancellation - kill the process group.
 		timedOut = true
 		if cmd.Process != nil {
-			_ = killProcessGroup(cmd.Process.Pid)
+			if err := killProcessGroup(cmd.Process.Pid); err != nil {
+				log.Printf("bash: cleanup: failed to kill process group (pid %d): %v", cmd.Process.Pid, err)
+			}
 		}
 		<-done // Wait for the process to actually exit.
 		exitCode = -1

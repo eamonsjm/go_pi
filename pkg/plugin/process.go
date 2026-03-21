@@ -505,11 +505,17 @@ func (p *PluginProcess) Stop() error {
 	}
 
 	// Unsupervised path (original behavior).
-	_ = p.sendShutdownDirect()
-	_ = p.stdin.Close()
+	if err := p.sendShutdownDirect(); err != nil {
+		log.Printf("plugin %s: cleanup: failed to send shutdown: %v", p.name, err)
+	}
+	if err := p.stdin.Close(); err != nil {
+		log.Printf("plugin %s: cleanup: failed to close stdin: %v", p.name, err)
+	}
 	// Close stdout to unblock readLoop if the process doesn't exit promptly.
 	if p.stdout != nil {
-		_ = p.stdout.Close()
+		if err := p.stdout.Close(); err != nil {
+			log.Printf("plugin %s: cleanup: failed to close stdout: %v", p.name, err)
+		}
 	}
 
 	done := make(chan error, 1)
@@ -525,7 +531,9 @@ func (p *PluginProcess) Stop() error {
 		return err
 	case <-timer.C:
 		if p.cmd.Process != nil {
-			_ = p.cmd.Process.Kill()
+			if err := p.cmd.Process.Kill(); err != nil {
+				log.Printf("plugin %s: cleanup: failed to kill process after shutdown timeout: %v", p.name, err)
+			}
 		}
 		return fmt.Errorf("plugin %s: killed after shutdown timeout", p.name)
 	}
@@ -560,10 +568,14 @@ func (p *PluginProcess) shutdownCurrentProcess() {
 			log.Printf("plugin %s: failed to write shutdown message: %v", p.name, err)
 		}
 	}
-	_ = stdin.Close()
+	if err := stdin.Close(); err != nil {
+		log.Printf("plugin %s: cleanup: failed to close stdin: %v", p.name, err)
+	}
 	// Close stdout to unblock readLoop if the process doesn't exit promptly.
 	if stdout != nil {
-		_ = stdout.Close()
+		if err := stdout.Close(); err != nil {
+			log.Printf("plugin %s: cleanup: failed to close stdout: %v", p.name, err)
+		}
 	}
 }
 
@@ -591,12 +603,16 @@ func (p *PluginProcess) handleTimeout(opType, opName string, timeout time.Durati
 	if supervised {
 		// Kill the process; the supervisor loop will detect the exit
 		// and handle restart.
-		_ = cmd.Process.Kill()
+		if err := cmd.Process.Kill(); err != nil {
+			log.Printf("plugin %s: cleanup: failed to kill process after timeout: %v", p.name, err)
+		}
 		return
 	}
 
 	// Unsupervised: kill the process directly.
-	_ = cmd.Process.Kill()
+	if err := cmd.Process.Kill(); err != nil {
+		log.Printf("plugin %s: cleanup: failed to kill process after timeout: %v", p.name, err)
+	}
 }
 
 // SetTimeouts configures per-plugin timeouts. Any zero-value field in cfg
@@ -766,7 +782,9 @@ func (p *PluginProcess) waitAndSupervise(ctx context.Context) {
 				cmd := p.cmd
 				p.mu.Unlock()
 				if cmd.Process != nil {
-					_ = cmd.Process.Kill()
+					if err := cmd.Process.Kill(); err != nil {
+						log.Printf("plugin %s: cleanup: failed to kill process during shutdown: %v", p.name, err)
+					}
 				}
 				p.stopErr = <-waitErr
 			}
@@ -788,7 +806,9 @@ func (p *PluginProcess) respawn() error {
 
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
-		_ = stdinPipe.Close()
+		if closeErr := stdinPipe.Close(); closeErr != nil {
+			log.Printf("plugin %s: cleanup: failed to close stdin pipe: %v", p.name, closeErr)
+		}
 		return fmt.Errorf("creating stdout pipe: %w", err)
 	}
 
@@ -824,7 +844,9 @@ func (p *PluginProcess) respawn() error {
 
 	// Re-initialize the plugin with the saved config.
 	if err := p.Initialize(p.pluginCfg); err != nil {
-		_ = cmd.Process.Kill()
+		if killErr := cmd.Process.Kill(); killErr != nil {
+			log.Printf("plugin %s: cleanup: failed to kill process after re-init failure: %v", p.name, killErr)
+		}
 		// Don't call Wait here — the supervisor loop handles it.
 		return fmt.Errorf("re-initialization failed: %w", err)
 	}

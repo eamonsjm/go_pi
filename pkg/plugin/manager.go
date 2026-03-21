@@ -181,17 +181,23 @@ func (m *Manager) Initialize(cfg PluginConfig) error {
 // tool registration), the plugin process is stopped to prevent leaks.
 func (m *Manager) initializePlugin(p *PluginProcess, cfg PluginConfig) (retErr error) {
 	if err := p.Initialize(cfg); err != nil {
-		_ = p.Stop()
+		if stopErr := p.Stop(); stopErr != nil {
+			log.Printf("plugin %s: cleanup: failed to stop after init failure: %v", p.name, stopErr)
+		}
 		return err
 	}
 
 	// Ensure the process is stopped if anything after Initialize() fails.
 	defer func() {
 		if r := recover(); r != nil {
-			_ = p.Stop()
+			if stopErr := p.Stop(); stopErr != nil {
+				log.Printf("plugin %s: cleanup: failed to stop after panic: %v", p.name, stopErr)
+			}
 			retErr = fmt.Errorf("plugin %s: registration panicked: %v", p.name, r)
 		} else if retErr != nil {
-			_ = p.Stop()
+			if stopErr := p.Stop(); stopErr != nil {
+				log.Printf("plugin %s: cleanup: failed to stop after error: %v", p.name, stopErr)
+			}
 		}
 	}()
 
@@ -303,7 +309,9 @@ func (m *Manager) ForwardEvent(event agent.AgentEvent) {
 	payload := agentEventToPayload(event)
 	for _, p := range m.plugins {
 		if p.Alive() {
-			_ = p.SendEvent(payload)
+			if err := p.SendEvent(payload); err != nil {
+				log.Printf("plugin %s: cleanup: failed to forward event: %v", p.name, err)
+			}
 		}
 	}
 }
