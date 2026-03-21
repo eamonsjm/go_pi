@@ -602,9 +602,10 @@ func (p *AnthropicProvider) readSSEStream(ctx context.Context, body io.ReadClose
 				ch <- StreamEvent{Type: EventError, Error: fmt.Errorf("anthropic: unparseable error event: %s", string(data))}
 			} else {
 				ch <- StreamEvent{Type: EventError, Error: &APIError{
-					ErrorType: d.Error.Type,
-					Message:   d.Error.Message,
-					Provider:  "anthropic",
+					ErrorType:  d.Error.Type,
+					Message:    d.Error.Message,
+					Provider:   "anthropic",
+					AuthMethod: p.authMethod(),
 				}}
 			}
 			return

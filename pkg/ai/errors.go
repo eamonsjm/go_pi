@@ -43,7 +43,7 @@ func (e *APIError) UserMessage() string {
 			maximum := formatTokenCount(m[2])
 			return fmt.Sprintf("Your conversation is too long (%s/%s tokens). Use /compact to shrink it.", current, maximum)
 		}
-		return e.Message
+		return e.defaultUserMessage()
 
 	case "rate_limit_error":
 		if e.RetryAfter > 0 {
@@ -86,8 +86,14 @@ func (e *APIError) defaultUserMessage() string {
 	}
 
 	// Always include status code for unrecognized errors — the bare message
-	// alone (e.g., "Error") is not diagnosable.
-	base := fmt.Sprintf("%s error (HTTP %d): %s", provider, e.StatusCode, msg)
+	// alone (e.g., "Error") is not diagnosable. Omit "HTTP 0" for SSE stream
+	// errors where no status code is available.
+	var base string
+	if e.StatusCode > 0 {
+		base = fmt.Sprintf("%s error (HTTP %d): %s", provider, e.StatusCode, msg)
+	} else {
+		base = fmt.Sprintf("%s error: %s", provider, msg)
+	}
 
 	if e.AuthMethod == "oauth" {
 		base += " [auth: OAuth]"

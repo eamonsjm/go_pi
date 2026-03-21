@@ -27,9 +27,24 @@ func TestAPIError_UserMessage(t *testing.T) {
 			contains: "too long (213k/200k tokens)",
 		},
 		{
-			name:     "other invalid request",
-			err:      &APIError{ErrorType: "invalid_request_error", Message: "messages: roles must alternate"},
+			name:     "other invalid request includes context",
+			err:      &APIError{ErrorType: "invalid_request_error", Message: "messages: roles must alternate", StatusCode: 400, Provider: "anthropic"},
+			contains: "HTTP 400",
+		},
+		{
+			name:     "other invalid request includes message",
+			err:      &APIError{ErrorType: "invalid_request_error", Message: "messages: roles must alternate", StatusCode: 400, Provider: "anthropic"},
 			contains: "roles must alternate",
+		},
+		{
+			name:     "invalid request bare Error includes provider",
+			err:      &APIError{ErrorType: "invalid_request_error", Message: "Error", StatusCode: 400, Provider: "anthropic"},
+			contains: "anthropic error",
+		},
+		{
+			name:     "invalid request no status code omits HTTP 0",
+			err:      &APIError{ErrorType: "invalid_request_error", Message: "Error", Provider: "anthropic"},
+			contains: "anthropic error: Error",
 		},
 		{
 			name:     "rate limit with retry-after",
@@ -292,9 +307,64 @@ data: {"type":"error","error":{"type":"overloaded_error","message":"API is overl
 	if apiErr.ErrorType != "overloaded_error" {
 		t.Errorf("ErrorType = %q, want overloaded_error", apiErr.ErrorType)
 	}
+	if apiErr.AuthMethod != "api-key" {
+		t.Errorf("AuthMethod = %q, want api-key", apiErr.AuthMethod)
+	}
 	msg := apiErr.UserMessage()
 	if !strings.Contains(msg, "servers are busy") {
 		t.Errorf("UserMessage() = %q, want substring 'servers are busy'", msg)
+	}
+}
+
+func TestAnthropicStream_SSEErrorOAuthIncludesAuthMethod(t *testing.T) {
+	sse := `event: error
+data: {"type":"error","error":{"type":"invalid_request_error","message":"Error"}}
+
+`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, sse)
+	}))
+	defer srv.Close()
+
+	p := &AnthropicProvider{
+		apiKey:     "oauth-token",
+		useBearer:  true,
+		httpClient: srv.Client(),
+		baseURL:    srv.URL,
+	}
+
+	ch, err := p.Stream(context.Background(), StreamRequest{
+		Model:        "test",
+		SystemPrompt: "test",
+		Messages:     []Message{NewTextMessage(RoleUser, "hi")},
+	})
+	if err != nil {
+		t.Fatalf("Stream failed: %v", err)
+	}
+
+	events := collectEvents(ch)
+	if len(events) != 1 || events[0].Type != EventError {
+		t.Fatalf("expected 1 error event, got %d events", len(events))
+	}
+
+	var apiErr *APIError
+	if !errors.As(events[0].Error, &apiErr) {
+		t.Fatalf("expected *APIError, got %T: %v", events[0].Error, events[0].Error)
+	}
+	if apiErr.AuthMethod != "oauth" {
+		t.Errorf("AuthMethod = %q, want oauth", apiErr.AuthMethod)
+	}
+
+	// With the fix, a bare "Error" message from invalid_request_error must
+	// include provider context instead of just returning "Error".
+	msg := apiErr.UserMessage()
+	if !strings.Contains(msg, "anthropic") {
+		t.Errorf("UserMessage() = %q, want to contain 'anthropic'", msg)
+	}
+	if !strings.Contains(msg, "OAuth") {
+		t.Errorf("UserMessage() = %q, want to contain 'OAuth'", msg)
 	}
 }
 
