@@ -191,13 +191,6 @@ func NewSession(opts ...SessionOption) (*Session, error) {
 		return nil, fmt.Errorf("sdk: %w", err)
 	}
 
-	// Set working directory.
-	if cfg.WorkingDir != "" {
-		if err := os.Chdir(cfg.WorkingDir); err != nil {
-			return nil, fmt.Errorf("sdk: change working directory: %w", err)
-		}
-	}
-
 	// Set up tool registry.
 	registry := cfg.Tools
 	if registry == nil {
@@ -210,6 +203,9 @@ func NewSession(opts ...SessionOption) (*Session, error) {
 		agent.WithModel(cfg.Model),
 		agent.WithMaxTokens(cfg.MaxTokens),
 		agent.WithThinking(cfg.ThinkingLevel),
+	}
+	if cfg.WorkingDir != "" {
+		agentOpts = append(agentOpts, agent.WithWorkingDir(cfg.WorkingDir))
 	}
 	if cfg.SystemPrompt != "" {
 		agentOpts = append(agentOpts, agent.WithSystemPrompt(cfg.SystemPrompt))

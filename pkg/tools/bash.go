@@ -64,6 +64,7 @@ func (t *BashTool) Execute(ctx context.Context, params map[string]any) (string, 
 	defer cancel()
 
 	cmd := exec.CommandContext(cmdCtx, "/bin/bash", "-c", command)
+	cmd.Dir = WorkingDirFromContext(ctx)
 
 	// Configure process group (platform-specific: Unix uses process groups, Windows does not).
 	configureProcessGroup(cmd)

@@ -65,10 +65,7 @@ func (t *GrepTool) Execute(ctx context.Context, params map[string]any) (string, 
 		searchPath = v
 	}
 
-	absPath, err := filepath.Abs(searchPath)
-	if err != nil {
-		return "", fmt.Errorf("cannot resolve path: %w", err)
-	}
+	absPath := ResolvePath(ctx, searchPath)
 
 	include := ""
 	if v, ok := getString(params, "include"); ok {

@@ -32,6 +32,10 @@ type AgentLoop struct {
 	reserveTokens    int // reserve buffer in tokens
 	keepRecentTokens int // approx tokens to preserve during compaction
 
+	// workingDir is passed to tools via context so they can resolve relative
+	// paths without relying on process-global os.Chdir.
+	workingDir string
+
 	// lastInputTokens stores the input_tokens from the most recent usage event.
 	lastInputTokens int
 
@@ -396,6 +400,11 @@ func (a *AgentLoop) doTurn(ctx context.Context) (*ai.Message, error) {
 // executeTool runs a single tool call and emits the corresponding events.
 // It returns a tool_result message ready to be appended to the conversation.
 func (a *AgentLoop) executeTool(ctx context.Context, tc ai.ContentBlock) ai.Message {
+	// Inject working directory into context so tools can resolve relative paths.
+	if a.workingDir != "" {
+		ctx = tools.ContextWithWorkingDir(ctx, a.workingDir)
+	}
+
 	params := toParamsMap(tc.Input)
 
 	a.emit(ctx, AgentEvent{

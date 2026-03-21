@@ -65,3 +65,13 @@ func WithKeepRecentTokens(n int) Option {
 		a.keepRecentTokens = n
 	}
 }
+
+// WithWorkingDir sets the working directory for tool execution. Tools will
+// resolve relative paths against this directory instead of the process's
+// current working directory. This avoids mutating process-global state
+// with os.Chdir and is safe for concurrent use across multiple sessions.
+func WithWorkingDir(dir string) Option {
+	return func(a *AgentLoop) {
+		a.workingDir = dir
+	}
+}

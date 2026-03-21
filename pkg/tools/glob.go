@@ -57,10 +57,14 @@ func (t *GlobTool) Execute(ctx context.Context, params map[string]any) (string, 
 		basePath = v
 	}
 
-	// Resolve to absolute path.
-	absBase, err := filepath.Abs(basePath)
-	if err != nil {
-		return "", fmt.Errorf("cannot resolve path: %w", err)
+	// Resolve to absolute path using context working directory.
+	absBase := ResolvePath(ctx, basePath)
+	if !filepath.IsAbs(absBase) {
+		var err error
+		absBase, err = filepath.Abs(absBase)
+		if err != nil {
+			return "", fmt.Errorf("cannot resolve path: %w", err)
+		}
 	}
 
 	info, err := os.Stat(absBase)
