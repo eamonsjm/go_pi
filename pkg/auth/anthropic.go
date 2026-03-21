@@ -2,6 +2,7 @@ package auth
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -123,7 +124,7 @@ func (a *AnthropicOAuth) StartAuthFlow() (*AuthSession, error) {
 // ExchangeCode exchanges the user-provided authorization code for tokens.
 // The rawCode may be in "code#state" format from Anthropic's redirect page;
 // if so, the state is extracted and used in the token exchange request.
-func (a *AnthropicOAuth) ExchangeCode(session *AuthSession, rawCode string) (*Credential, error) {
+func (a *AnthropicOAuth) ExchangeCode(ctx context.Context, session *AuthSession, rawCode string) (*Credential, error) {
 	code := rawCode
 	state := session.PKCE.Verifier
 	if parts := strings.SplitN(rawCode, "#", 2); len(parts) == 2 {
@@ -145,7 +146,13 @@ func (a *AnthropicOAuth) ExchangeCode(session *AuthSession, rawCode string) (*Cr
 		return nil, fmt.Errorf("marshal token request: %w", err)
 	}
 
-	resp, err := a.HTTPClient.Post(a.tokenEndpoint(), "application/json", bytes.NewReader(bodyJSON))
+	req, err := http.NewRequestWithContext(ctx, "POST", a.tokenEndpoint(), bytes.NewReader(bodyJSON))
+	if err != nil {
+		return nil, fmt.Errorf("create token request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := a.HTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("token exchange: %w", err)
 	}
@@ -183,7 +190,7 @@ func (a *AnthropicOAuth) ExchangeCode(session *AuthSession, rawCode string) (*Cr
 
 // Login implements OAuthProvider.Login by running the full authorization code
 // + PKCE flow, using callbacks for user interaction.
-func (a *AnthropicOAuth) Login(cb OAuthCallbacks) (*Credential, error) {
+func (a *AnthropicOAuth) Login(ctx context.Context, cb OAuthCallbacks) (*Credential, error) {
 	session, err := a.StartAuthFlow()
 	if err != nil {
 		return nil, err
@@ -210,7 +217,7 @@ func (a *AnthropicOAuth) Login(cb OAuthCallbacks) (*Credential, error) {
 		return nil, fmt.Errorf("empty authorization code")
 	}
 
-	cred, err := a.ExchangeCode(session, code)
+	cred, err := a.ExchangeCode(ctx, session, code)
 	if err != nil {
 		return nil, err
 	}
@@ -222,7 +229,7 @@ func (a *AnthropicOAuth) Login(cb OAuthCallbacks) (*Credential, error) {
 }
 
 // RefreshToken implements OAuthProvider.RefreshToken.
-func (a *AnthropicOAuth) RefreshToken(cred *Credential) (*Credential, error) {
+func (a *AnthropicOAuth) RefreshToken(ctx context.Context, cred *Credential) (*Credential, error) {
 	if cred.RefreshToken == "" {
 		return nil, fmt.Errorf("no refresh token available")
 	}
@@ -238,7 +245,13 @@ func (a *AnthropicOAuth) RefreshToken(cred *Credential) (*Credential, error) {
 		return nil, fmt.Errorf("marshal refresh request: %w", err)
 	}
 
-	resp, err := a.HTTPClient.Post(a.tokenEndpoint(), "application/json", bytes.NewReader(bodyJSON))
+	req, err := http.NewRequestWithContext(ctx, "POST", a.tokenEndpoint(), bytes.NewReader(bodyJSON))
+	if err != nil {
+		return nil, fmt.Errorf("create refresh request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := a.HTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("refresh request: %w", err)
 	}

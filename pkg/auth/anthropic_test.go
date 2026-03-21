@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -176,7 +177,7 @@ func TestAnthropicOAuth_ExchangeCode(t *testing.T) {
 		t.Fatalf("StartAuthFlow: %v", err)
 	}
 
-	cred, err := a.ExchangeCode(session, "test-auth-code")
+	cred, err := a.ExchangeCode(context.Background(), session, "test-auth-code")
 	if err != nil {
 		t.Fatalf("ExchangeCode: %v", err)
 	}
@@ -232,7 +233,7 @@ func TestAnthropicOAuth_ExchangeCode_CodeHashState(t *testing.T) {
 		t.Fatalf("StartAuthFlow: %v", err)
 	}
 
-	cred, err := a.ExchangeCode(session, "the-auth-code#the-redirect-state")
+	cred, err := a.ExchangeCode(context.Background(), session, "the-auth-code#the-redirect-state")
 	if err != nil {
 		t.Fatalf("ExchangeCode: %v", err)
 	}
@@ -262,7 +263,7 @@ func TestAnthropicOAuth_ExchangeCode_APIKey(t *testing.T) {
 		t.Fatalf("StartAuthFlow: %v", err)
 	}
 
-	cred, err := a.ExchangeCode(session, "test-code")
+	cred, err := a.ExchangeCode(context.Background(), session, "test-code")
 	if err != nil {
 		t.Fatalf("ExchangeCode: %v", err)
 	}
@@ -292,7 +293,7 @@ func TestAnthropicOAuth_ExchangeCode_ServerError(t *testing.T) {
 		t.Fatalf("StartAuthFlow: %v", err)
 	}
 
-	_, err = a.ExchangeCode(session, "bad-code")
+	_, err = a.ExchangeCode(context.Background(), session, "bad-code")
 	if err == nil {
 		t.Fatal("expected error for bad code")
 	}
@@ -335,7 +336,7 @@ func TestAnthropicOAuth_RefreshToken(t *testing.T) {
 		ExpiresAt:    time.Now().Add(-time.Hour).UnixMilli(),
 	}
 
-	refreshed, err := a.RefreshToken(cred)
+	refreshed, err := a.RefreshToken(context.Background(), cred)
 	if err != nil {
 		t.Fatalf("RefreshToken: %v", err)
 	}
@@ -368,7 +369,7 @@ func TestAnthropicOAuth_RefreshToken_KeepsOldRefresh(t *testing.T) {
 		RefreshToken: "keep-this-refresh",
 	}
 
-	refreshed, err := a.RefreshToken(cred)
+	refreshed, err := a.RefreshToken(context.Background(), cred)
 	if err != nil {
 		t.Fatalf("RefreshToken: %v", err)
 	}
@@ -379,7 +380,7 @@ func TestAnthropicOAuth_RefreshToken_KeepsOldRefresh(t *testing.T) {
 
 func TestAnthropicOAuth_RefreshToken_NoRefreshToken(t *testing.T) {
 	a := NewAnthropicOAuth()
-	_, err := a.RefreshToken(&Credential{Type: CredentialOAuth})
+	_, err := a.RefreshToken(context.Background(), &Credential{Type: CredentialOAuth})
 	if err == nil {
 		t.Fatal("expected error when no refresh token")
 	}
@@ -426,7 +427,7 @@ func TestAnthropicOAuth_RefreshToken_ErrorDetailFallback(t *testing.T) {
 			a := NewAnthropicOAuth()
 			a.TokenURL = server.URL
 
-			_, err := a.RefreshToken(&Credential{
+			_, err := a.RefreshToken(context.Background(), &Credential{
 				Type:         CredentialOAuth,
 				RefreshToken: "some-token",
 			})
@@ -477,7 +478,7 @@ func TestAnthropicOAuth_ExchangeCode_ErrorDetailFallback(t *testing.T) {
 			a.TokenURL = server.URL
 
 			session, _ := a.StartAuthFlow()
-			_, err := a.ExchangeCode(session, "bad-code")
+			_, err := a.ExchangeCode(context.Background(), session, "bad-code")
 			if err == nil {
 				t.Fatal("expected error")
 			}
@@ -519,7 +520,7 @@ func TestAnthropicOAuth_Login_FullFlow(t *testing.T) {
 	var authURL, authInstructions string
 	var progressMsgs []string
 
-	cred, err := a.Login(OAuthCallbacks{
+	cred, err := a.Login(context.Background(), OAuthCallbacks{
 		OnAuth: func(u, instructions string) {
 			authURL = u
 			authInstructions = instructions
@@ -552,7 +553,7 @@ func TestAnthropicOAuth_Login_FullFlow(t *testing.T) {
 
 func TestAnthropicOAuth_Login_NoPromptCallback(t *testing.T) {
 	a := NewAnthropicOAuth()
-	_, err := a.Login(OAuthCallbacks{})
+	_, err := a.Login(context.Background(), OAuthCallbacks{})
 	if err == nil {
 		t.Fatal("expected error when no OnPrompt callback")
 	}
@@ -560,7 +561,7 @@ func TestAnthropicOAuth_Login_NoPromptCallback(t *testing.T) {
 
 func TestAnthropicOAuth_Login_EmptyCode(t *testing.T) {
 	a := NewAnthropicOAuth()
-	_, err := a.Login(OAuthCallbacks{
+	_, err := a.Login(context.Background(), OAuthCallbacks{
 		OnPrompt: func(prompt string) (string, error) {
 			return "", nil
 		},

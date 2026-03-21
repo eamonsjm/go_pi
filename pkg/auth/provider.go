@@ -1,5 +1,7 @@
 package auth
 
+import "context"
+
 // OAuthProvider defines the interface that each OAuth-capable provider must
 // implement. Provider-specific implementations (Anthropic, GitHub Copilot, etc.)
 // live in separate packages or files.
@@ -13,11 +15,11 @@ type OAuthProvider interface {
 	// Login performs the full OAuth login flow, using callbacks to interact
 	// with the user (display URLs, prompt for input, show progress).
 	// Returns the resulting credentials on success.
-	Login(callbacks OAuthCallbacks) (*Credential, error)
+	Login(ctx context.Context, callbacks OAuthCallbacks) (*Credential, error)
 
 	// RefreshToken exchanges a refresh token for new access + refresh tokens.
 	// The input credential must have Type == CredentialOAuth with a valid RefreshToken.
-	RefreshToken(cred *Credential) (*Credential, error)
+	RefreshToken(ctx context.Context, cred *Credential) (*Credential, error)
 
 	// GetAPIKey extracts a usable API key string from OAuth credentials.
 	// Some providers issue API keys via OAuth; others use the access token directly.
