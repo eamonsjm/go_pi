@@ -237,7 +237,14 @@ func mapToGeminiContent(m Message) gemContent {
 			})
 
 		case ContentTypeToolUse:
-			args, _ := toStringMap(cb.Input)
+			var args map[string]any
+			if cb.Input != nil {
+				if m, ok := cb.Input.(map[string]any); ok {
+					args = m
+				} else if data, err := json.Marshal(cb.Input); err == nil {
+					_ = json.Unmarshal(data, &args)
+				}
+			}
 			gc.Parts = append(gc.Parts, gemPart{
 				FunctionCall: &gemFunctionCall{
 					Name: cb.ToolName,
@@ -285,26 +292,6 @@ func mapToGeminiContent(m Message) gemContent {
 	}
 
 	return gc
-}
-
-// toStringMap converts an any value to map[string]any, handling the common
-// case where Input is already a map or needs JSON round-tripping.
-func toStringMap(v any) (map[string]any, error) {
-	if v == nil {
-		return nil, nil
-	}
-	if m, ok := v.(map[string]any); ok {
-		return m, nil
-	}
-	data, err := json.Marshal(v)
-	if err != nil {
-		return nil, err
-	}
-	var m map[string]any
-	if err := json.Unmarshal(data, &m); err != nil {
-		return nil, err
-	}
-	return m, nil
 }
 
 // -- SSE stream parsing --
