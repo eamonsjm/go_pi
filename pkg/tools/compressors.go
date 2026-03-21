@@ -44,7 +44,7 @@ func (a *GoTestAggregator) AfterExecute(ctx context.Context, toolName string, pa
 
 func (a *GoTestAggregator) compress(output string) string {
 	lines := strings.Split(output, "\n")
-	var result []string
+	result := make([]string, 0, len(lines))
 	seenTests := make(map[string]bool)
 	var passSummary, failSummary string
 	hasFailures := false
@@ -159,8 +159,8 @@ func (e *GoBuildErrorExtractor) AfterExecute(ctx context.Context, toolName strin
 
 func (e *GoBuildErrorExtractor) extract(output string) string {
 	lines := strings.Split(output, "\n")
-	var fileErrors []string
-	var summaryErrors []string
+	fileErrors := make([]string, 0, len(lines))
+	summaryErrors := make([]string, 0)
 	seenErrors := make(map[string]bool)
 
 	// Patterns for Go build errors
@@ -263,7 +263,7 @@ func (c *GitLogCompactor) AfterExecute(ctx context.Context, toolName string, par
 
 func (c *GitLogCompactor) compact(output string) string {
 	lines := strings.Split(output, "\n")
-	var result []string
+	result := make([]string, 0, len(lines))
 	var inMessage bool
 	var messageLines int
 	var currentCommit string
@@ -426,7 +426,7 @@ func (g *LinterOutputGrouper) group(output string) string {
 	var result []string
 
 	// Sort files for consistent output (using a slice to maintain order)
-	var fileList []string
+	fileList := make([]string, 0, len(errorsByFile))
 	for file := range errorsByFile {
 		fileList = append(fileList, file)
 	}

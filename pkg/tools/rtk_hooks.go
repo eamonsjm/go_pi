@@ -105,7 +105,7 @@ func (c *Compressor) AfterExecute(ctx context.Context, toolName string, params m
 // compressWhitespace collapses multiple spaces and blank lines.
 func compressWhitespace(s string) string {
 	lines := strings.Split(s, "\n")
-	var result []string
+	result := make([]string, 0, len(lines))
 
 	for _, line := range lines {
 		// Collapse multiple spaces to single space, trim line

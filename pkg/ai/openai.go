@@ -64,7 +64,11 @@ func (p *OpenAIProvider) Stream(ctx context.Context, req StreamRequest) (<-chan 
 	if resp.StatusCode != http.StatusOK {
 		defer func() { _ = resp.Body.Close() }()
 		errBody, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("openai: API returned status %d: %s", resp.StatusCode, string(errBody))
+		return nil, &APIError{
+			StatusCode: resp.StatusCode,
+			Message:    strings.TrimSpace(string(errBody)),
+			Provider:   "openai",
+		}
 	}
 
 	ch := make(chan StreamEvent, 64)
@@ -199,9 +203,9 @@ func mapToOpenAIMessage(m Message) oaiMessage {
 	}
 
 	// Build text content, image content, and tool calls.
-	var textParts []string
-	var contentParts []oaiContentPart
-	var toolCalls []oaiToolCall
+	textParts := make([]string, 0, len(m.Content))
+	contentParts := make([]oaiContentPart, 0, len(m.Content))
+	toolCalls := make([]oaiToolCall, 0)
 	hasImages := false
 
 	for _, cb := range m.Content {

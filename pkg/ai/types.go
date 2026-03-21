@@ -1,6 +1,9 @@
 package ai
 
-import "context"
+import (
+	"context"
+	"strings"
+)
 
 // Role represents a message role in the conversation.
 type Role string
@@ -107,13 +110,13 @@ func (m *Message) EnsureContent() {
 
 // GetText returns the concatenated text content of a message.
 func (m Message) GetText() string {
-	var text string
+	var b strings.Builder
 	for _, c := range m.Content {
 		if c.Type == ContentTypeText {
-			text += c.Text
+			b.WriteString(c.Text)
 		}
 	}
-	return text
+	return b.String()
 }
 
 // GetToolCalls returns all tool use blocks from a message.
@@ -129,13 +132,13 @@ func (m Message) GetToolCalls() []ContentBlock {
 
 // GetThinking returns concatenated thinking content.
 func (m Message) GetThinking() string {
-	var text string
+	var b strings.Builder
 	for _, c := range m.Content {
 		if c.Type == ContentTypeThinking {
-			text += c.Thinking
+			b.WriteString(c.Thinking)
 		}
 	}
-	return text
+	return b.String()
 }
 
 // ToolDef defines a tool the model can call.

@@ -217,7 +217,7 @@ func searchFile(path string, re *regexp.Regexp, contextLines, maxMatches int) ([
 	}
 
 	// Build results with context.
-	var results []grepResult
+	results := make([]grepResult, 0, len(matchLineNums)*(1+2*contextLines))
 	emittedLines := make(map[int]bool)
 
 	for _, matchLine := range matchLineNums {

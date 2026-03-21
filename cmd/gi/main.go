@@ -661,8 +661,8 @@ func processFileArgs(args []string) (string, error) {
 		return "", nil
 	}
 
-	var files []string
-	var text []string
+	files := make([]string, 0, len(args))
+	text := make([]string, 0, len(args))
 
 	for _, arg := range args {
 		if strings.HasPrefix(arg, "@") {

@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 )
 
 // OllamaProvider implements the Provider interface for Ollama's local inference API.
@@ -170,23 +171,23 @@ func mapToOllamaMessages(m Message) []ollamaMessage {
 		content := cb.Content
 		if len(cb.ContentBlocks) > 0 {
 			// Flatten rich tool results to text.
-			var text string
-			for _, b := range cb.ContentBlocks {
-				if b.Type == ContentTypeText {
-					text += b.Text
+			var b strings.Builder
+			for _, bl := range cb.ContentBlocks {
+				if bl.Type == ContentTypeText {
+					b.WriteString(bl.Text)
 				}
 			}
-			if text != "" {
-				content = text
+			if b.Len() > 0 {
+				content = b.String()
 			}
 		}
 		return []ollamaMessage{{Role: "tool", Content: content}}
 	}
 
 	om := ollamaMessage{Role: string(m.Role)}
-	var textParts []string
-	var images []string
-	var toolCalls []ollamaToolCall
+	textParts := make([]string, 0, len(m.Content))
+	images := make([]string, 0)
+	toolCalls := make([]ollamaToolCall, 0)
 
 	for _, cb := range m.Content {
 		switch cb.Type {
@@ -214,7 +215,7 @@ func mapToOllamaMessages(m Message) []ollamaMessage {
 		om.Role = "assistant"
 		om.ToolCalls = toolCalls
 		if len(textParts) > 0 {
-			om.Content = joinStrings(textParts)
+			om.Content = strings.Join(textParts, "")
 		}
 		if len(images) > 0 {
 			om.Images = images
@@ -222,22 +223,11 @@ func mapToOllamaMessages(m Message) []ollamaMessage {
 		return []ollamaMessage{om}
 	}
 
-	om.Content = joinStrings(textParts)
+	om.Content = strings.Join(textParts, "")
 	if len(images) > 0 {
 		om.Images = images
 	}
 	return []ollamaMessage{om}
-}
-
-func joinStrings(parts []string) string {
-	if len(parts) == 0 {
-		return ""
-	}
-	result := parts[0]
-	for _, p := range parts[1:] {
-		result += p
-	}
-	return result
 }
 
 // -- Stream parsing --
