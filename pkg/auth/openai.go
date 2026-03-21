@@ -221,10 +221,13 @@ func (o *OpenAIOAuth) RefreshToken(cred *Credential) (*Credential, error) {
 		return nil, fmt.Errorf("read refresh response body: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
+		detail := strings.TrimSpace(string(body))
 		var errResp tokenErrorResponse
-		_ = json.Unmarshal(body, &errResp)
+		if err := json.Unmarshal(body, &errResp); err == nil && errResp.ErrorDescription != "" {
+			detail = errResp.ErrorDescription
+		}
 		return nil, fmt.Errorf("refresh failed (%d): %s",
-			resp.StatusCode, errResp.ErrorDescription)
+			resp.StatusCode, detail)
 	}
 
 	var token tokenResponse

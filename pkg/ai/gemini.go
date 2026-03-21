@@ -244,8 +244,10 @@ func mapToGeminiContent(m Message) gemContent {
 			if cb.Input != nil {
 				if m, ok := cb.Input.(map[string]any); ok {
 					args = m
-				} else if data, err := json.Marshal(cb.Input); err == nil {
-					_ = json.Unmarshal(data, &args)
+				} else if data, marshalErr := json.Marshal(cb.Input); marshalErr == nil {
+					if unmarshalErr := json.Unmarshal(data, &args); unmarshalErr != nil {
+						args = nil
+					}
 				}
 			}
 			gc.Parts = append(gc.Parts, gemPart{

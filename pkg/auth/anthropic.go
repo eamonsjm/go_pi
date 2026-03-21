@@ -156,11 +156,13 @@ func (a *AnthropicOAuth) ExchangeCode(session *AuthSession, rawCode string) (*Cr
 		return nil, fmt.Errorf("read token response body: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
+		var detail string
 		var errResp tokenErrorResponse
-		_ = json.Unmarshal(body, &errResp)
-		detail := errResp.ErrorDescription
-		if detail == "" {
-			detail = errResp.Error
+		if err := json.Unmarshal(body, &errResp); err == nil {
+			detail = errResp.ErrorDescription
+			if detail == "" {
+				detail = errResp.Error
+			}
 		}
 		if detail == "" {
 			detail = strings.TrimSpace(string(body))
@@ -247,11 +249,13 @@ func (a *AnthropicOAuth) RefreshToken(cred *Credential) (*Credential, error) {
 		return nil, fmt.Errorf("read refresh response body: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
+		var detail string
 		var errResp tokenErrorResponse
-		_ = json.Unmarshal(body, &errResp)
-		detail := errResp.ErrorDescription
-		if detail == "" {
-			detail = errResp.Error
+		if err := json.Unmarshal(body, &errResp); err == nil {
+			detail = errResp.ErrorDescription
+			if detail == "" {
+				detail = errResp.Error
+			}
 		}
 		if detail == "" {
 			detail = strings.TrimSpace(string(body))
