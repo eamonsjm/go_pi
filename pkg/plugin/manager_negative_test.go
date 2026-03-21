@@ -273,7 +273,7 @@ func TestLoadPlugin_FileNotExecutable(t *testing.T) {
 	m := NewManager(reg)
 
 	// loadFromDir checks execute permission on fallback executable.
-	// LoadPlugin with a direct file path goes through startAndRegister
+	// LoadPlugin with a direct file path goes through startAndRegisterWithManifest
 	// which checks os.Stat + IsDir but doesn't check execute bit directly
 	// (it tries to actually start the process).
 	err := m.LoadPlugin(filePath)

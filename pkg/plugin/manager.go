@@ -83,7 +83,7 @@ func (m *Manager) LoadPlugin(path string) error {
 
 	// Direct executable path.
 	name := filepath.Base(path)
-	return m.startAndRegister(name, path)
+	return m.startAndRegisterWithManifest(name, path, nil)
 }
 
 // loadFromDir loads a plugin from a directory, checking for a manifest first.
@@ -120,12 +120,7 @@ func (m *Manager) loadFromDir(dir, defaultName string) error {
 		return fmt.Errorf("%s is not executable", execPath)
 	}
 
-	return m.startAndRegister(defaultName, execPath)
-}
-
-// startAndRegister spawns the plugin process and stores it for later initialization.
-func (m *Manager) startAndRegister(name, execPath string) error {
-	return m.startAndRegisterWithManifest(name, execPath, nil)
+	return m.startAndRegisterWithManifest(defaultName, execPath, nil)
 }
 
 // startAndRegisterWithManifest spawns the plugin process, applies manifest
