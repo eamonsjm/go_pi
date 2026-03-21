@@ -62,7 +62,11 @@ func main() {
 
 	// Try to fetch workflow runs for this repo
 	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/actions/runs", *owner, *repo)
-	req, _ := http.NewRequest("GET", apiURL, nil)
+	req, err := http.NewRequest("GET", apiURL, nil)
+	if err != nil {
+		fmt.Println("ERROR: Failed to create HTTP request:", err)
+		os.Exit(1)
+	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 	// Note: Using JWT token directly won't work for this endpoint; would need app installation
