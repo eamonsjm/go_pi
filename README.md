@@ -10,13 +10,13 @@ An AI coding agent for the terminal, implemented in Go with [Bubble Tea](https:/
 
 ## Features
 
-- **Multi-provider AI** -- supports Anthropic, OpenAI, OpenRouter, Azure OpenAI, AWS Bedrock, and Google Gemini out of the box
+- **Multi-provider AI** -- supports Anthropic, OpenAI, OpenRouter, Azure OpenAI, AWS Bedrock, Google Gemini, and Ollama out of the box
 - **Agentic tool-use loop** -- the model can read, write, edit files, run shell commands, and search your codebase
 - **Interactive TUI** -- full-screen terminal UI with streaming responses, thinking indicators, and a multi-line editor
 - **Print mode** -- pipe a prompt in and get a response on stdout, no TUI required
 - **Extended thinking** -- configurable thinking levels (off, low, medium, high) for supported models
 - **Session persistence** -- conversations are saved and can be resumed by session ID
-- **Project-aware** -- automatically loads AGENTS.md, CLAUDE.md, or .gi/SYSTEM.md from the working directory
+- **Project-aware** -- automatically loads AGENTS.md, CLAUDE.md, APPEND_SYSTEM.md, or .claude/SYSTEM.md from the working directory
 - **Slash commands** -- built-in commands for aliasing, authentication, session management, settings, and more
 - **Configurable keybindings** -- customize hotkeys via `~/.gi/keybindings.json`
 - **Plugin system** -- extend gi with custom tools and commands
@@ -27,7 +27,7 @@ An AI coding agent for the terminal, implemented in Go with [Bubble Tea](https:/
 
 ### Prerequisites
 
-- Go 1.22+
+- Go 1.25+
 
 ### From source
 
@@ -59,11 +59,9 @@ Or create `~/.gi/auth.json`:
 
 ```json
 {
-  "keys": {
-    "anthropic": "sk-ant-...",
-    "openrouter": "sk-or-...",
-    "openai": "sk-..."
-  }
+  "anthropic": { "type": "api_key", "key": "sk-ant-..." },
+  "openrouter": { "type": "api_key", "key": "sk-or-..." },
+  "openai": { "type": "api_key", "key": "sk-..." }
 }
 ```
 
@@ -80,7 +78,7 @@ Example `settings.json`:
 ```json
 {
   "default_provider": "anthropic",
-  "default_model": "claude-sonnet-4-20250514",
+  "default_model": "claude-opus-4-6",
   "thinking_level": "off",
   "max_tokens": 8192
 }
@@ -92,10 +90,10 @@ Example `settings.json`:
 
 ```bash
 gi
-gi -m claude-sonnet-4-20250514
-gi --model claude-sonnet-4-20250514
-gi -p openrouter -m anthropic/claude-sonnet-4-20250514
-gi --provider openrouter --model anthropic/claude-sonnet-4-20250514
+gi -m claude-opus-4-6
+gi --model claude-opus-4-6
+gi -p openrouter -m anthropic/claude-opus-4-6
+gi --provider openrouter --model anthropic/claude-opus-4-6
 gi -t high
 gi --thinking high
 gi -s abc123
@@ -117,8 +115,8 @@ gi --print "explain this code"
 
 | Flag | Description |
 |------|-------------|
-| `-m, --model` | Model name (e.g. `claude-sonnet-4-20250514`, `gpt-4o`) |
-| `-p, --provider` | Provider name: `anthropic`, `openrouter`, `openai`, `azure`, `bedrock`, `gemini` |
+| `-m, --model` | Model name (e.g. `claude-opus-4-6`, `gpt-4o`) |
+| `-p, --provider` | Provider name: `anthropic`, `openrouter`, `openai`, `gemini`, `azure`, `bedrock`, `ollama` |
 | `-t, --thinking` | Thinking level: `off`, `low`, `medium`, `high` |
 | `-P, --print` | Print mode -- send prompt, print response, exit |
 | `-s, --session` | Resume a previous session by ID |
@@ -145,7 +143,8 @@ gi --print "explain this code"
 | Key | Action |
 |-----|--------|
 | Ctrl+T | Toggle thinking block expand/collapse |
-| Ctrl+R | Toggle tool result expand/collapse |
+| Alt+R | Toggle tool result expand/collapse |
+| Ctrl+R | Reverse-search prompt history |
 | Shift+Tab | Cycle thinking level (off/low/medium/high) |
 | Ctrl+P | Cycle to next model |
 | Alt+P | Cycle to previous model |
@@ -156,14 +155,15 @@ gi --print "explain this code"
 
 | Provider | Env var | Default model |
 |----------|---------|---------------|
-| Anthropic | `ANTHROPIC_API_KEY` | `claude-sonnet-4-20250514` |
-| OpenRouter | `OPENROUTER_API_KEY` | `anthropic/claude-sonnet-4-20250514` |
+| Anthropic | `ANTHROPIC_API_KEY` | `claude-opus-4-6` |
+| OpenRouter | `OPENROUTER_API_KEY` | `anthropic/claude-opus-4-6` |
 | OpenAI | `OPENAI_API_KEY` | `gpt-4o` |
-| Azure OpenAI | `AZURE_OPENAI_KEY` | (configured via settings) |
+| Gemini | `GEMINI_API_KEY` | `gemini-2.0-flash` |
+| Azure OpenAI | `AZURE_OPENAI_API_KEY` | `gpt-4o` |
 | AWS Bedrock | `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | `anthropic.claude-3-5-sonnet-20241022-v2:0` |
-| Google Gemini | `GOOGLE_API_KEY` | `gemini-2.0-flash` |
+| Ollama | `OLLAMA_HOST` | `llama3.2` |
 
-If no provider is specified, gi auto-detects based on which API key is available (checked in the order above).
+If no provider is specified, gi auto-detects based on which API key is available (checked in the order shown above).
 
 ## Tools
 
@@ -200,6 +200,7 @@ go_pi/
       azure.go             # Azure OpenAI provider
       bedrock.go           # AWS Bedrock provider
       gemini.go            # Google Gemini provider
+      ollama.go            # Ollama local provider
     auth/
       store.go             # API key storage and retrieval
       resolver.go          # Auth credential resolution
@@ -208,9 +209,10 @@ go_pi/
       openai.go            # OpenAI OAuth handling
       pkce.go              # PKCE flow implementation
       credential.go        # Credential management
+      errors.go            # Auth-specific error types
     config/
       config.go            # Settings loading and merging
-      auth.go              # Auth configuration
+      auth.go              # Auth configuration (provider env var mapping)
     session/
       manager.go           # Session persistence
     tools/
@@ -229,11 +231,18 @@ go_pi/
       footer.go            # Footer bar (token usage)
       messages.go          # TUI message types
       styles.go            # Colors and lipgloss styles
+      theme.go             # Theme definitions and resolution
+      sanitize.go          # Output sanitization
       keybindings.go       # Configurable keybindings
       model_selector.go    # Model selection overlay
       commands.go          # Slash command registry
       completer.go         # Command/flag completion
       cmd_*.go             # Built-in slash commands (alias, auth, compact, copy, export, fork, hotkeys, rtk, session, settings, share, theme, tree)
+    skill/
+      skill.go             # Skill definition and registry
+      loader.go            # Skill file discovery and loading
+      render.go            # Template rendering for skills
+      tool.go              # Skill tool (LLM-invocable)
     plugin/
       plugin.go            # Plugin system and manager
     rpc/
@@ -241,7 +250,7 @@ go_pi/
       jsonstream.go        # JSON event stream mode
       events.go            # RPC event types
     sdk/
-      sdk.go               # Python/JavaScript SDK for programmatic use
+      sdk.go               # Programmatic SDK for integration
   go.mod
   go.sum
 ```
