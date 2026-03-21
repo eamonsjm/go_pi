@@ -1166,25 +1166,21 @@ func TestAutoRestart_RestartingState(t *testing.T) {
 
 	// Should enter restarting state.
 	deadline := time.After(2 * time.Second)
-	sawRestarting := false
 	for {
-		select {
-		case <-deadline:
-			if !sawRestarting {
-				t.Fatal("never saw restarting state")
-			}
-			return
-		default:
-		}
-
 		if p.Restarting() {
-			sawRestarting = true
 			// During restart, Alive should be false.
 			if p.Alive() {
 				t.Error("Alive() = true while restarting, want false")
 			}
 			break
 		}
+
+		select {
+		case <-deadline:
+			t.Fatal("never saw restarting state")
+		default:
+		}
+
 		time.Sleep(10 * time.Millisecond)
 	}
 
@@ -1630,7 +1626,7 @@ func TestExecuteTool_KillsProcessOnTimeout(t *testing.T) {
 	if sendErr == nil {
 		// The process might still be in the process of dying. Try once more.
 		time.Sleep(100 * time.Millisecond)
-		sendErr = p.Send(HostMessage{Type: "test"})
+		_ = p.Send(HostMessage{Type: "test"})
 	}
 	// We expect either a write error (broken pipe) or a "process closed" error.
 	// Both are acceptable — the point is the process was killed.

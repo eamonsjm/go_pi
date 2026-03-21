@@ -771,9 +771,7 @@ func (e *Editor) fileCompletionHint() string {
 	}
 
 	parts := make([]string, 0, len(matches))
-	for _, m := range matches {
-		parts = append(parts, m)
-	}
+	parts = append(parts, matches...)
 	hint := strings.Join(parts, "  ")
 	if truncated {
 		hint += fmt.Sprintf("  (+%d more)", len(e.completer.matches)-maxShow)

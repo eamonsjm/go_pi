@@ -295,7 +295,6 @@ func (c *GitLogCompactor) compact(output string) string {
 				currentCommit = hash[:7]
 				result = append(result, "commit "+currentCommit)
 			} else {
-				currentCommit = hash
 				result = append(result, line)
 			}
 			inMessage = true

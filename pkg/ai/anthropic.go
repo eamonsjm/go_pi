@@ -283,11 +283,7 @@ func (p *AnthropicProvider) buildRequestBody(req StreamRequest) ([]byte, error) 
 	if len(req.Tools) > 0 {
 		body.Tools = make([]anthTool, len(req.Tools))
 		for i, t := range req.Tools {
-			body.Tools[i] = anthTool{
-				Name:        t.Name,
-				Description: t.Description,
-				InputSchema: t.InputSchema,
-			}
+			body.Tools[i] = anthTool(t)
 		}
 	}
 
