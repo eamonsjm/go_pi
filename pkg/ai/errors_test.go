@@ -57,19 +57,34 @@ func TestAPIError_UserMessage(t *testing.T) {
 			contains: "/login",
 		},
 		{
+			name:     "authentication oauth",
+			err:      &APIError{ErrorType: "authentication_error", Message: "invalid token", AuthMethod: "oauth"},
+			contains: "OAuth token invalid",
+		},
+		{
 			name:     "permission",
 			err:      &APIError{ErrorType: "permission_error", Message: "not allowed"},
 			contains: "Permission denied",
 		},
 		{
-			name:     "unknown error type with message",
-			err:      &APIError{ErrorType: "new_error_type", Message: "something went wrong"},
-			contains: "something went wrong",
+			name:     "permission oauth",
+			err:      &APIError{ErrorType: "permission_error", Message: "not allowed", AuthMethod: "oauth"},
+			contains: "OAuth permission denied",
+		},
+		{
+			name:     "unknown error type with message includes status",
+			err:      &APIError{StatusCode: 403, ErrorType: "new_error_type", Message: "something went wrong", Provider: "anthropic"},
+			contains: "HTTP 403",
 		},
 		{
 			name:     "unknown error type no message",
-			err:      &APIError{StatusCode: 500, ErrorType: ""},
-			contains: "API error (status 500)",
+			err:      &APIError{StatusCode: 500, ErrorType: "", Provider: "anthropic"},
+			contains: "HTTP 500",
+		},
+		{
+			name:     "unknown error oauth includes auth method",
+			err:      &APIError{StatusCode: 400, Message: "Error", Provider: "anthropic", AuthMethod: "oauth"},
+			contains: "auth: OAuth",
 		},
 	}
 
@@ -106,9 +121,15 @@ func TestAPIError_IsRetryable(t *testing.T) {
 }
 
 func TestAPIError_Error(t *testing.T) {
-	err := &APIError{ErrorType: "invalid_request_error", Message: "bad request", Provider: "anthropic"}
-	if got := err.Error(); got != "anthropic: invalid_request_error: bad request" {
-		t.Errorf("Error() = %q, want %q", got, "anthropic: invalid_request_error: bad request")
+	err := &APIError{ErrorType: "invalid_request_error", Message: "bad request", Provider: "anthropic", StatusCode: 400}
+	if got := err.Error(); got != "anthropic: invalid_request_error (HTTP 400): bad request" {
+		t.Errorf("Error() = %q, want %q", got, "anthropic: invalid_request_error (HTTP 400): bad request")
+	}
+
+	// With OAuth auth method.
+	errOAuth := &APIError{ErrorType: "authentication_error", Message: "invalid token", Provider: "anthropic", StatusCode: 401, AuthMethod: "oauth"}
+	if got := errOAuth.Error(); got != "anthropic[oauth]: authentication_error (HTTP 401): invalid token" {
+		t.Errorf("Error() = %q, want %q", got, "anthropic[oauth]: authentication_error (HTTP 401): invalid token")
 	}
 
 	// Gemini provider should show "gemini:" prefix.

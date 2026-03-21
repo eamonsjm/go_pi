@@ -15,6 +15,7 @@ type APIError struct {
 	Message    string // The raw error message from the API
 	RetryAfter int    // Seconds to wait before retrying (0 if not set)
 	Provider   string // e.g., "anthropic", "gemini"
+	AuthMethod string // e.g., "oauth", "api-key" — empty if unknown
 }
 
 func (e *APIError) Error() string {
@@ -22,8 +23,11 @@ func (e *APIError) Error() string {
 	if prefix == "" {
 		prefix = "api"
 	}
+	if e.AuthMethod != "" {
+		prefix += "[" + e.AuthMethod + "]"
+	}
 	if e.ErrorType != "" {
-		return fmt.Sprintf("%s: %s: %s", prefix, e.ErrorType, e.Message)
+		return fmt.Sprintf("%s: %s (HTTP %d): %s", prefix, e.ErrorType, e.StatusCode, e.Message)
 	}
 	return fmt.Sprintf("%s: API error %d: %s", prefix, e.StatusCode, e.Message)
 }
@@ -51,17 +55,44 @@ func (e *APIError) UserMessage() string {
 		return "Anthropic servers are busy. Retrying..."
 
 	case "authentication_error":
+		if e.AuthMethod == "oauth" {
+			return "OAuth token invalid or expired. Use /login to re-authenticate."
+		}
 		return "API key invalid. Check your key or use /login."
 
 	case "permission_error":
+		if e.AuthMethod == "oauth" {
+			return "OAuth permission denied. Your token may lack required scopes. Use /login to re-authenticate."
+		}
 		return "Permission denied. Check your API key permissions."
 
 	default:
-		if e.Message != "" {
-			return e.Message
-		}
-		return fmt.Sprintf("API error (status %d)", e.StatusCode)
+		return e.defaultUserMessage()
 	}
+}
+
+// defaultUserMessage builds a diagnostic message for unrecognized error types.
+// It always includes provider, status code, and auth method so the user can
+// diagnose the problem without having to grep logs.
+func (e *APIError) defaultUserMessage() string {
+	provider := e.Provider
+	if provider == "" {
+		provider = "API"
+	}
+
+	msg := e.Message
+	if msg == "" {
+		msg = "unknown error"
+	}
+
+	// Always include status code for unrecognized errors — the bare message
+	// alone (e.g., "Error") is not diagnosable.
+	base := fmt.Sprintf("%s error (HTTP %d): %s", provider, e.StatusCode, msg)
+
+	if e.AuthMethod == "oauth" {
+		base += " [auth: OAuth]"
+	}
+	return base
 }
 
 // IsRetryable returns true if this error type can be retried.

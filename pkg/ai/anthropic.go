@@ -60,6 +60,14 @@ func NewAnthropicProviderWithToken(token string) (*AnthropicProvider, error) {
 
 func (p *AnthropicProvider) Name() string { return "anthropic" }
 
+// authMethod returns "oauth" or "api-key" for error context.
+func (p *AnthropicProvider) authMethod() string {
+	if p.useBearer {
+		return "oauth"
+	}
+	return "api-key"
+}
+
 const maxRetries = 2 // up to 3 attempts total
 
 // Stream sends a streaming request to the Anthropic Messages API and returns
@@ -123,7 +131,7 @@ func (p *AnthropicProvider) Stream(ctx context.Context, req StreamRequest) (<-ch
 
 		errBody, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
-		apiErr := parseHTTPError(resp.StatusCode, resp.Header, errBody)
+		apiErr := parseHTTPError(resp.StatusCode, resp.Header, errBody, p.authMethod())
 		if apiErr.IsRetryable() && attempt < maxRetries {
 			wait := apiErr.RetryAfter
 			if wait == 0 {
@@ -142,8 +150,9 @@ func (p *AnthropicProvider) Stream(ctx context.Context, req StreamRequest) (<-ch
 }
 
 // parseHTTPError parses a non-200 HTTP response into an APIError.
-func parseHTTPError(statusCode int, header http.Header, body []byte) *APIError {
-	apiErr := &APIError{StatusCode: statusCode, Provider: "anthropic"}
+// authMethod should be "oauth" or "api-key" to aid error diagnosis.
+func parseHTTPError(statusCode int, header http.Header, body []byte, authMethod string) *APIError {
+	apiErr := &APIError{StatusCode: statusCode, Provider: "anthropic", AuthMethod: authMethod}
 
 	// Try to parse retry-after header.
 	if ra := header.Get("Retry-After"); ra != "" {
@@ -152,7 +161,7 @@ func parseHTTPError(statusCode int, header http.Header, body []byte) *APIError {
 		}
 	}
 
-	// Try to parse structured error JSON.
+	// Try to parse structured Anthropic error JSON: {"error":{"type":"...","message":"..."}}
 	var errResp struct {
 		Error struct {
 			Type    string `json:"type"`
@@ -165,8 +174,27 @@ func parseHTTPError(statusCode int, header http.Header, body []byte) *APIError {
 		return apiErr
 	}
 
+	// Try flat OAuth error format: {"error":"error_code","error_description":"..."}
+	var oauthErr struct {
+		Error       string `json:"error"`
+		Description string `json:"error_description"`
+	}
+	if err := json.Unmarshal(body, &oauthErr); err == nil && oauthErr.Error != "" {
+		apiErr.ErrorType = oauthErr.Error
+		if oauthErr.Description != "" {
+			apiErr.Message = oauthErr.Description
+		} else {
+			apiErr.Message = oauthErr.Error
+		}
+		return apiErr
+	}
+
 	// Fallback: use raw body as message.
-	apiErr.Message = strings.TrimSpace(string(body))
+	raw := strings.TrimSpace(string(body))
+	if raw == "" {
+		raw = fmt.Sprintf("empty response body (HTTP %d)", statusCode)
+	}
+	apiErr.Message = raw
 	return apiErr
 }
 

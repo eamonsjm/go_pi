@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -1411,5 +1412,170 @@ func TestAnthropicStream_ScannerBufferOverflow(t *testing.T) {
 	}
 	if !gotError {
 		t.Error("expected error event from scanner buffer overflow")
+	}
+}
+
+func TestAnthropicOAuthStream_ErrorsIncludeAuthContext(t *testing.T) {
+	// Simulate an OAuth-authenticated provider hitting an auth error.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(401)
+		fmt.Fprint(w, `{"type":"error","error":{"type":"authentication_error","message":"invalid bearer token"}}`)
+	}))
+	defer srv.Close()
+
+	p := &AnthropicProvider{
+		apiKey:     "oauth-token",
+		useBearer:  true,
+		httpClient: srv.Client(),
+		baseURL:    srv.URL,
+	}
+
+	_, err := p.Stream(context.Background(), StreamRequest{
+		Model:    "test",
+		Messages: []Message{NewTextMessage(RoleUser, "hi")},
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected *APIError, got %T: %v", err, err)
+	}
+
+	if apiErr.AuthMethod != "oauth" {
+		t.Errorf("AuthMethod = %q, want %q", apiErr.AuthMethod, "oauth")
+	}
+	if apiErr.StatusCode != 401 {
+		t.Errorf("StatusCode = %d, want 401", apiErr.StatusCode)
+	}
+	// Error() should include auth method.
+	if !strings.Contains(apiErr.Error(), "oauth") {
+		t.Errorf("Error() = %q, want to contain 'oauth'", apiErr.Error())
+	}
+	// UserMessage should suggest OAuth re-login.
+	msg := apiErr.UserMessage()
+	if !strings.Contains(msg, "OAuth") {
+		t.Errorf("UserMessage() = %q, want to contain 'OAuth'", msg)
+	}
+}
+
+func TestAnthropicOAuthStream_FlatOAuthErrorFormat(t *testing.T) {
+	// Some OAuth endpoints return flat {"error":"...", "error_description":"..."} format
+	// instead of the nested Anthropic format.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(400)
+		fmt.Fprint(w, `{"error":"invalid_grant","error_description":"The authorization code has expired"}`)
+	}))
+	defer srv.Close()
+
+	p := &AnthropicProvider{
+		apiKey:     "oauth-token",
+		useBearer:  true,
+		httpClient: srv.Client(),
+		baseURL:    srv.URL,
+	}
+
+	_, err := p.Stream(context.Background(), StreamRequest{
+		Model:    "test",
+		Messages: []Message{NewTextMessage(RoleUser, "hi")},
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected *APIError, got %T: %v", err, err)
+	}
+
+	if apiErr.ErrorType != "invalid_grant" {
+		t.Errorf("ErrorType = %q, want %q", apiErr.ErrorType, "invalid_grant")
+	}
+	if !strings.Contains(apiErr.Message, "authorization code has expired") {
+		t.Errorf("Message = %q, want to contain 'authorization code has expired'", apiErr.Message)
+	}
+	if apiErr.AuthMethod != "oauth" {
+		t.Errorf("AuthMethod = %q, want %q", apiErr.AuthMethod, "oauth")
+	}
+}
+
+func TestAnthropicOAuthStream_BareErrorString(t *testing.T) {
+	// Test the exact scenario from the bug: API returns bare "Error" text.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(500)
+		fmt.Fprint(w, `Error`)
+	}))
+	defer srv.Close()
+
+	p := &AnthropicProvider{
+		apiKey:     "oauth-token",
+		useBearer:  true,
+		httpClient: srv.Client(),
+		baseURL:    srv.URL,
+	}
+
+	_, err := p.Stream(context.Background(), StreamRequest{
+		Model:    "test",
+		Messages: []Message{NewTextMessage(RoleUser, "hi")},
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected *APIError, got %T: %v", err, err)
+	}
+
+	// Even with a bare "Error" body, the user message must include
+	// status code and auth context for diagnosis.
+	msg := apiErr.UserMessage()
+	if !strings.Contains(msg, "500") {
+		t.Errorf("UserMessage() = %q, want to contain status code '500'", msg)
+	}
+	if !strings.Contains(msg, "OAuth") {
+		t.Errorf("UserMessage() = %q, want to contain 'OAuth' auth context", msg)
+	}
+	if !strings.Contains(msg, "anthropic") {
+		t.Errorf("UserMessage() = %q, want to contain provider name 'anthropic'", msg)
+	}
+}
+
+func TestAnthropicAPIKeyStream_ErrorsShowAPIKey(t *testing.T) {
+	// Verify that non-OAuth errors show "api-key" as auth method.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(401)
+		fmt.Fprint(w, `{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}`)
+	}))
+	defer srv.Close()
+
+	p := &AnthropicProvider{
+		apiKey:     "sk-test-key",
+		useBearer:  false,
+		httpClient: srv.Client(),
+		baseURL:    srv.URL,
+	}
+
+	_, err := p.Stream(context.Background(), StreamRequest{
+		Model:    "test",
+		Messages: []Message{NewTextMessage(RoleUser, "hi")},
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected *APIError, got %T: %v", err, err)
+	}
+
+	if apiErr.AuthMethod != "api-key" {
+		t.Errorf("AuthMethod = %q, want %q", apiErr.AuthMethod, "api-key")
+	}
+	// UserMessage for API key auth should suggest checking key.
+	msg := apiErr.UserMessage()
+	if !strings.Contains(msg, "API key invalid") {
+		t.Errorf("UserMessage() = %q, want to contain 'API key invalid'", msg)
 	}
 }
