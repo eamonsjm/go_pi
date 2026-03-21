@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
+	"strings"
 )
 
 // APIError represents a parsed error response from an AI provider's API.
@@ -34,6 +35,25 @@ func (e *APIError) Error() string {
 
 var promptTooLongRe = regexp.MustCompile(`(\d+)\s*tokens?\s*>\s*(\d+)\s*max`)
 
+// isModelAccessError returns true if the error message indicates a model
+// access/availability issue rather than an authentication problem.
+func isModelAccessError(msg string) bool {
+	lower := strings.ToLower(msg)
+	hasModel := strings.Contains(lower, "model")
+	if hasModel && (strings.Contains(lower, "not available") ||
+		strings.Contains(lower, "not found") ||
+		strings.Contains(lower, "does not exist") ||
+		strings.Contains(lower, "not have access") ||
+		strings.Contains(lower, "not supported") ||
+		strings.Contains(lower, "unavailable")) {
+		return true
+	}
+	if strings.Contains(lower, "credit balance") {
+		return true
+	}
+	return false
+}
+
 // UserMessage returns a user-friendly error message suitable for display in the TUI.
 func (e *APIError) UserMessage() string {
 	switch e.ErrorType {
@@ -42,6 +62,15 @@ func (e *APIError) UserMessage() string {
 			current := formatTokenCount(m[1])
 			maximum := formatTokenCount(m[2])
 			return fmt.Sprintf("Your conversation is too long (%s/%s tokens). Use /compact to shrink it.", current, maximum)
+		}
+		if isModelAccessError(e.Message) {
+			return "Model not available on your current plan. Try a different model with /model."
+		}
+		return e.defaultUserMessage()
+
+	case "not_found_error":
+		if isModelAccessError(e.Message) {
+			return "Model not available on your current plan. Try a different model with /model."
 		}
 		return e.defaultUserMessage()
 
@@ -96,7 +125,11 @@ func (e *APIError) defaultUserMessage() string {
 	}
 
 	if e.AuthMethod == "oauth" {
-		base += " [auth: OAuth — try /login to re-authenticate]"
+		if isModelAccessError(e.Message) {
+			base += " [try a different model with /model]"
+		} else {
+			base += " [auth: OAuth — try /login to re-authenticate]"
+		}
 	}
 	return base
 }

@@ -101,6 +101,26 @@ func TestAPIError_UserMessage(t *testing.T) {
 			err:      &APIError{StatusCode: 400, Message: "Error", Provider: "anthropic", AuthMethod: "oauth"},
 			contains: "auth: OAuth — try /login to re-authenticate",
 		},
+		{
+			name:     "model access error oauth does not suggest login",
+			err:      &APIError{ErrorType: "invalid_request_error", StatusCode: 400, Message: "model: claude-3-opus-20240229 does not exist or you do not have access to it", Provider: "anthropic", AuthMethod: "oauth"},
+			contains: "Try a different model with /model",
+		},
+		{
+			name:     "model not available on plan",
+			err:      &APIError{ErrorType: "invalid_request_error", StatusCode: 400, Message: "The model claude-3-opus is not available on your plan", Provider: "anthropic", AuthMethod: "oauth"},
+			contains: "not available on your current plan",
+		},
+		{
+			name:     "model not found error",
+			err:      &APIError{ErrorType: "not_found_error", StatusCode: 404, Message: "model: claude-3-opus-20240229 not found", Provider: "anthropic", AuthMethod: "oauth"},
+			contains: "Try a different model with /model",
+		},
+		{
+			name:     "credit balance model access",
+			err:      &APIError{ErrorType: "invalid_request_error", StatusCode: 400, Message: "Your credit balance is too low to access claude-3-opus", Provider: "anthropic", AuthMethod: "oauth"},
+			contains: "not available on your current plan",
+		},
 	}
 
 	for _, tt := range tests {
@@ -108,6 +128,39 @@ func TestAPIError_UserMessage(t *testing.T) {
 			msg := tt.err.UserMessage()
 			if !strings.Contains(msg, tt.contains) {
 				t.Errorf("UserMessage() = %q, want substring %q", msg, tt.contains)
+			}
+		})
+	}
+}
+
+func TestAPIError_ModelAccessDoesNotSuggestLogin(t *testing.T) {
+	tests := []struct {
+		name string
+		err  *APIError
+	}{
+		{
+			name: "invalid_request model access oauth",
+			err:  &APIError{ErrorType: "invalid_request_error", StatusCode: 400, Message: "model: claude-3-opus does not exist or you do not have access to it", Provider: "anthropic", AuthMethod: "oauth"},
+		},
+		{
+			name: "not_found model access oauth",
+			err:  &APIError{ErrorType: "not_found_error", StatusCode: 404, Message: "model: claude-3-opus not found", Provider: "anthropic", AuthMethod: "oauth"},
+		},
+		{
+			name: "credit balance oauth",
+			err:  &APIError{ErrorType: "invalid_request_error", StatusCode: 400, Message: "Your credit balance is too low to access claude-3-opus", Provider: "anthropic", AuthMethod: "oauth"},
+		},
+		{
+			name: "model not available oauth",
+			err:  &APIError{ErrorType: "invalid_request_error", StatusCode: 400, Message: "The model is not available on your plan", Provider: "anthropic", AuthMethod: "oauth"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msg := tt.err.UserMessage()
+			if strings.Contains(msg, "/login") {
+				t.Errorf("UserMessage() = %q, should NOT contain /login for model access errors", msg)
 			}
 		})
 	}
@@ -231,6 +284,14 @@ func TestAnthropicStream_ParsedHTTPErrors(t *testing.T) {
 			errType:    "",
 			retryable:  false,
 			msgContain: "not json at all",
+		},
+		{
+			name:       "model access 400 surfaces model error not auth",
+			status:     400,
+			body:       `{"type":"error","error":{"type":"invalid_request_error","message":"model: claude-3-opus-20240229 does not exist or you do not have access to it"}}`,
+			errType:    "invalid_request_error",
+			retryable:  false,
+			msgContain: "Try a different model with /model",
 		},
 	}
 
