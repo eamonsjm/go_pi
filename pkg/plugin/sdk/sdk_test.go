@@ -61,6 +61,9 @@ func pipePlugin(t *testing.T, p *Plugin) (send func(hostMessage), recv func() pl
 				return
 			}
 			p.dispatch(msg)
+			if p.failed.Load() {
+				return
+			}
 		}
 	}()
 
@@ -308,6 +311,43 @@ func TestInjectAndLogBeforeRun(t *testing.T) {
 	// These must not panic — writer is initialized in NewPlugin.
 	p.Log("info", "hello")
 	p.Inject("user", "context")
+}
+
+func TestSendWriteError(t *testing.T) {
+	pr, pw := io.Pipe()
+	p := NewPlugin("test")
+	p.writer = json.NewEncoder(pw)
+
+	// Close the read end so writes fail with ErrClosedPipe.
+	pr.Close()
+
+	p.send(pluginMessage{Type: "test"})
+
+	if !p.failed.Load() {
+		t.Error("expected failed flag to be set after write error")
+	}
+}
+
+func TestRunExitsOnWriteError(t *testing.T) {
+	p := NewPlugin("test").
+		Tool("echo", "echo", nil, func(ctx ToolContext) (string, error) {
+			return "ok", nil
+		})
+
+	send, recv, done := pipePlugin(t, p)
+
+	send(hostMessage{Type: "initialize", Config: &Config{}})
+	recv() // capabilities
+
+	// Mark the plugin as failed to simulate a write error.
+	p.failed.Store(true)
+
+	// Send a message — the pipePlugin loop should exit after dispatch
+	// because failed is set.
+	send(hostMessage{Type: "tool_call", ID: "c1", Name: "echo"})
+
+	// The goroutine should exit promptly.
+	<-done
 }
 
 func TestSchemaHelper(t *testing.T) {

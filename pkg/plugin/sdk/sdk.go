@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"sync/atomic"
 )
 
 // maxBuffer is the maximum JSONL message size (1 MB), matching the host.
@@ -136,6 +137,7 @@ type Plugin struct {
 
 	mu     sync.Mutex
 	writer *json.Encoder
+	failed atomic.Bool
 }
 
 // NewPlugin creates a new plugin with the given name.
@@ -230,6 +232,9 @@ func (p *Plugin) Run() {
 		caps.Commands = append(caps.Commands, c.def)
 	}
 	p.send(caps)
+	if p.failed.Load() {
+		return
+	}
 
 	p.logf("info", "%s initialized (%d tools, %d commands)", p.name, len(p.tools), len(p.commands))
 
@@ -241,6 +246,9 @@ func (p *Plugin) Run() {
 			continue
 		}
 		p.dispatch(msg)
+		if p.failed.Load() {
+			return
+		}
 	}
 }
 
@@ -352,9 +360,15 @@ func (p *Plugin) handleEvent(msg hostMessage) {
 }
 
 func (p *Plugin) send(msg pluginMessage) {
+	if p.failed.Load() {
+		return
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	_ = p.writer.Encode(msg)
+	if err := p.writer.Encode(msg); err != nil {
+		fmt.Fprintf(os.Stderr, "plugin %s: write error: %v\n", p.name, err)
+		p.failed.Store(true)
+	}
 }
 
 func (p *Plugin) logf(level, format string, args ...any) {
