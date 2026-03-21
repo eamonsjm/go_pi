@@ -107,7 +107,6 @@ type PluginProcess struct {
 
 	// Supervisor fields (set when EnableAutoRestart is called).
 	supervised bool
-	ctx        context.Context
 	cancel     context.CancelFunc
 	stopped    chan struct{} // closed when supervisor exits
 	stopErr    error         // error from the last process exit
@@ -663,16 +662,17 @@ func (p *PluginProcess) EnableAutoRestart(cfg RestartConfig) {
 	cfgCopy := cfg
 	p.restartCfg = &cfgCopy
 	p.supervised = true
-	p.ctx, p.cancel = context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
+	p.cancel = cancel
 	p.stopped = make(chan struct{})
 
-	go p.waitAndSupervise()
+	go p.waitAndSupervise(ctx)
 }
 
 // waitAndSupervise is the supervisor goroutine. It calls cmd.Wait() in a loop,
 // restarting the process on unexpected exit with exponential backoff. It is the
 // sole owner of cmd.Wait() — no other code should call it when supervised.
-func (p *PluginProcess) waitAndSupervise() {
+func (p *PluginProcess) waitAndSupervise(ctx context.Context) {
 	defer close(p.stopped)
 
 	for {
@@ -730,7 +730,7 @@ func (p *PluginProcess) waitAndSupervise() {
 			// Wait for backoff or cancellation.
 			select {
 			case <-time.After(backoff):
-			case <-p.ctx.Done():
+			case <-ctx.Done():
 				p.mu.Lock()
 				p.restarting = false
 				p.mu.Unlock()
@@ -750,7 +750,7 @@ func (p *PluginProcess) waitAndSupervise() {
 			p.mu.Unlock()
 			// Loop back to wait on the new process.
 
-		case <-p.ctx.Done():
+		case <-ctx.Done():
 			// Stop requested while process is still running.
 			// Shutdown the current process and wait for it to exit.
 			p.shutdownCurrentProcess()
