@@ -45,6 +45,7 @@ type authOAuthMsg struct {
 	url          string
 	codeCh       chan string
 	waitCmd      tea.Cmd
+	cancelAuth   context.CancelFunc // cancels the Login goroutine on TUI exit
 }
 
 // NewLoginCommand creates the /login slash command for OAuth browser login.
@@ -81,18 +82,20 @@ func NewLoginCommand(store *auth.Store, resolver *auth.Resolver) *SlashCommand {
 					// display it and open the browser. Login() runs in a background
 					// goroutine; the waitCmd blocks until the callback completes.
 					//
-					// The goroutine's lifetime is bounded by Login's internal
-					// timeout. Channels are buffered so the goroutine never blocks
-					// on sends, even if the TUI exits before reading the result.
+					// Use a cancellable context so the Login goroutine (which may
+					// hold an HTTP server or browser process) is cleaned up if the
+					// TUI exits before Login completes. Channels are buffered so
+					// the goroutine never blocks on sends.
 					type loginResult struct {
 						cred *auth.Credential
 						err  error
 					}
+					ctx, cancel := context.WithCancel(context.Background())
 					urlCh := make(chan string, 1)
 					resultCh := make(chan loginResult, 1)
 
 					go func() {
-						cred, err := oauthProv.Login(context.TODO(), auth.OAuthCallbacks{
+						cred, err := oauthProv.Login(ctx, auth.OAuthCallbacks{
 							OnAuth: func(url, _ string) {
 								urlCh <- url
 							},
@@ -107,7 +110,9 @@ func NewLoginCommand(store *auth.Store, resolver *auth.Resolver) *SlashCommand {
 							providerName: oauthProv.Name(),
 							url:          authURL,
 							codeCh:       nil, // callback-based: no code paste needed
+							cancelAuth:   cancel,
 							waitCmd: func() tea.Msg {
+								defer cancel()
 								result := <-resultCh
 								if result.err != nil {
 									return CommandResultMsg{
@@ -130,6 +135,7 @@ func NewLoginCommand(store *auth.Store, resolver *auth.Resolver) *SlashCommand {
 						}
 					case result := <-resultCh:
 						// Login completed or failed before OnAuth was called.
+						cancel()
 						if result.err != nil {
 							return CommandResultMsg{
 								Text:    fmt.Sprintf("Login failed: %v", result.err),
