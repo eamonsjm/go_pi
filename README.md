@@ -1,5 +1,9 @@
 # gi
 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/eamonsjm/go_pi)
+[![Go Report Card](https://goreportcard.com/badge/github.com/eamonsjm/go_pi)](https://goreportcard.com/report/github.com/eamonsjm/go_pi)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 An AI coding agent for the terminal, implemented in Go with [Bubble Tea](https://github.com/charmbracelet/bubbletea).
 
 > **Disclaimer:** This project is an experiment in using [Gas Town](https://github.com/ejm/gt) for multi-agent development coordination. It serves as a testbed for exploring how multiple AI agents can collaborate on a shared codebase through structured workflows and issue tracking.
