@@ -206,7 +206,10 @@ func (a *AgentLoop) Prompt(ctx context.Context, text string) error {
 	a.events = make(chan AgentEvent, eventBufSize)
 	a.mu.Unlock()
 
-	return err
+	if err != nil {
+		return fmt.Errorf("prompt: %w", err)
+	}
+	return nil
 }
 
 // run is the core loop. It sends messages to the model, processes tool calls,
@@ -217,7 +220,7 @@ func (a *AgentLoop) run(ctx context.Context) error {
 
 	for {
 		if err := ctx.Err(); err != nil {
-			return err
+			return fmt.Errorf("agent run: %w", err)
 		}
 
 		// Check if auto-compaction is needed before the next LLM call.
@@ -229,7 +232,7 @@ func (a *AgentLoop) run(ctx context.Context) error {
 		assistantMsg, err := a.doTurn(ctx)
 		if err != nil {
 			a.emit(ctx, AgentEvent{Type: EventAgentError, Error: err})
-			return err
+			return fmt.Errorf("agent turn: %w", err)
 		}
 
 		toolCalls := assistantMsg.GetToolCalls()
@@ -261,7 +264,7 @@ func (a *AgentLoop) run(ctx context.Context) error {
 
 			toolResult := a.executeTool(ctx, tc)
 			if ctx.Err() != nil {
-				return ctx.Err()
+				return fmt.Errorf("tool execution interrupted: %w", ctx.Err())
 			}
 
 			a.appendMessage(toolResult)

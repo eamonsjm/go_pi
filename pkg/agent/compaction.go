@@ -71,7 +71,7 @@ func (a *AgentLoop) Compact(ctx context.Context, instructions string) error {
 
 	summaryText, err := a.runCompaction(ctx, compactionPrompt)
 	if err != nil {
-		return err
+		return fmt.Errorf("compact: %w", err)
 	}
 
 	compactedMsg := ai.NewTextMessage(ai.RoleUser,
@@ -146,7 +146,7 @@ func (a *AgentLoop) autoCompact(ctx context.Context) error {
 
 	summaryText, err := a.runCompaction(ctx, compactionPrompt)
 	if err != nil {
-		return err
+		return fmt.Errorf("auto-compact: %w", err)
 	}
 
 	// Replace older messages with summary, keep recent messages.
