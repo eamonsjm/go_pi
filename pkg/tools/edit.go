@@ -77,25 +77,27 @@ func (t *EditTool) Execute(ctx context.Context, params map[string]any) (string, 
 		newString = strings.ReplaceAll(newString, "\r\n", "\n")
 	}
 
-	// Try exact match first.
+	// Try content-based matching first, then fall back to hash-based edit.
+	// Content matching takes priority to avoid false-positive hash detection
+	// (e.g., old_string "add" being treated as a content hash instead of a
+	// literal string to find and replace).
 	var matchTarget string
 	var normNote string
 
-	// Try hash-based edit first if oldString looks like a hash
-	hashMatch, hashNote, hashFound := tryHashBasedEdit(content, oldString)
-	if hashFound {
-		matchTarget = hashMatch
-		normNote = hashNote
-	} else {
-		// Fall back to content-based matching
-		count := strings.Count(content, oldString)
-		switch {
-		case count == 1:
-			matchTarget = oldString
-		case count > 1:
-			return "", fmt.Errorf("old_string found %d times in %s; it must be unique, provide more surrounding context to make the match unique", count, filePath)
-		default:
-			// Exact match failed — try fuzzy matching with normalization.
+	count := strings.Count(content, oldString)
+	switch {
+	case count == 1:
+		matchTarget = oldString
+	case count > 1:
+		return "", fmt.Errorf("old_string found %d times in %s; it must be unique, provide more surrounding context to make the match unique", count, filePath)
+	default:
+		// Exact match failed — try hash-based edit if oldString looks like a hash.
+		hashMatch, hashNote, hashFound := tryHashBasedEdit(content, oldString)
+		if hashFound {
+			matchTarget = hashMatch
+			normNote = hashNote
+		} else {
+			// Try fuzzy matching with normalization.
 			matched, normName, found := fuzzyFind(content, oldString)
 			if !found {
 				return "", fmt.Errorf("old_string not found in %s; make sure the string matches exactly, including whitespace and indentation", filePath)
@@ -144,42 +146,66 @@ func (t *EditTool) Execute(ctx context.Context, params map[string]any) (string, 
 	return diff, nil
 }
 
-// tryHashBasedEdit attempts to match oldString as a line hash.
+// isValidHashString checks if s is exactly 3 lowercase hex characters,
+// matching the format returned by contentHash.
+func isValidHashString(s string) bool {
+	if len(s) != 3 {
+		return false
+	}
+	for _, c := range s {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+			return false
+		}
+	}
+	return true
+}
+
+// tryHashBasedEdit attempts to match oldString as a line content hash.
 // Supports formats like:
-//   - "a1b" (bare hash)
+//   - "a1b" (bare hash — exactly 3 hex characters)
 //   - "replace line a1b with ..." (descriptive format, extracts hash)
 //
 // Returns the matched line content, a note, and whether a match was found.
+// Returns an error string if the hash matches multiple lines (ambiguous).
 func tryHashBasedEdit(content, oldString string) (matchedLine string, note string, found bool) {
-	// Extract hash from oldString. Support both "a1b" and "replace line a1b with ..." formats.
 	var targetHash string
 
 	// Check if it's a descriptive format like "replace line a1b with ..."
 	if strings.HasPrefix(oldString, "replace line ") {
 		parts := strings.Fields(oldString)
 		if len(parts) >= 3 {
-			targetHash = parts[2]
+			candidate := parts[2]
+			if isValidHashString(candidate) {
+				targetHash = candidate
+			}
 		}
-	} else if len(oldString) <= 10 && strings.TrimSpace(oldString) == oldString {
-		// Likely a bare hash (short, no whitespace)
+	} else if isValidHashString(oldString) {
+		// Bare hash: exactly 3 lowercase hex characters.
 		targetHash = oldString
 	}
 
 	if targetHash == "" {
-		// Not a hash-based edit
 		return "", "", false
 	}
 
-	// Search for the line with matching hash
+	// Search for lines with matching hash, checking for collisions.
 	lines := strings.Split(content, "\n")
+	var matches []string
 	for _, line := range lines {
 		if contentHash(line) == targetHash {
-			return line, fmt.Sprintf("Matched via content hash %s", targetHash), true
+			matches = append(matches, line)
 		}
 	}
 
-	// No matching hash found
-	return "", "", false
+	switch len(matches) {
+	case 0:
+		return "", "", false
+	case 1:
+		return matches[0], fmt.Sprintf("Matched via content hash %s", targetHash), true
+	default:
+		// Multiple lines share this hash — ambiguous, don't guess.
+		return "", "", false
+	}
 }
 
 // unifiedDiff generates a simple unified diff between two strings.
