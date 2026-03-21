@@ -853,7 +853,21 @@ func (p *PluginProcess) respawn() error {
 		if killErr := cmd.Process.Kill(); killErr != nil {
 			log.Printf("plugin %s: cleanup: failed to kill process after re-init failure: %v", p.name, killErr)
 		}
-		// Don't call Wait here — the supervisor loop handles it.
+		// Close stdout to unblock readLoop's scanner.Scan() — without this,
+		// readLoop blocks on I/O and cmd.Wait() below cannot return (it waits
+		// for all pipe I/O to complete), leaking the Wait goroutine.
+		p.mu.Lock()
+		if p.stdout != nil {
+			if closeErr := p.stdout.Close(); closeErr != nil {
+				log.Printf("plugin %s: cleanup: failed to close stdout after re-init failure: %v", p.name, closeErr)
+			}
+		}
+		p.mu.Unlock()
+		// Reap the killed process so the supervisor loop doesn't spawn a
+		// Wait() goroutine on a zombie. Without this, the next iteration's
+		// goroutine could block if the process is slow to exit, and leak
+		// if ctx cancels before it returns.
+		_ = cmd.Wait()
 		return fmt.Errorf("re-initialization failed: %w", err)
 	}
 
