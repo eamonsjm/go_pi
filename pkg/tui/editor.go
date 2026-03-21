@@ -2,10 +2,13 @@ package tui
 
 import (
 	"bytes"
+	"context"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -372,8 +375,14 @@ type editorShellResultMsg struct {
 	errorMsg string // Non-empty if command failed
 }
 
+const (
+	shellTimeout       = 120 * time.Second
+	shellMaxOutputBytes = 100000
+)
+
 // executeShellCommand runs a shell command and returns output and any error.
 // It handles both ! (sendToAI=true) and !! (sendToAI=false) commands.
+// Enforces a 120s timeout and 100KB output limit to prevent resource exhaustion.
 func executeShellCommand(fullText string) tea.Cmd {
 	return func() tea.Msg {
 		// Detect ! or !! prefix
@@ -397,30 +406,72 @@ func executeShellCommand(fullText string) tea.Cmd {
 			}
 		}
 
-		// Execute command using /bin/sh (more portable than /bin/bash)
+		ctx, cancel := context.WithTimeout(context.Background(), shellTimeout)
+		defer cancel()
+
+		cmd := exec.CommandContext(ctx, "/bin/sh", "-c", command)
+		configureShellProcessGroup(cmd)
+
 		var buf bytes.Buffer
-		cmd := exec.Command("/bin/sh", "-c", command)
 		cmd.Stdout = &buf
 		cmd.Stderr = &buf
 		cmd.Stdin = os.Stdin
 
-		err := cmd.Run()
-		output := buf.String()
-
+		err := cmd.Start()
 		if err != nil {
 			return editorShellResultMsg{
 				command:  command,
-				output:   output,
 				sendToAI: sendToAI,
-				errorMsg: err.Error(),
+				errorMsg: fmt.Sprintf("failed to start: %s", err),
 			}
+		}
+
+		done := make(chan error, 1)
+		go func() {
+			done <- cmd.Wait()
+		}()
+
+		var timedOut bool
+
+		select {
+		case <-ctx.Done():
+			timedOut = true
+			if cmd.Process != nil {
+				if killErr := killShellProcessGroup(cmd.Process.Pid); killErr != nil {
+					log.Printf("editor: shell cleanup: failed to kill process group (pid %d): %v", cmd.Process.Pid, killErr)
+				}
+			}
+			<-done
+		case err = <-done:
+		}
+
+		output := buf.Bytes()
+		truncated := len(output) > shellMaxOutputBytes
+		if truncated {
+			output = output[:shellMaxOutputBytes]
+		}
+
+		var result strings.Builder
+		if timedOut {
+			fmt.Fprintf(&result, "(timed out after %v)\n", shellTimeout)
+		}
+		if truncated {
+			fmt.Fprintf(&result, "(output truncated to %d bytes)\n", shellMaxOutputBytes)
+		}
+		result.Write(output)
+
+		errorMsg := ""
+		if timedOut {
+			errorMsg = fmt.Sprintf("command timed out after %v", shellTimeout)
+		} else if err != nil {
+			errorMsg = err.Error()
 		}
 
 		return editorShellResultMsg{
 			command:  command,
-			output:   output,
+			output:   result.String(),
 			sendToAI: sendToAI,
-			errorMsg: "",
+			errorMsg: errorMsg,
 		}
 	}
 }
