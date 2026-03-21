@@ -327,10 +327,11 @@ func (m *Metrics) GetCommandMetrics() map[CommandCategory]*CommandMetrics {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Create a shallow copy
-	result := make(map[CommandCategory]*CommandMetrics)
+	// Deep copy: copy structs by value to avoid sharing mutable pointers
+	result := make(map[CommandCategory]*CommandMetrics, len(m.Commands))
 	for k, v := range m.Commands {
-		result[k] = v
+		cp := *v
+		result[k] = &cp
 	}
 	return result
 }
