@@ -302,6 +302,14 @@ func TestOnInitHandler(t *testing.T) {
 	<-done
 }
 
+func TestInjectAndLogBeforeRun(t *testing.T) {
+	p := NewPlugin("test")
+
+	// These must not panic — writer is initialized in NewPlugin.
+	p.Log("info", "hello")
+	p.Inject("user", "context")
+}
+
 func TestSchemaHelper(t *testing.T) {
 	s := Schema(
 		Prop("text", "string", "The input text"),

@@ -140,7 +140,10 @@ type Plugin struct {
 
 // NewPlugin creates a new plugin with the given name.
 func NewPlugin(name string) *Plugin {
-	return &Plugin{name: name}
+	return &Plugin{
+		name:   name,
+		writer: json.NewEncoder(os.Stdout),
+	}
 }
 
 // Tool registers a tool with the given name, description, JSON Schema, and handler.
