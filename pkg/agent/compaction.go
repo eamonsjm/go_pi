@@ -63,11 +63,16 @@ func (a *AgentLoop) Compact(ctx context.Context, instructions string) error {
 
 	transcript := buildTranscript(msgs)
 
-	compactionPrompt := "Summarize the conversation so far, including key decisions, code changes made, files modified, and current state of the task. Be thorough but concise."
+	var promptBuilder strings.Builder
+	promptBuilder.WriteString("Summarize the conversation so far, including key decisions, code changes made, files modified, and current state of the task. Be thorough but concise.")
 	if instructions != "" {
-		compactionPrompt += "\n\nAdditional focus: " + instructions
+		promptBuilder.WriteString("\n\nAdditional focus: ")
+		promptBuilder.WriteString(instructions)
 	}
-	compactionPrompt += "\n\n<conversation>\n" + transcript + "</conversation>"
+	promptBuilder.WriteString("\n\n<conversation>\n")
+	promptBuilder.WriteString(transcript)
+	promptBuilder.WriteString("</conversation>")
+	compactionPrompt := promptBuilder.String()
 
 	summaryText, err := a.runCompaction(ctx, compactionPrompt)
 	if err != nil {
@@ -141,8 +146,12 @@ func (a *AgentLoop) autoCompact(ctx context.Context) error {
 
 	transcript := buildTranscript(olderMsgs)
 
-	compactionPrompt := "Summarize the conversation so far, including key decisions, code changes made, files modified, and current state of the task. Be thorough but concise. The conversation will continue after this summary, so preserve all context needed for ongoing work."
-	compactionPrompt += "\n\n<conversation>\n" + transcript + "</conversation>"
+	var promptBuilder strings.Builder
+	promptBuilder.WriteString("Summarize the conversation so far, including key decisions, code changes made, files modified, and current state of the task. Be thorough but concise. The conversation will continue after this summary, so preserve all context needed for ongoing work.")
+	promptBuilder.WriteString("\n\n<conversation>\n")
+	promptBuilder.WriteString(transcript)
+	promptBuilder.WriteString("</conversation>")
+	compactionPrompt := promptBuilder.String()
 
 	summaryText, err := a.runCompaction(ctx, compactionPrompt)
 	if err != nil {
