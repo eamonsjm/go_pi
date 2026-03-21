@@ -377,21 +377,21 @@ func resolveProvider(ctx context.Context, cfg *SessionConfig) (ai.Provider, erro
 	if cfg.Model == "" {
 		switch cfg.Provider {
 		case "anthropic":
-			cfg.Model = "claude-sonnet-4-20250514"
+			cfg.Model = "claude-sonnet-4-6"
 		case "openrouter":
-			cfg.Model = "anthropic/claude-sonnet-4-20250514"
+			cfg.Model = "anthropic/claude-sonnet-4-6"
 		case "openai":
-			cfg.Model = "gpt-4o"
+			cfg.Model = "gpt-4.1"
 		case "gemini":
-			cfg.Model = "gemini-2.0-flash"
+			cfg.Model = "gemini-2.5-flash"
 		case "azure":
 			cfg.Model = "gpt-4o"
 		case "bedrock":
-			cfg.Model = "anthropic.claude-3-5-sonnet-20241022-v2:0"
+			cfg.Model = "anthropic.claude-sonnet-4-20250514-v1:0"
 		case "ollama":
-			cfg.Model = "llama3.2"
+			cfg.Model = "llama3.3"
 		default:
-			cfg.Model = "claude-sonnet-4-20250514"
+			cfg.Model = "claude-sonnet-4-6"
 		}
 	}
 

@@ -18,7 +18,7 @@ type Header struct {
 // NewHeader creates a Header with default values.
 func NewHeader() *Header {
 	return &Header{
-		model:         "claude-sonnet-4-20250514",
+		model:         "claude-sonnet-4-6",
 		thinkingLevel: ai.ThinkingOff,
 	}
 }

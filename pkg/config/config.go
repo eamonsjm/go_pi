@@ -49,7 +49,7 @@ func DefaultConfig() (*Config, error) {
 	giDir := filepath.Join(home, ".gi")
 	return &Config{
 		DefaultProvider: "anthropic",
-		DefaultModel:    "claude-sonnet-4-20250514",
+		DefaultModel:    "claude-sonnet-4-6",
 		ThinkingLevel:   "off",
 		MaxTokens:       8192,
 		Theme:           "auto",

@@ -16,7 +16,7 @@ func newTestSettingsEnv(t *testing.T) (*config.Config, *agent.AgentLoop, *Header
 	dir := t.TempDir()
 	cfg := &config.Config{
 		DefaultProvider: "anthropic",
-		DefaultModel:    "claude-sonnet-4-20250514",
+		DefaultModel:    "claude-sonnet-4-6",
 		ThinkingLevel:   "off",
 		MaxTokens:       8192,
 		SessionDir:      "/tmp/sessions",

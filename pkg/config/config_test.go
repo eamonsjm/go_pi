@@ -25,8 +25,8 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.DefaultProvider != "anthropic" {
 		t.Errorf("expected DefaultProvider 'anthropic', got %q", cfg.DefaultProvider)
 	}
-	if cfg.DefaultModel != "claude-sonnet-4-20250514" {
-		t.Errorf("expected DefaultModel 'claude-sonnet-4-20250514', got %q", cfg.DefaultModel)
+	if cfg.DefaultModel != "claude-sonnet-4-6" {
+		t.Errorf("expected DefaultModel 'claude-sonnet-4-6', got %q", cfg.DefaultModel)
 	}
 	if cfg.ThinkingLevel != "off" {
 		t.Errorf("expected ThinkingLevel 'off', got %q", cfg.ThinkingLevel)

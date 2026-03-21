@@ -9,7 +9,7 @@ import (
 
 func TestHeader_Defaults(t *testing.T) {
 	h := NewHeader()
-	if h.model != "claude-sonnet-4-20250514" {
+	if h.model != "claude-sonnet-4-6" {
 		t.Errorf("expected default model, got %q", h.model)
 	}
 	if h.thinkingLevel != ai.ThinkingOff {

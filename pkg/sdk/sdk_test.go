@@ -224,9 +224,9 @@ func TestResolveProviderDefaults(t *testing.T) {
 		provider  string
 		wantModel string
 	}{
-		{"anthropic", "claude-sonnet-4-20250514"},
-		{"openai", "gpt-4o"},
-		{"gemini", "gemini-2.0-flash"},
+		{"anthropic", "claude-sonnet-4-6"},
+		{"openai", "gpt-4.1"},
+		{"gemini", "gemini-2.5-flash"},
 	}
 
 	for _, tt := range tests {

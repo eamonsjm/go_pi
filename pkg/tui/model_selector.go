@@ -50,25 +50,34 @@ var defaultModels = []ModelOption{
 	{Provider: "anthropic", Model: "claude-sonnet-4-6", Label: "Claude Sonnet 4.6 (latest)"},
 	{Provider: "anthropic", Model: "claude-haiku-4-5-20251001", Label: "Claude Haiku 4.5"},
 
-	// Legacy Anthropic Claude models
+	// Anthropic Claude models (previous generation)
 	{Provider: "anthropic", Model: "claude-sonnet-4-20250514", Label: "Claude Sonnet 4"},
 	{Provider: "anthropic", Model: "claude-opus-4-20250514", Label: "Claude Opus 4"},
 
 	// OpenAI models
-	{Provider: "openai", Model: "gpt-4o", Label: "GPT-4o (latest)"},
-	{Provider: "openai", Model: "gpt-4-turbo", Label: "GPT-4 Turbo"},
-	{Provider: "openai", Model: "gpt-4", Label: "GPT-4"},
+	{Provider: "openai", Model: "gpt-4.1", Label: "GPT-4.1"},
+	{Provider: "openai", Model: "gpt-4.1-mini", Label: "GPT-4.1 Mini"},
+	{Provider: "openai", Model: "gpt-4.1-nano", Label: "GPT-4.1 Nano"},
+	{Provider: "openai", Model: "gpt-4o", Label: "GPT-4o"},
+	{Provider: "openai", Model: "gpt-4o-mini", Label: "GPT-4o Mini"},
+	{Provider: "openai", Model: "o3", Label: "o3"},
+	{Provider: "openai", Model: "o4-mini", Label: "o4 Mini"},
+	{Provider: "openai", Model: "o3-mini", Label: "o3 Mini"},
 
 	// Google Gemini models
-	{Provider: "gemini", Model: "gemini-2.0-flash", Label: "Gemini 2.0 Flash"},
 	{Provider: "gemini", Model: "gemini-2.5-pro", Label: "Gemini 2.5 Pro"},
+	{Provider: "gemini", Model: "gemini-2.5-flash", Label: "Gemini 2.5 Flash"},
+	{Provider: "gemini", Model: "gemini-2.0-flash", Label: "Gemini 2.0 Flash"},
 	{Provider: "gemini", Model: "gemini-1.5-pro", Label: "Gemini 1.5 Pro"},
+	{Provider: "gemini", Model: "gemini-1.5-flash", Label: "Gemini 1.5 Flash"},
 
 	// OpenRouter (proxy for multiple providers)
 	{Provider: "openrouter", Model: "anthropic/claude-opus-4-6", Label: "Claude Opus 4.6 (OpenRouter)"},
 	{Provider: "openrouter", Model: "anthropic/claude-sonnet-4-6", Label: "Claude Sonnet 4.6 (OpenRouter)"},
+	{Provider: "openrouter", Model: "openai/gpt-4.1", Label: "GPT-4.1 (OpenRouter)"},
 	{Provider: "openrouter", Model: "openai/gpt-4o", Label: "GPT-4o (OpenRouter)"},
-	{Provider: "openrouter", Model: "google/gemini-2.0-flash", Label: "Gemini 2.0 Flash (OpenRouter)"},
+	{Provider: "openrouter", Model: "google/gemini-2.5-pro", Label: "Gemini 2.5 Pro (OpenRouter)"},
+	{Provider: "openrouter", Model: "google/gemini-2.5-flash", Label: "Gemini 2.5 Flash (OpenRouter)"},
 }
 
 // ---------------------------------------------------------------------------

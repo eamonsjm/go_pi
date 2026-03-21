@@ -577,10 +577,10 @@ func TestFuzzyMatchModels(t *testing.T) {
 		{"haiku", 1, "haiku"},
 		{"opus", 3, "opus"},     // Opus 4.6, Opus 4, OpenRouter Opus
 		{"sonnet", 3, "sonnet"}, // Sonnet 4.6, Sonnet 4, OpenRouter Sonnet
-		{"gpt", 4, "gpt"},
-		{"gemini", 4, "gemini"},
-		{"flash", 2, "flash"},
-		{"openrouter", 4, ""},
+		{"gpt", 7, "gpt"},
+		{"gemini", 7, "gemini"},
+		{"flash", 4, "flash"},
+		{"openrouter", 6, ""},
 		{"xyznothing", 0, ""},
 	}
 
