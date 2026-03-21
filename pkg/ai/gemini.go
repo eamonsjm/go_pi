@@ -263,7 +263,11 @@ func (p *GeminiProvider) buildRequestBody(req StreamRequest) ([]byte, error) {
 	// Messages.
 	body.Contents = make([]gemContent, 0, len(req.Messages))
 	for _, m := range req.Messages {
-		body.Contents = append(body.Contents, mapToGeminiContent(m))
+		gc, err := mapToGeminiContent(m)
+		if err != nil {
+			return nil, fmt.Errorf("converting message to Gemini content: %w", err)
+		}
+		body.Contents = append(body.Contents, gc)
 	}
 
 	// Tools.
@@ -282,7 +286,7 @@ func (p *GeminiProvider) buildRequestBody(req StreamRequest) ([]byte, error) {
 	return json.Marshal(body)
 }
 
-func mapToGeminiContent(m Message) gemContent {
+func mapToGeminiContent(m Message) (gemContent, error) {
 	gc := gemContent{}
 
 	switch m.Role {
@@ -312,10 +316,10 @@ func mapToGeminiContent(m Message) gemContent {
 			if cb.Input != nil {
 				if m, ok := cb.Input.(map[string]any); ok {
 					args = m
-				} else if data, marshalErr := json.Marshal(cb.Input); marshalErr == nil {
-					if unmarshalErr := json.Unmarshal(data, &args); unmarshalErr != nil {
-						args = nil
-					}
+				} else if data, marshalErr := json.Marshal(cb.Input); marshalErr != nil {
+					return gemContent{}, fmt.Errorf("marshal tool call %q input: %w", cb.ToolName, marshalErr)
+				} else if unmarshalErr := json.Unmarshal(data, &args); unmarshalErr != nil {
+					return gemContent{}, fmt.Errorf("unmarshal tool call %q input to map: %w", cb.ToolName, unmarshalErr)
 				}
 			}
 			gc.Parts = append(gc.Parts, gemPart{
@@ -364,7 +368,7 @@ func mapToGeminiContent(m Message) gemContent {
 		}
 	}
 
-	return gc
+	return gc, nil
 }
 
 // -- SSE stream parsing --

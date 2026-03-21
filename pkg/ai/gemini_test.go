@@ -818,3 +818,32 @@ func TestGeminiBuildRequestBody_RichToolResult(t *testing.T) {
 		t.Errorf("expected data '/9j/4', got %v", inlineData["data"])
 	}
 }
+
+func TestGeminiBuildRequestBody_ToolCallInputConversionError(t *testing.T) {
+	p := &GeminiProvider{apiKey: "test"}
+
+	// Use a value that cannot be marshaled to JSON (channel type).
+	req := StreamRequest{
+		Model: "gemini-2.0-flash",
+		Messages: []Message{
+			{
+				Role: RoleAssistant,
+				Content: []ContentBlock{
+					{
+						Type:     ContentTypeToolUse,
+						ToolName: "bad_tool",
+						Input:    make(chan int), // unmarshalable
+					},
+				},
+			},
+		},
+	}
+
+	_, err := p.buildRequestBody(req)
+	if err == nil {
+		t.Fatal("expected error for unmarshalable tool call input")
+	}
+	if !strings.Contains(err.Error(), "bad_tool") {
+		t.Errorf("expected error to mention tool name, got: %v", err)
+	}
+}
