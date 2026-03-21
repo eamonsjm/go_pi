@@ -2,6 +2,7 @@ package tui
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -135,13 +136,13 @@ func loadCustomTheme(name string) (Theme, error) {
 			if os.IsNotExist(err) {
 				continue
 			}
-			return Theme{}, err
+			return Theme{}, fmt.Errorf("load theme %s: %w", name, err)
 		}
 
 		// Start from dark theme defaults so partial themes work.
 		t := DarkTheme
 		if err := json.Unmarshal(data, &t); err != nil {
-			return Theme{}, err
+			return Theme{}, fmt.Errorf("load theme %s: %w", name, err)
 		}
 		t.Name = name
 		return t, nil
