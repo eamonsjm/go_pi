@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -58,6 +59,16 @@ func (o *OpenAIOAuth) Login(ctx context.Context, cb OAuthCallbacks) (*Credential
 		return nil, fmt.Errorf("generate PKCE: %w", err)
 	}
 
+	// Generate a separate random state parameter for CSRF protection.
+	// The PKCE verifier must NOT be used as the state — doing so exposes
+	// the verifier in the authorization URL (browser history, referrer
+	// headers, server logs), defeating PKCE's security guarantees.
+	stateBuf := make([]byte, 32)
+	if _, err := rand.Read(stateBuf); err != nil {
+		return nil, fmt.Errorf("generate OAuth state: %w", err)
+	}
+	oauthState := base64URLEncode(stateBuf)
+
 	redirectURL, err := url.Parse(o.RedirectURI)
 	if err != nil {
 		return nil, fmt.Errorf("parse redirect URI: %w", err)
@@ -78,7 +89,7 @@ func (o *OpenAIOAuth) Login(ctx context.Context, cb OAuthCallbacks) (*Credential
 	params.Set("scope", o.Scope)
 	params.Set("code_challenge", pkce.Challenge)
 	params.Set("code_challenge_method", "S256")
-	params.Set("state", pkce.Verifier)
+	params.Set("state", oauthState)
 	authorizeURL := o.AuthorizeURL + "?" + params.Encode()
 
 	if cb.OnAuth != nil {
@@ -115,7 +126,7 @@ func (o *OpenAIOAuth) Login(ctx context.Context, cb OAuthCallbacks) (*Credential
 		code := r.URL.Query().Get("code")
 		state := r.URL.Query().Get("state")
 
-		if state != pkce.Verifier {
+		if state != oauthState {
 			w.Header().Set("Content-Type", "text/html")
 			_, _ = fmt.Fprint(w, "<html><body><h2>Login Failed</h2><p>State mismatch.</p></body></html>")
 			resultCh <- callbackResult{err: fmt.Errorf("state mismatch in OAuth callback")}
