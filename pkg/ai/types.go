@@ -207,6 +207,7 @@ const (
 	GeminiDefaultMaxTokens    = 8192
 	BedrockDefaultMaxTokens   = 4096
 	AzureDefaultMaxTokens     = 4096
+	OllamaDefaultMaxTokens    = 4096
 )
 
 // StreamRequest contains all parameters for a streaming LLM call.

@@ -389,6 +389,8 @@ func resolveProvider(cfg *SessionConfig) (ai.Provider, error) {
 			cfg.Model = "gpt-4o"
 		case "bedrock":
 			cfg.Model = "anthropic.claude-3-5-sonnet-20241022-v2:0"
+		case "ollama":
+			cfg.Model = "llama3.2"
 		default:
 			cfg.Model = "claude-sonnet-4-20250514"
 		}
@@ -407,6 +409,8 @@ func resolveProvider(cfg *SessionConfig) (ai.Provider, error) {
 		return ai.NewAzureOpenAIProvider(cfg.APIKey, "", "")
 	case "bedrock":
 		return ai.NewBedrockProvider(cfg.APIKey)
+	case "ollama":
+		return ai.NewOllamaProvider(cfg.APIKey)
 	default:
 		return nil, fmt.Errorf("unknown provider: %q", cfg.Provider)
 	}

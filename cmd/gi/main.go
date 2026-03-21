@@ -289,8 +289,12 @@ func resolveProvider(cfg *config.Config, resolver *auth.Resolver) (ai.Provider, 
 		if providerName == "" && os.Getenv("AWS_ACCESS_KEY_ID") != "" {
 			providerName = "bedrock"
 		}
+		// Ollama needs no API key — just a reachable host.
+		if providerName == "" && os.Getenv("OLLAMA_HOST") != "" {
+			providerName = "ollama"
+		}
 		if providerName == "" {
-			return nil, fmt.Errorf("no API key found. Set ANTHROPIC_API_KEY, OPENROUTER_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, AZURE_OPENAI_API_KEY, or AWS credentials, or use /login <provider>")
+			return nil, fmt.Errorf("no API key found. Set ANTHROPIC_API_KEY, OPENROUTER_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, AZURE_OPENAI_API_KEY, AWS credentials, or OLLAMA_HOST, or use /login <provider>")
 		}
 	}
 
@@ -309,6 +313,8 @@ func resolveProvider(cfg *config.Config, resolver *auth.Resolver) (ai.Provider, 
 			model = "gpt-4o" // Azure deployment determines actual model
 		case "bedrock":
 			model = "anthropic.claude-3-5-sonnet-20241022-v2:0"
+		case "ollama":
+			model = "llama3.2"
 		}
 		cfg.DefaultModel = model
 	}
@@ -316,6 +322,11 @@ func resolveProvider(cfg *config.Config, resolver *auth.Resolver) (ai.Provider, 
 	// Bedrock uses AWS credential chain, not API keys.
 	if providerName == "bedrock" {
 		return ai.NewBedrockProvider(os.Getenv("AWS_REGION"))
+	}
+
+	// Ollama is local and needs no API key — just a host URL.
+	if providerName == "ollama" {
+		return ai.NewOllamaProvider(os.Getenv("OLLAMA_HOST"))
 	}
 
 	key, err := resolver.Resolve(providerName)

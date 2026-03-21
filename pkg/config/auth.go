@@ -8,4 +8,5 @@ var ProviderEnvVars = map[string]string{
 	"gemini":     "GEMINI_API_KEY",
 	"azure":      "AZURE_OPENAI_API_KEY",
 	"bedrock":    "AWS_DEFAULT_REGION",
+	"ollama":     "OLLAMA_HOST",
 }
