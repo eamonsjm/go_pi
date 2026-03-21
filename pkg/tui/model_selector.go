@@ -91,8 +91,10 @@ type ModelSelector struct {
 
 // NewModelSelector creates a ModelSelector pre-populated with common models.
 func NewModelSelector() *ModelSelector {
-	authStore, _ := auth.NewStore("") // Use default path
-	authStore.Load()                    // Load credentials (ignore errors, just proceed)
+	authStore, err := auth.NewStore("") // Use default path
+	if err == nil {
+		_ = authStore.Load() // Load credentials (ignore errors, just proceed)
+	}
 
 	ms := &ModelSelector{
 		models:       make([]ModelOption, len(defaultModels)),
@@ -109,7 +111,7 @@ func NewModelSelector() *ModelSelector {
 			ms.providers = append(ms.providers, opt.Provider)
 			seenProviders[opt.Provider] = true
 			// Check if authenticated
-			ms.authStatus[opt.Provider] = ms.authStore.Get(opt.Provider) != nil
+			ms.authStatus[opt.Provider] = ms.authStore != nil && ms.authStore.Get(opt.Provider) != nil
 		}
 		ms.modelsByProv[opt.Provider] = append(ms.modelsByProv[opt.Provider], i)
 	}
