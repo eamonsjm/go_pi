@@ -16,7 +16,6 @@ import (
 // IAM roles, instance profiles).
 type BedrockProvider struct {
 	client *bedrockruntime.Client
-	region string
 }
 
 // NewBedrockProvider creates a new AWS Bedrock provider.
@@ -38,7 +37,6 @@ func NewBedrockProvider(region string) (*BedrockProvider, error) {
 	client := bedrockruntime.NewFromConfig(cfg)
 	return &BedrockProvider{
 		client: client,
-		region: cfg.Region,
 	}, nil
 }
 
