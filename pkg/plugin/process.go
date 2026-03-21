@@ -545,9 +545,15 @@ func (p *PluginProcess) shutdownCurrentProcess() {
 	stdin := p.stdin
 	p.mu.Unlock()
 
-	data, _ := json.Marshal(HostMessage{Type: "shutdown"})
-	data = append(data, '\n')
-	_, _ = stdin.Write(data)
+	data, err := json.Marshal(HostMessage{Type: "shutdown"})
+	if err != nil {
+		log.Printf("plugin %s: failed to marshal shutdown message: %v", p.name, err)
+	} else {
+		data = append(data, '\n')
+		if _, err := stdin.Write(data); err != nil {
+			log.Printf("plugin %s: failed to write shutdown message: %v", p.name, err)
+		}
+	}
 	_ = stdin.Close()
 }
 
