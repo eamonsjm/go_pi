@@ -1255,6 +1255,64 @@ func TestAutoRestart_StopDuringRestart(t *testing.T) {
 	}
 }
 
+func TestAutoRestart_NoGoroutineLeakOnFailedRespawn(t *testing.T) {
+	// Baseline goroutine count before starting the plugin.
+	runtime.GC()
+	time.Sleep(50 * time.Millisecond)
+	goroutinesBefore := runtime.NumGoroutine()
+
+	p := startTestPlugin(t, "echo_caps")
+	if err := p.Initialize(PluginConfig{}); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+
+	// Short init timeout so respawn's Initialize() fails quickly.
+	p.SetTimeouts(TimeoutConfig{InitTimeout: 200 * time.Millisecond})
+
+	p.EnableAutoRestart(RestartConfig{
+		MaxAttempts:    2,
+		InitialBackoff: 10 * time.Millisecond,
+		MaxBackoff:     10 * time.Millisecond,
+	})
+
+	// Switch spawn to slow_init — the respawned process won't respond to
+	// Initialize(), causing it to time out and trigger the cleanup path.
+	p.mu.Lock()
+	p.spawnCmd = func() *exec.Cmd { return helperPluginCmd("slow_init") }
+	p.mu.Unlock()
+
+	// Kill process to trigger restart cycle.
+	p.cmd.Process.Kill()
+
+	// Wait for the supervisor to exhaust attempts and set closed.
+	deadline := time.After(10 * time.Second)
+	for {
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for supervisor to give up")
+		default:
+		}
+		p.mu.Lock()
+		closed := p.closed
+		p.mu.Unlock()
+		if closed {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	// Allow goroutines to wind down.
+	time.Sleep(500 * time.Millisecond)
+	runtime.GC()
+
+	goroutinesAfter := runtime.NumGoroutine()
+	// Allow margin of 3 for test infrastructure goroutines.
+	if goroutinesAfter > goroutinesBefore+3 {
+		t.Errorf("goroutine leak: before=%d, after=%d (diff=%d)",
+			goroutinesBefore, goroutinesAfter, goroutinesAfter-goroutinesBefore)
+	}
+}
+
 func TestDefaultRestartConfig(t *testing.T) {
 	cfg := DefaultRestartConfig()
 	if cfg.MaxAttempts != 5 {
