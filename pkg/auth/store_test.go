@@ -207,6 +207,32 @@ func TestStoreLoadLegacyFormatMigrationPreservesData(t *testing.T) {
 	}
 }
 
+func TestStoreLoadJSONNull(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "auth.json")
+
+	// Write JSON null — this previously caused a nil map panic on Set().
+	if err := os.WriteFile(path, []byte("null"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	s, err := NewStore(path)
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	if err := s.Load(); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	// Must not panic — entries should be an initialized empty map.
+	s.Set("anthropic", &Credential{Type: CredentialAPIKey, Key: "sk-test"})
+
+	cred := s.Get("anthropic")
+	if cred == nil || cred.Key != "sk-test" {
+		t.Errorf("after Set: got %+v", cred)
+	}
+}
+
 func TestStoreProvidersSorted(t *testing.T) {
 	dir := t.TempDir()
 	s, _ := NewStore(filepath.Join(dir, "auth.json"))

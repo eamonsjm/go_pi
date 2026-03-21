@@ -64,6 +64,9 @@ func (s *Store) Load() error {
 	if err := json.Unmarshal(data, &entries); err != nil {
 		return fmt.Errorf("parse auth store: %w", err)
 	}
+	if entries == nil {
+		entries = make(map[string]*Credential)
+	}
 	s.entries = entries
 	return nil
 }
