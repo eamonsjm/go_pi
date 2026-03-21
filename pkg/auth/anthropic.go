@@ -177,8 +177,7 @@ func (a *AnthropicOAuth) ExchangeCode(ctx context.Context, session *AuthSession,
 		if detail == "" {
 			detail = http.StatusText(resp.StatusCode)
 		}
-		return nil, fmt.Errorf("token exchange failed (%d): %s",
-			resp.StatusCode, detail)
+		return nil, &TokenExchangeError{Operation: "token exchange", StatusCode: resp.StatusCode, Detail: detail}
 	}
 
 	var token tokenResponse
@@ -276,7 +275,7 @@ func (a *AnthropicOAuth) RefreshToken(ctx context.Context, cred *Credential) (*C
 		if detail == "" {
 			detail = http.StatusText(resp.StatusCode)
 		}
-		return nil, fmt.Errorf("refresh failed (%d): %s", resp.StatusCode, detail)
+		return nil, &TokenExchangeError{Operation: "refresh", StatusCode: resp.StatusCode, Detail: detail}
 	}
 
 	var token tokenResponse

@@ -189,8 +189,7 @@ func (o *OpenAIOAuth) exchangeCode(ctx context.Context, code, codeVerifier strin
 		return nil, fmt.Errorf("read token response body: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("token exchange failed (%d): %s",
-			resp.StatusCode, strings.TrimSpace(string(body)))
+		return nil, &TokenExchangeError{Operation: "token exchange", StatusCode: resp.StatusCode, Detail: strings.TrimSpace(string(body))}
 	}
 
 	var token tokenResponse
@@ -233,8 +232,7 @@ func (o *OpenAIOAuth) RefreshToken(ctx context.Context, cred *Credential) (*Cred
 		if err := json.Unmarshal(body, &errResp); err == nil && errResp.ErrorDescription != "" {
 			detail = errResp.ErrorDescription
 		}
-		return nil, fmt.Errorf("refresh failed (%d): %s",
-			resp.StatusCode, detail)
+		return nil, &TokenExchangeError{Operation: "refresh", StatusCode: resp.StatusCode, Detail: detail}
 	}
 
 	var token tokenResponse

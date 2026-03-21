@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -297,6 +298,16 @@ func TestAnthropicOAuth_ExchangeCode_ServerError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for bad code")
 	}
+	var txErr *TokenExchangeError
+	if !errors.As(err, &txErr) {
+		t.Fatalf("expected TokenExchangeError, got %T", err)
+	}
+	if txErr.StatusCode != http.StatusBadRequest {
+		t.Errorf("StatusCode = %d, want %d", txErr.StatusCode, http.StatusBadRequest)
+	}
+	if txErr.Detail != "code expired" {
+		t.Errorf("Detail = %q, want %q", txErr.Detail, "code expired")
+	}
 }
 
 func TestAnthropicOAuth_RefreshToken(t *testing.T) {
@@ -434,8 +445,15 @@ func TestAnthropicOAuth_RefreshToken_ErrorDetailFallback(t *testing.T) {
 			if err == nil {
 				t.Fatal("expected error")
 			}
-			if !strings.Contains(err.Error(), tt.wantDetail) {
-				t.Errorf("error = %q, want to contain %q", err.Error(), tt.wantDetail)
+			var txErr *TokenExchangeError
+			if !errors.As(err, &txErr) {
+				t.Fatalf("expected TokenExchangeError, got %T", err)
+			}
+			if txErr.StatusCode != http.StatusBadRequest {
+				t.Errorf("StatusCode = %d, want %d", txErr.StatusCode, http.StatusBadRequest)
+			}
+			if txErr.Detail != tt.wantDetail {
+				t.Errorf("Detail = %q, want %q", txErr.Detail, tt.wantDetail)
 			}
 		})
 	}
@@ -482,8 +500,15 @@ func TestAnthropicOAuth_ExchangeCode_ErrorDetailFallback(t *testing.T) {
 			if err == nil {
 				t.Fatal("expected error")
 			}
-			if !strings.Contains(err.Error(), tt.wantDetail) {
-				t.Errorf("error = %q, want to contain %q", err.Error(), tt.wantDetail)
+			var txErr *TokenExchangeError
+			if !errors.As(err, &txErr) {
+				t.Fatalf("expected TokenExchangeError, got %T", err)
+			}
+			if txErr.StatusCode != http.StatusBadRequest {
+				t.Errorf("StatusCode = %d, want %d", txErr.StatusCode, http.StatusBadRequest)
+			}
+			if txErr.Detail != tt.wantDetail {
+				t.Errorf("Detail = %q, want %q", txErr.Detail, tt.wantDetail)
 			}
 		})
 	}
