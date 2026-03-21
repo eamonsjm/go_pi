@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/ejm/go_pi/pkg/ai"
 )
@@ -273,7 +274,13 @@ func buildTranscript(msgs []ai.Message) string {
 			case ai.ContentTypeToolResult:
 				result := c.Content
 				if len(result) > 500 {
-					result = result[:500] + "..."
+					// Back up to a valid UTF-8 rune boundary to avoid
+					// splitting multi-byte characters.
+					truncLen := 500
+					for truncLen > 0 && !utf8.RuneStart(result[truncLen]) {
+						truncLen--
+					}
+					result = result[:truncLen] + "..."
 				}
 				fmt.Fprintf(&b, "[tool_result]: %s\n\n", result)
 			}

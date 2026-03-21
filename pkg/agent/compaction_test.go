@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/ejm/go_pi/pkg/ai"
 	"github.com/ejm/go_pi/pkg/tools"
@@ -296,6 +297,67 @@ func TestCompactToolResultJustOverBoundary(t *testing.T) {
 	}
 	if strings.Contains(capturedPrompt, overContent) {
 		t.Error("full 501-char content should not appear")
+	}
+}
+
+func TestCompactToolResultUTF8MultiByteTruncation(t *testing.T) {
+	// Tool result containing multi-byte UTF-8 characters near the 500-byte
+	// boundary must not produce invalid UTF-8 after truncation.
+	var capturedPrompt string
+	provider := &mockProvider{
+		streamFn: func(_ context.Context, req ai.StreamRequest) (<-chan ai.StreamEvent, error) {
+			capturedPrompt = req.Messages[0].GetText()
+			ch := make(chan ai.StreamEvent, 10)
+			go func() {
+				defer close(ch)
+				ch <- ai.StreamEvent{Type: ai.EventTextDelta, Delta: "compacted"}
+			}()
+			return ch, nil
+		},
+	}
+
+	// Build content: 498 ASCII bytes + a 4-byte emoji (U+1F600 "😀") = 502 bytes.
+	// A naive result[:500] would slice into the middle of the emoji.
+	content := strings.Repeat("a", 498) + "😀" + strings.Repeat("b", 100)
+	msgs := []ai.Message{
+		{
+			Role: ai.RoleUser,
+			Content: []ai.ContentBlock{
+				{Type: ai.ContentTypeToolResult, ToolResultID: "tc-1", Content: content},
+			},
+		},
+	}
+
+	reg := tools.NewRegistry()
+	a := NewAgentLoop(provider, reg, WithMessages(msgs))
+
+	err := a.Compact(context.Background(), "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Extract the truncated tool result from the transcript.
+	idx := strings.Index(capturedPrompt, "[tool_result]: ")
+	if idx < 0 {
+		t.Fatal("transcript missing [tool_result]")
+	}
+	resultPart := capturedPrompt[idx+len("[tool_result]: "):]
+	// The result ends at the next newline.
+	if nl := strings.Index(resultPart, "\n"); nl >= 0 {
+		resultPart = resultPart[:nl]
+	}
+
+	// The truncated result must be valid UTF-8.
+	if !utf8.ValidString(resultPart) {
+		t.Errorf("truncated tool result is not valid UTF-8: %q", resultPart)
+	}
+	// Should contain the truncation marker.
+	if !strings.Contains(resultPart, "...") {
+		t.Error("expected truncation marker '...'")
+	}
+	// The emoji sits at byte 498-501; truncation should back up to byte 498.
+	if !strings.HasPrefix(resultPart, strings.Repeat("a", 498)+"...") {
+		t.Errorf("expected truncation at rune boundary before emoji, got: %q", resultPart[:20])
 	}
 }
 
