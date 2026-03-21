@@ -80,8 +80,18 @@ func main() {
 	rpcFlag := &rpcVal
 	pluginFlag := &pluginVal
 
+	// Check if the first positional arg is a known model name (e.g. `gi claude-haiku-4-5-20251001`).
+	args := flag.Args()
+	if len(args) > 0 && *modelFlag == "" {
+		if opt, ok := tui.ResolveModelArg(args[0]); ok {
+			modelFlag = &opt.Model
+			providerFlag = &opt.Provider
+			args = args[1:]
+		}
+	}
+
 	// Process @filepath arguments from remaining CLI args.
-	initialPrompt, err := processFileArgs(flag.Args())
+	initialPrompt, err := processFileArgs(args)
 	if err != nil {
 		log.Fatalf("Error processing arguments: %v", err)
 	}

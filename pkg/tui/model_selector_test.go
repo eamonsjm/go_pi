@@ -655,6 +655,51 @@ func TestModelSelector_ShowWithFilter_Empty(t *testing.T) {
 	}
 }
 
+func TestResolveModelArg_ExactMatch(t *testing.T) {
+	opt, ok := ResolveModelArg("claude-haiku-4-5-20251001")
+	if !ok {
+		t.Fatal("expected exact match for claude-haiku-4-5-20251001")
+	}
+	if opt.Model != "claude-haiku-4-5-20251001" {
+		t.Errorf("expected model claude-haiku-4-5-20251001, got %q", opt.Model)
+	}
+	if opt.Provider != "anthropic" {
+		t.Errorf("expected provider anthropic, got %q", opt.Provider)
+	}
+}
+
+func TestResolveModelArg_CaseInsensitive(t *testing.T) {
+	opt, ok := ResolveModelArg("CLAUDE-OPUS-4-6")
+	if !ok {
+		t.Fatal("expected case-insensitive match for CLAUDE-OPUS-4-6")
+	}
+	if opt.Model != "claude-opus-4-6" {
+		t.Errorf("expected model claude-opus-4-6, got %q", opt.Model)
+	}
+}
+
+func TestResolveModelArg_NoMatch(t *testing.T) {
+	_, ok := ResolveModelArg("nonexistent-model")
+	if ok {
+		t.Error("expected no match for nonexistent-model")
+	}
+}
+
+func TestResolveModelArg_FuzzyDoesNotMatch(t *testing.T) {
+	// "haiku" alone is a fuzzy match but NOT an exact model ID
+	_, ok := ResolveModelArg("haiku")
+	if ok {
+		t.Error("expected no match for partial name 'haiku' — ResolveModelArg is exact only")
+	}
+}
+
+func TestResolveModelArg_EmptyString(t *testing.T) {
+	_, ok := ResolveModelArg("")
+	if ok {
+		t.Error("expected no match for empty string")
+	}
+}
+
 func TestRegisterModelCommand_CaseInsensitiveMatch(t *testing.T) {
 	cmd := RegisterModelCommand()
 	// EqualFold should match regardless of case.

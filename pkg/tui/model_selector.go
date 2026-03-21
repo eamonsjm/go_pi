@@ -438,6 +438,22 @@ func (ms *ModelSelector) applyFilterAllProviders() {
 }
 
 // ---------------------------------------------------------------------------
+// ResolveModelArg — exact model ID lookup for CLI positional args
+// ---------------------------------------------------------------------------
+
+// ResolveModelArg checks whether arg exactly matches a known model ID
+// (case-insensitive). If it does, it returns the matching ModelOption and true.
+// This is used to support `gi claude-haiku-4-5-20251001` as a positional arg.
+func ResolveModelArg(arg string) (ModelOption, bool) {
+	for _, opt := range defaultModels {
+		if strings.EqualFold(opt.Model, arg) {
+			return opt, true
+		}
+	}
+	return ModelOption{}, false
+}
+
+// ---------------------------------------------------------------------------
 // Fuzzy matching
 // ---------------------------------------------------------------------------
 
