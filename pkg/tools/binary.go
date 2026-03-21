@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"io"
 	"os"
 	"unicode/utf8"
 )
@@ -49,9 +50,11 @@ func isBinaryFile(path string) bool {
 	defer func() { _ = f.Close() }()
 
 	buf := make([]byte, binarySampleSize)
-	n, _ := f.Read(buf)
+	n, err := f.Read(buf)
 	if n == 0 {
-		return false
+		// Real read error (not EOF) with no data — treat as binary so
+		// callers skip the file instead of misclassifying it as text.
+		return err != nil && err != io.EOF
 	}
 
 	return isBinary(buf[:n])
