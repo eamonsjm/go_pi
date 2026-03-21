@@ -7,8 +7,20 @@ import (
 	"testing"
 )
 
+func mustDefaultConfig(t *testing.T) *Config {
+	t.Helper()
+	cfg, err := DefaultConfig()
+	if err != nil {
+		t.Fatalf("DefaultConfig: %v", err)
+	}
+	return cfg
+}
+
 func TestDefaultConfig(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg, err := DefaultConfig()
+	if err != nil {
+		t.Fatalf("DefaultConfig: %v", err)
+	}
 
 	if cfg.DefaultProvider != "anthropic" {
 		t.Errorf("expected DefaultProvider 'anthropic', got %q", cfg.DefaultProvider)
@@ -57,7 +69,7 @@ func TestMergeFromFile(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	cfg := DefaultConfig()
+	cfg := mustDefaultConfig(t)
 	if err := mergeFromFile(cfg, path); err != nil {
 		t.Fatalf("mergeFromFile: %v", err)
 	}
@@ -80,7 +92,7 @@ func TestMergeFromFile(t *testing.T) {
 }
 
 func TestMergeFromFileMissing(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := mustDefaultConfig(t)
 	err := mergeFromFile(cfg, "/nonexistent/path/settings.json")
 	if err != nil {
 		t.Errorf("mergeFromFile should return nil for missing files, got: %v", err)
@@ -94,7 +106,7 @@ func TestMergeFromFileInvalidJSON(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	cfg := DefaultConfig()
+	cfg := mustDefaultConfig(t)
 	err := mergeFromFile(cfg, path)
 	if err == nil {
 		t.Error("expected error for invalid JSON")
@@ -111,7 +123,7 @@ func TestMergeOnlySetFieldsOverride(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	cfg := DefaultConfig()
+	cfg := mustDefaultConfig(t)
 	originalModel := cfg.DefaultModel
 	originalProvider := cfg.DefaultProvider
 	originalMaxTokens := cfg.MaxTokens
@@ -137,7 +149,7 @@ func TestMergeOnlySetFieldsOverride(t *testing.T) {
 func TestSaveAndReload(t *testing.T) {
 	dir := t.TempDir()
 
-	cfg := DefaultConfig()
+	cfg := mustDefaultConfig(t)
 	cfg.ConfigDir = dir
 	cfg.DefaultModel = "custom-model"
 	cfg.MaxTokens = 2048
@@ -154,7 +166,7 @@ func TestSaveAndReload(t *testing.T) {
 	}
 
 	// Reload into a fresh config (starting from defaults).
-	cfg2 := DefaultConfig()
+	cfg2 := mustDefaultConfig(t)
 	cfg2.ConfigDir = dir
 	if err := mergeFromFile(cfg2, path); err != nil {
 		t.Fatalf("mergeFromFile on saved file: %v", err)
@@ -174,7 +186,7 @@ func TestSaveAndReload(t *testing.T) {
 func TestSaveCreatesConfigDirectory(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "nested", "config")
 
-	cfg := DefaultConfig()
+	cfg := mustDefaultConfig(t)
 	cfg.ConfigDir = dir
 
 	if err := cfg.Save(); err != nil {
@@ -197,7 +209,7 @@ func TestMergeEmptyStringDoesNotOverride(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	cfg := DefaultConfig()
+	cfg := mustDefaultConfig(t)
 	if err := mergeFromFile(cfg, path); err != nil {
 		t.Fatalf("mergeFromFile: %v", err)
 	}
@@ -216,7 +228,7 @@ func TestMergeZeroMaxTokensDoesNotOverride(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	cfg := DefaultConfig()
+	cfg := mustDefaultConfig(t)
 	if err := mergeFromFile(cfg, path); err != nil {
 		t.Fatalf("mergeFromFile: %v", err)
 	}
@@ -236,7 +248,7 @@ func TestMergeFromFileTrailingComma(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	cfg := DefaultConfig()
+	cfg := mustDefaultConfig(t)
 	err := mergeFromFile(cfg, path)
 	if err == nil {
 		t.Error("expected error for JSON with trailing comma")
@@ -252,7 +264,7 @@ func TestMergeFromFileEmptyFile(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	cfg := DefaultConfig()
+	cfg := mustDefaultConfig(t)
 	err := mergeFromFile(cfg, path)
 	if err == nil {
 		t.Error("expected error for empty config file")
@@ -276,8 +288,8 @@ func TestMergeFromFileAllZeroValues(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	cfg := DefaultConfig()
-	defaults := DefaultConfig()
+	cfg := mustDefaultConfig(t)
+	defaults := mustDefaultConfig(t)
 
 	if err := mergeFromFile(cfg, path); err != nil {
 		t.Fatalf("mergeFromFile: %v", err)
@@ -312,7 +324,7 @@ func TestMergeFromFileNegativeMaxTokens(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	cfg := DefaultConfig()
+	cfg := mustDefaultConfig(t)
 	if err := mergeFromFile(cfg, path); err != nil {
 		t.Fatalf("mergeFromFile: %v", err)
 	}
@@ -337,7 +349,7 @@ func TestMergeFromFileUnknownKeys(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	cfg := DefaultConfig()
+	cfg := mustDefaultConfig(t)
 	if err := mergeFromFile(cfg, path); err != nil {
 		t.Fatalf("mergeFromFile: %v", err)
 	}
@@ -371,7 +383,7 @@ func TestMergeFromFilePermissionError(t *testing.T) {
 	}
 	t.Cleanup(func() { os.Chmod(path, 0o600) })
 
-	cfg := DefaultConfig()
+	cfg := mustDefaultConfig(t)
 	err := mergeFromFile(cfg, path)
 	if err == nil {
 		t.Error("expected error for unreadable config file")
@@ -388,7 +400,7 @@ func TestMergeFromFileWrongType(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	cfg := DefaultConfig()
+	cfg := mustDefaultConfig(t)
 	if err := mergeFromFile(cfg, path); err != nil {
 		t.Fatalf("mergeFromFile: %v", err)
 	}
@@ -413,7 +425,7 @@ func TestMergeFromFileNullValues(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	cfg := DefaultConfig()
+	cfg := mustDefaultConfig(t)
 	if err := mergeFromFile(cfg, path); err != nil {
 		t.Fatalf("mergeFromFile: %v", err)
 	}

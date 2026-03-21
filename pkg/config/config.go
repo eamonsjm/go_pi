@@ -41,8 +41,11 @@ type Config struct {
 }
 
 // DefaultConfig returns a Config populated with sensible defaults.
-func DefaultConfig() *Config {
-	home, _ := os.UserHomeDir()
+func DefaultConfig() (*Config, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("resolve home dir: %w", err)
+	}
 	giDir := filepath.Join(home, ".gi")
 	return &Config{
 		DefaultProvider: "anthropic",
@@ -73,7 +76,7 @@ func DefaultConfig() *Config {
 			},
 			ExportPath:        filepath.Join(giDir, "metrics.json"),
 		},
-	}
+	}, nil
 }
 
 
@@ -84,7 +87,10 @@ func DefaultConfig() *Config {
 //
 // Later sources override earlier ones. Missing files are silently ignored.
 func LoadConfig() (*Config, error) {
-	cfg := DefaultConfig()
+	cfg, err := DefaultConfig()
+	if err != nil {
+		return nil, fmt.Errorf("default config: %w", err)
+	}
 
 	// Global config.
 	globalPath := filepath.Join(cfg.ConfigDir, "settings.json")

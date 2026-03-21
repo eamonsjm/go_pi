@@ -229,7 +229,10 @@ func NewSession(opts ...SessionOption) (*Session, error) {
 	// Set up session manager.
 	sessionDir := cfg.SessionDir
 	if sessionDir == "" {
-		home, _ := os.UserHomeDir()
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return nil, fmt.Errorf("sdk: resolve home dir for sessions: %w", err)
+		}
 		sessionDir = filepath.Join(home, ".gi", "sessions")
 	}
 	sessionMgr := session.NewManager(sessionDir)
