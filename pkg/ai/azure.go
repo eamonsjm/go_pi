@@ -105,7 +105,9 @@ func (p *AzureOpenAIProvider) Stream(ctx context.Context, req StreamRequest) (<-
 		if readErr != nil {
 			errBody = []byte(fmt.Sprintf("failed to read response body: %v", readErr))
 		}
-		return nil, fmt.Errorf("azure openai: API returned status %d: %s", resp.StatusCode, string(errBody))
+		apiErr := parseOpenAIError(resp.StatusCode, resp.Header, errBody)
+		apiErr.Provider = "azure"
+		return nil, apiErr
 	}
 
 	ch := make(chan StreamEvent, 64)
