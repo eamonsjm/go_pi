@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"fmt"
 )
 
 // PKCEChallenge holds a PKCE code verifier and its derived challenge.
@@ -17,7 +18,7 @@ type PKCEChallenge struct {
 func GeneratePKCE() (*PKCEChallenge, error) {
 	buf := make([]byte, 32)
 	if _, err := rand.Read(buf); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("generate PKCE verifier: %w", err)
 	}
 
 	verifier := base64URLEncode(buf)
