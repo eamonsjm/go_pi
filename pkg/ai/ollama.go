@@ -189,8 +189,8 @@ func mapToOllamaMessages(m Message) []ollamaMessage {
 
 	om := ollamaMessage{Role: string(m.Role)}
 	textParts := make([]string, 0, len(m.Content))
-	images := make([]string, 0)
-	toolCalls := make([]ollamaToolCall, 0)
+	images := make([]string, 0, len(m.Content))
+	toolCalls := make([]ollamaToolCall, 0, len(m.Content))
 
 	for _, cb := range m.Content {
 		switch cb.Type {
