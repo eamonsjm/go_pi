@@ -31,7 +31,7 @@ var validCategories = map[string]bool{
 
 // NewRTKCommand returns a SlashCommand for /rtk that displays RTK metrics and
 // configuration. Usage: /rtk [subcommand] [args]
-func NewRTKCommand(cfg *config.Config) *SlashCommand {
+func NewRTKCommand(cfg *config.Config, metrics *tools.Metrics) *SlashCommand {
 	return &SlashCommand{
 		Name:        "rtk",
 		Description: "Show RTK metrics and configuration. Usage: /rtk [status|metrics|config|enable|disable|level|toggle|export]",
@@ -40,7 +40,7 @@ func NewRTKCommand(cfg *config.Config) *SlashCommand {
 
 			// Default to status if no args
 			if args == "" {
-				return rtkStatus(cfg)
+				return rtkStatus(cfg, metrics)
 			}
 
 			parts := strings.SplitN(args, " ", 2)
@@ -48,9 +48,9 @@ func NewRTKCommand(cfg *config.Config) *SlashCommand {
 
 			switch subcommand {
 			case "status":
-				return rtkStatus(cfg)
+				return rtkStatus(cfg, metrics)
 			case "metrics":
-				return rtkMetrics()
+				return rtkMetrics(metrics)
 			case "config":
 				return rtkShowConfig(cfg)
 			case "enable":
@@ -84,7 +84,7 @@ func NewRTKCommand(cfg *config.Config) *SlashCommand {
 				if len(parts) > 1 {
 					path = strings.TrimSpace(parts[1])
 				}
-				return rtkExport(path)
+				return rtkExport(path, metrics)
 			default:
 				return rtkError(fmt.Sprintf("unknown subcommand %q. Valid: status, metrics, config, enable, disable, level, toggle, export", subcommand))
 			}
@@ -93,7 +93,7 @@ func NewRTKCommand(cfg *config.Config) *SlashCommand {
 }
 
 // rtkStatus shows a summary of RTK state, metrics, and compression stats.
-func rtkStatus(cfg *config.Config) tea.Cmd {
+func rtkStatus(cfg *config.Config, metrics *tools.Metrics) tea.Cmd {
 	return func() tea.Msg {
 		rtk := cfg.RTK
 		if rtk == nil {
@@ -109,8 +109,6 @@ func rtkStatus(cfg *config.Config) tea.Cmd {
 		if rtk.MetricsEnabled {
 			metricsStatus = "enabled"
 		}
-
-		metrics := tools.GlobalMetrics
 
 		// Calculate token savings
 		totalTokens := metrics.GetTotalTokens()
@@ -174,10 +172,8 @@ func rtkStatus(cfg *config.Config) tea.Cmd {
 }
 
 // rtkMetrics shows detailed per-category metrics.
-func rtkMetrics() tea.Cmd {
+func rtkMetrics(metrics *tools.Metrics) tea.Cmd {
 	return func() tea.Msg {
-		metrics := tools.GlobalMetrics
-
 		text := "RTK Metrics by Category:\n"
 		commands := metrics.GetCommandMetrics()
 
@@ -349,10 +345,8 @@ func rtkError(msg string) tea.Cmd {
 }
 
 // rtkExport exports metrics to a JSON file.
-func rtkExport(path string) tea.Cmd {
+func rtkExport(path string, metrics *tools.Metrics) tea.Cmd {
 	return func() tea.Msg {
-		metrics := tools.GlobalMetrics
-
 		// Prepare export data
 		export := map[string]interface{}{
 			"total_tokens": metrics.GetTotalTokens(),

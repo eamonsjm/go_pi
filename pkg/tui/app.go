@@ -221,7 +221,7 @@ func (a *App) RegisterBuiltinCommands(ctx context.Context, agentLoop *agent.Agen
 
 	a.RegisterCommand(NewCompactCommand(ctx, agentLoop))
 	a.RegisterCommand(NewSettingsCommand(cfg, agentLoop, a.header))
-	a.RegisterCommand(NewRTKCommand(cfg))
+	a.RegisterCommand(NewRTKCommand(cfg, agentLoop.Metrics()))
 	a.RegisterCommand(NewNewSessionCommand(agentLoop, sessionMgr, a.chat, a.header))
 	a.RegisterCommand(NewResumeCommand(agentLoop, sessionMgr, a.chat, a.header))
 	a.RegisterCommand(NewSessionInfoCommand(sessionMgr, a.chat,

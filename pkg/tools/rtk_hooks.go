@@ -208,9 +208,6 @@ func (m *Metrics) Record(category CommandCategory, originalSize, compressedSize 
 	m.savedTokens += int64(originalSize - compressedSize)
 }
 
-// GlobalMetrics is the package-level metrics collector.
-var GlobalMetrics = NewMetrics()
-
 // RtkCommandTranslator detects rtk binary and translates commands to rtk equivalents.
 type RtkCommandTranslator struct {
 	mu              sync.Mutex
@@ -339,15 +336,15 @@ func (m *Metrics) GetCommandMetrics() map[CommandCategory]*CommandMetrics {
 }
 
 // RegisterDefaultHooks creates and registers all standard compression hooks.
-func RegisterDefaultHooks(registry *HookRegistry, config *CompressionConfig) {
+func RegisterDefaultHooks(registry *HookRegistry, config *CompressionConfig, metrics *Metrics) {
 	// Always strip ANSI codes first
 	registry.Register(&ANSIStripper{})
 
 	// Register language-specific compressors
-	registry.Register(NewGoTestAggregator(config.GetLevel("go-test")))
-	registry.Register(NewGoBuildErrorExtractor(config.GetLevel("go-build")))
-	registry.Register(NewGitLogCompactor(config.GetLevel("git-log")))
-	registry.Register(NewLinterOutputGrouper(config.GetLevel("linter")))
+	registry.Register(NewGoTestAggregator(config.GetLevel("go-test"), metrics))
+	registry.Register(NewGoBuildErrorExtractor(config.GetLevel("go-build"), metrics))
+	registry.Register(NewGitLogCompactor(config.GetLevel("git-log"), metrics))
+	registry.Register(NewLinterOutputGrouper(config.GetLevel("linter"), metrics))
 
 	// Generic compression as fallback
 	registry.Register(&Compressor{})

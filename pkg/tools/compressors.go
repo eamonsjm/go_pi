@@ -19,12 +19,13 @@ const (
 
 // GoTestAggregator compresses Go test output while preserving critical information.
 type GoTestAggregator struct {
-	level CompressionLevel
+	level   CompressionLevel
+	metrics *Metrics
 }
 
 // NewGoTestAggregator creates a test output aggregator.
-func NewGoTestAggregator(level CompressionLevel) *GoTestAggregator {
-	return &GoTestAggregator{level: level}
+func NewGoTestAggregator(level CompressionLevel, metrics *Metrics) *GoTestAggregator {
+	return &GoTestAggregator{level: level, metrics: metrics}
 }
 
 func (a *GoTestAggregator) BeforeExecute(ctx context.Context, toolName string, params map[string]any) error {
@@ -128,18 +129,19 @@ func (a *GoTestAggregator) compress(output string) string {
 	}
 
 	compressed := strings.Join(result, "\n")
-	GlobalMetrics.Record(CategoryTest, len(output), len(compressed), 0)
+	a.metrics.Record(CategoryTest, len(output), len(compressed), 0)
 	return compressed
 }
 
 // GoBuildErrorExtractor pulls out build errors from verbose output.
 type GoBuildErrorExtractor struct {
-	level CompressionLevel
+	level   CompressionLevel
+	metrics *Metrics
 }
 
 // NewGoBuildErrorExtractor creates a build error extractor.
-func NewGoBuildErrorExtractor(level CompressionLevel) *GoBuildErrorExtractor {
-	return &GoBuildErrorExtractor{level: level}
+func NewGoBuildErrorExtractor(level CompressionLevel, metrics *Metrics) *GoBuildErrorExtractor {
+	return &GoBuildErrorExtractor{level: level, metrics: metrics}
 }
 
 func (e *GoBuildErrorExtractor) BeforeExecute(ctx context.Context, toolName string, params map[string]any) error {
@@ -232,18 +234,19 @@ func (e *GoBuildErrorExtractor) extract(output string) string {
 	}
 
 	compressed := strings.Join(result, "\n")
-	GlobalMetrics.Record(CategoryBuild, len(output), len(compressed), 0)
+	e.metrics.Record(CategoryBuild, len(output), len(compressed), 0)
 	return compressed
 }
 
 // GitLogCompactor reduces git log output size.
 type GitLogCompactor struct {
-	level CompressionLevel
+	level   CompressionLevel
+	metrics *Metrics
 }
 
 // NewGitLogCompactor creates a git log compactor.
-func NewGitLogCompactor(level CompressionLevel) *GitLogCompactor {
-	return &GitLogCompactor{level: level}
+func NewGitLogCompactor(level CompressionLevel, metrics *Metrics) *GitLogCompactor {
+	return &GitLogCompactor{level: level, metrics: metrics}
 }
 
 func (c *GitLogCompactor) BeforeExecute(ctx context.Context, toolName string, params map[string]any) error {
@@ -359,18 +362,19 @@ func (c *GitLogCompactor) compact(output string) string {
 	}
 
 	compressed := strings.Join(finalResult, "\n")
-	GlobalMetrics.Record(CategoryGit, len(output), len(compressed), 0)
+	c.metrics.Record(CategoryGit, len(output), len(compressed), 0)
 	return compressed
 }
 
 // LinterOutputGrouper aggregates linter output by file.
 type LinterOutputGrouper struct {
-	level CompressionLevel
+	level   CompressionLevel
+	metrics *Metrics
 }
 
 // NewLinterOutputGrouper creates a linter output grouper.
-func NewLinterOutputGrouper(level CompressionLevel) *LinterOutputGrouper {
-	return &LinterOutputGrouper{level: level}
+func NewLinterOutputGrouper(level CompressionLevel, metrics *Metrics) *LinterOutputGrouper {
+	return &LinterOutputGrouper{level: level, metrics: metrics}
 }
 
 func (g *LinterOutputGrouper) BeforeExecute(ctx context.Context, toolName string, params map[string]any) error {
@@ -459,7 +463,7 @@ func (g *LinterOutputGrouper) group(output string) string {
 	}
 
 	compressed := strings.Join(result, "\n")
-	GlobalMetrics.Record(CategoryOther, len(output), len(compressed), 0)
+	g.metrics.Record(CategoryOther, len(output), len(compressed), 0)
 	return compressed
 }
 
@@ -493,5 +497,3 @@ func (cc *CompressionConfig) GetLevel(tool string) CompressionLevel {
 	return CompressionMedium
 }
 
-// GlobalCompressionConfig is the package-level configuration.
-var GlobalCompressionConfig = NewCompressionConfig()

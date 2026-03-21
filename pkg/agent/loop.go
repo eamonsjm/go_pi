@@ -21,6 +21,7 @@ type AgentLoop struct {
 	provider     ai.Provider
 	tools        *tools.Registry
 	hooks        *tools.HookRegistry
+	metrics      *tools.Metrics
 	systemPrompt string
 	model        string
 	maxTokens    int
@@ -49,16 +50,19 @@ type AgentLoop struct {
 
 // NewAgentLoop creates a new agent loop wired to the given provider and tool registry.
 func NewAgentLoop(provider ai.Provider, toolRegistry *tools.Registry, opts ...Option) *AgentLoop {
+	metrics := tools.NewMetrics()
+	compressionConfig := tools.NewCompressionConfig()
 	hooks := tools.NewHookRegistry()
 	// Register RTK command translator first (before compression)
 	hooks.Register(tools.NewRtkCommandTranslator())
 	// Register language-specific compression filters and generic compressor
-	tools.RegisterDefaultHooks(hooks, tools.GlobalCompressionConfig)
+	tools.RegisterDefaultHooks(hooks, compressionConfig, metrics)
 
 	a := &AgentLoop{
 		provider:         provider,
 		tools:            toolRegistry,
 		hooks:            hooks,
+		metrics:          metrics,
 		maxTokens:        8192,
 		thinking:         ai.ThinkingOff,
 		contextWindow:    200000,
@@ -82,6 +86,11 @@ func (a *AgentLoop) Events() <-chan AgentEvent {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.events
+}
+
+// Metrics returns the metrics collector for this agent loop.
+func (a *AgentLoop) Metrics() *tools.Metrics {
+	return a.metrics
 }
 
 // Messages returns a copy of the current conversation history.
@@ -480,7 +489,7 @@ func (a *AgentLoop) executeTool(ctx context.Context, tc ai.ContentBlock) ai.Mess
 		compressedSize := len(result)
 		cmd, _ := params["command"].(string)
 		category := tools.DetectCategory(cmd)
-		tools.GlobalMetrics.Record(category, originalSize, compressedSize, 0)
+		a.metrics.Record(category, originalSize, compressedSize, 0)
 	}
 
 	a.emit(ctx, AgentEvent{

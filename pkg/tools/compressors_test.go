@@ -47,7 +47,7 @@ FAIL    github.com/test/pkg    0.001s`,
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			agg := NewGoTestAggregator(tt.level)
+			agg := NewGoTestAggregator(tt.level, NewMetrics())
 			ctx := context.Background()
 			result, err := agg.AfterExecute(ctx, "bash", nil, tt.input, nil)
 			if err != nil {
@@ -104,7 +104,7 @@ FAIL    github.com/test [build failed]`,
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			extractor := NewGoBuildErrorExtractor(tt.level)
+			extractor := NewGoBuildErrorExtractor(tt.level, NewMetrics())
 			ctx := context.Background()
 
 			// AfterExecute only processes if there's an error, so we pass a non-nil error
@@ -174,7 +174,7 @@ Date:   Mon Jan 1 00:00:00 2026 +0000
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			compactor := NewGitLogCompactor(tt.level)
+			compactor := NewGitLogCompactor(tt.level, NewMetrics())
 			ctx := context.Background()
 			result, err := compactor.AfterExecute(ctx, "bash", nil, tt.input, nil)
 			if err != nil {
@@ -229,7 +229,7 @@ file2.go:3:2: error message C
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			grouper := NewLinterOutputGrouper(tt.level)
+			grouper := NewLinterOutputGrouper(tt.level, NewMetrics())
 			ctx := context.Background()
 			result, err := grouper.AfterExecute(ctx, "bash", nil, tt.input, nil)
 			if err != nil {
@@ -287,7 +287,7 @@ func TestCompressorTargets(t *testing.T) {
 PASS
 ok  	github.com/example/package	0.005s`
 
-	agg := NewGoTestAggregator(CompressionHigh)
+	agg := NewGoTestAggregator(CompressionHigh, NewMetrics())
 	ctx := context.Background()
 	result, _ := agg.AfterExecute(ctx, "bash", nil, testOutput, nil)
 	savings := float64(len(testOutput)-len(result)) / float64(len(testOutput))
@@ -304,7 +304,7 @@ go build example.com/cmd: "./main.go:10:5: undefined: nonexistent"
 # more noise about compilation
 FAIL    github.com/example/cmd  [build failed]`
 
-	extractor := NewGoBuildErrorExtractor(CompressionHigh)
+	extractor := NewGoBuildErrorExtractor(CompressionHigh, NewMetrics())
 	result, _ = extractor.AfterExecute(ctx, "bash", nil, buildOutput, errors.New("build failed"))
 	savings = float64(len(buildOutput)-len(result)) / float64(len(buildOutput))
 
