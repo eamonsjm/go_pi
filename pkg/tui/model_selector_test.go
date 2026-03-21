@@ -318,15 +318,24 @@ func TestRegisterModelCommand_WithKnownModel(t *testing.T) {
 		t.Fatal("expected command to return a tea.Cmd")
 	}
 	msg := result()
-	sel, ok := msg.(modelSelectedMsg)
-	if !ok {
-		t.Fatalf("expected modelSelectedMsg, got %T", msg)
-	}
-	if sel.model != "claude-sonnet-4-20250514" {
-		t.Errorf("expected model claude-sonnet-4-20250514, got %q", sel.model)
-	}
-	if sel.provider != "anthropic" {
-		t.Errorf("expected provider 'anthropic', got %q", sel.provider)
+	// Auth check may return CommandResultMsg if no credentials are configured.
+	switch m := msg.(type) {
+	case modelSelectedMsg:
+		if m.model != "claude-sonnet-4-20250514" {
+			t.Errorf("expected model claude-sonnet-4-20250514, got %q", m.model)
+		}
+		if m.provider != "anthropic" {
+			t.Errorf("expected provider 'anthropic', got %q", m.provider)
+		}
+	case CommandResultMsg:
+		if !m.IsError {
+			t.Error("expected auth error if not modelSelectedMsg")
+		}
+		if !strings.Contains(m.Text, "anthropic") {
+			t.Errorf("expected auth error to mention provider, got %q", m.Text)
+		}
+	default:
+		t.Fatalf("expected modelSelectedMsg or CommandResultMsg, got %T", msg)
 	}
 }
 
@@ -651,11 +660,20 @@ func TestRegisterModelCommand_CaseInsensitiveMatch(t *testing.T) {
 	// EqualFold should match regardless of case.
 	result := cmd.Execute("CLAUDE-SONNET-4-20250514")
 	msg := result()
-	sel, ok := msg.(modelSelectedMsg)
-	if !ok {
-		t.Fatalf("expected modelSelectedMsg, got %T", msg)
-	}
-	if sel.provider != "anthropic" {
-		t.Errorf("expected provider 'anthropic', got %q", sel.provider)
+	// Auth check may return CommandResultMsg if no credentials are configured.
+	switch m := msg.(type) {
+	case modelSelectedMsg:
+		if m.provider != "anthropic" {
+			t.Errorf("expected provider 'anthropic', got %q", m.provider)
+		}
+	case CommandResultMsg:
+		if !m.IsError {
+			t.Error("expected auth error if not modelSelectedMsg")
+		}
+		if !strings.Contains(m.Text, "anthropic") {
+			t.Errorf("expected auth error to mention provider, got %q", m.Text)
+		}
+	default:
+		t.Fatalf("expected modelSelectedMsg or CommandResultMsg, got %T", msg)
 	}
 }
