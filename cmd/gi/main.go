@@ -165,7 +165,10 @@ func main() {
 	if err := skill.LoadAll(skillRegistry, nil); err != nil {
 		log.Printf("Failed to load skills: %v", err)
 	}
-	_ = skillRegistry // TODO(gp-ej78): integrate with slash commands and Skill tool
+
+	// Register the Skill tool so the LLM can invoke skills programmatically.
+	skillTool := skill.NewSkillTool(skillRegistry, cfg.DefaultModel)
+	registry.Register(skillTool)
 
 	sessionDir := cfg.SessionDir
 	if sessionDir == "" {
@@ -195,7 +198,7 @@ func main() {
 		if providerErr != nil {
 			log.Fatalf("Cannot use print mode: %v", providerErr)
 		}
-		agentLoop := makeAgentLoop(provider, registry, cfg)
+		agentLoop := makeAgentLoop(provider, registry, cfg, skillRegistry)
 		sessionMgr.NewSession()
 		prompt := *printFlag
 		if initialPrompt != "" {
@@ -210,7 +213,7 @@ func main() {
 		if providerErr != nil {
 			log.Fatalf("Cannot use JSON mode: %v", providerErr)
 		}
-		agentLoop := makeAgentLoop(provider, registry, cfg)
+		agentLoop := makeAgentLoop(provider, registry, cfg, skillRegistry)
 		rpc.RunJSONStream(agentLoop, initialPrompt)
 		return
 	}
@@ -220,7 +223,7 @@ func main() {
 		if providerErr != nil {
 			log.Fatalf("Cannot use RPC mode: %v", providerErr)
 		}
-		agentLoop := makeAgentLoop(provider, registry, cfg)
+		agentLoop := makeAgentLoop(provider, registry, cfg, skillRegistry)
 		rpc.RunRPC(agentLoop)
 		return
 	}
@@ -228,16 +231,20 @@ func main() {
 	// Create agent loop - may be nil provider if no API key configured
 	var agentLoop *agent.AgentLoop
 	if provider != nil {
-		agentLoop = makeAgentLoop(provider, registry, cfg)
+		agentLoop = makeAgentLoop(provider, registry, cfg, skillRegistry)
 	} else {
 		// Create a placeholder loop with no provider — submitting will show the error
+		placeholderPrompt := buildSystemPrompt()
+		if idx := skill.SkillSystemReminder(skillRegistry); idx != "" {
+			placeholderPrompt += "\n\n<system-reminder>\n" + idx + "</system-reminder>"
+		}
 		agentLoop = agent.NewAgentLoop(
 			nil,
 			registry,
 			agent.WithModel(cfg.DefaultModel),
 			agent.WithMaxTokens(cfg.MaxTokens),
 			agent.WithThinking(ai.ThinkingLevel(cfg.ThinkingLevel)),
-			agent.WithSystemPrompt(buildSystemPrompt()),
+			agent.WithSystemPrompt(placeholderPrompt),
 		)
 	}
 
@@ -272,7 +279,7 @@ func main() {
 		}
 	}
 
-	runInteractive(agentLoop, sessionMgr, cfg, providerErr, pluginMgr, authStore, authResolver, restoredSessionID, restoredMsgs, initialPrompt)
+	runInteractive(agentLoop, sessionMgr, cfg, providerErr, pluginMgr, authStore, authResolver, skillRegistry, restoredSessionID, restoredMsgs, initialPrompt)
 }
 
 // setupAuth creates the auth store and resolver with registered OAuth providers.
@@ -478,18 +485,24 @@ func runPrintMode(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, promp
 	}
 }
 
-func makeAgentLoop(provider ai.Provider, registry *tools.Registry, cfg *config.Config) *agent.AgentLoop {
+func makeAgentLoop(provider ai.Provider, registry *tools.Registry, cfg *config.Config, skillReg *skill.Registry) *agent.AgentLoop {
+	systemPrompt := buildSystemPrompt()
+	if skillReg != nil {
+		if idx := skill.SkillSystemReminder(skillReg); idx != "" {
+			systemPrompt += "\n\n<system-reminder>\n" + idx + "</system-reminder>"
+		}
+	}
 	return agent.NewAgentLoop(
 		provider,
 		registry,
 		agent.WithModel(cfg.DefaultModel),
 		agent.WithMaxTokens(cfg.MaxTokens),
 		agent.WithThinking(ai.ThinkingLevel(cfg.ThinkingLevel)),
-		agent.WithSystemPrompt(buildSystemPrompt()),
+		agent.WithSystemPrompt(systemPrompt),
 	)
 }
 
-func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg *config.Config, providerErr error, pluginMgr *plugin.Manager, authStore *auth.Store, authResolver *auth.Resolver, restoredSessionID string, restoredMsgs []ai.Message, initialPrompt string) {
+func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg *config.Config, providerErr error, pluginMgr *plugin.Manager, authStore *auth.Store, authResolver *auth.Resolver, skillReg *skill.Registry, restoredSessionID string, restoredMsgs []ai.Message, initialPrompt string) {
 	// Create the application lifecycle context. This is cancelled when
 	// runInteractive returns, ensuring all background operations (such as
 	// compaction) are stopped when the user quits.
@@ -536,6 +549,39 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 							return tui.CommandResultMsg{Text: err.Error(), IsError: true}
 						}
 						return tui.CommandResultMsg{Text: text, IsError: isErr}
+					}
+				},
+			})
+		}
+	}
+
+	// Register user-invocable skills as slash commands.
+	if skillReg != nil {
+		for _, s := range skillReg.UserInvocable() {
+			s := s // capture for closure
+			app.RegisterCommand(&tui.SlashCommand{
+				Name:        s.Name,
+				Description: s.Description,
+				Execute: func(args string) tea.Cmd {
+					return func() tea.Msg {
+						body, err := s.LoadBody()
+						if err != nil {
+							return tui.CommandResultMsg{Text: fmt.Sprintf("Failed to load skill: %v", err), IsError: true}
+						}
+						argVars, err := skill.ParseSkillArgs(s.Arguments, args)
+						if err != nil {
+							return tui.CommandResultMsg{Text: err.Error(), IsError: true}
+						}
+						vars := skill.ContextVars(cfg.DefaultModel)
+						for k, v := range argVars {
+							vars[k] = v
+						}
+						rendered := skill.RenderTemplate(body, vars)
+						display := "/" + s.Name
+						if args != "" {
+							display += " " + args
+						}
+						return tui.SkillInvokeMsg{Display: display, Prompt: rendered}
 					}
 				},
 			})

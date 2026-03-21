@@ -62,6 +62,13 @@ type PluginUIRequestMsg struct {
 	UILevel    string   // For notify: "info" | "warning" | "error"
 }
 
+// SkillInvokeMsg carries an expanded skill prompt to be submitted as a new
+// agent turn. Sent by skill slash commands after parsing args and rendering.
+type SkillInvokeMsg struct {
+	Display string // what to show in chat (e.g. "/commit files")
+	Prompt  string // rendered prompt to send to agent
+}
+
 // PluginUIResponseMsg is sent by the TUI after the user responds to a dialog.
 type PluginUIResponseMsg struct {
 	PluginName string

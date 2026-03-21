@@ -387,6 +387,15 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, tickRender()
 
+	case SkillInvokeMsg:
+		a.chat.AddUserMessage(msg.Display)
+		a.agentRunning = true
+		a.editor.SetState(editorRunning)
+		if a.onSubmit != nil {
+			a.onSubmit(msg.Prompt)
+		}
+		return a, tickRender()
+
 	case editorCommandMsg:
 		cmd, ok := a.commands.Get(msg.name)
 		if !ok {
