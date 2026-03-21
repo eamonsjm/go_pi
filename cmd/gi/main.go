@@ -19,6 +19,7 @@ import (
 	"github.com/ejm/go_pi/pkg/plugin"
 	"github.com/ejm/go_pi/pkg/rpc"
 	"github.com/ejm/go_pi/pkg/session"
+	"github.com/ejm/go_pi/pkg/skill"
 	"github.com/ejm/go_pi/pkg/tools"
 	"github.com/ejm/go_pi/pkg/tui"
 )
@@ -158,6 +159,13 @@ func main() {
 			log.Printf("Failed to shutdown plugins: %v", err)
 		}
 	}()
+
+	// Load skills from all three tiers: built-in (embed) < user < project.
+	skillRegistry := skill.NewRegistry()
+	if err := skill.LoadAll(skillRegistry, nil); err != nil {
+		log.Printf("Failed to load skills: %v", err)
+	}
+	_ = skillRegistry // TODO(gp-ej78): integrate with slash commands and Skill tool
 
 	sessionDir := cfg.SessionDir
 	if sessionDir == "" {
