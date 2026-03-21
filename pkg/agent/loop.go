@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 
 	"github.com/ejm/go_pi/pkg/ai"
@@ -429,11 +430,13 @@ func (a *AgentLoop) executeTool(ctx context.Context, tc ai.ContentBlock) ai.Mess
 		if isError {
 			resultText = err.Error()
 		} else {
+			var sb strings.Builder
 			for _, b := range blocks {
 				if b.Type == ai.ContentTypeText {
-					resultText += b.Text
+					sb.WriteString(b.Text)
 				}
 			}
+			resultText = sb.String()
 		}
 
 		// Fire after-execution hooks

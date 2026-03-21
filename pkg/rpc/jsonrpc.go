@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"strings"
 	"os"
 	"os/signal"
 	"sync"
@@ -285,7 +286,7 @@ func (s *rpcServer) handlePrompt(req Request) {
 		close(done)
 	}()
 
-	var resultText string
+	var resultText strings.Builder
 	for event := range events {
 		ev := EventFromAgent(event)
 		s.sendNotification(Notification{
@@ -296,7 +297,7 @@ func (s *rpcServer) handlePrompt(req Request) {
 
 		// Accumulate assistant text for the final response.
 		if event.Type == agent.EventAssistantText {
-			resultText += event.Delta
+			resultText.WriteString(event.Delta)
 		}
 	}
 
@@ -317,7 +318,7 @@ func (s *rpcServer) handlePrompt(req Request) {
 	s.sendResponse(Response{
 		JSONRPC: "2.0",
 		ID:      req.ID,
-		Result:  PromptResult{Text: resultText},
+		Result:  PromptResult{Text: resultText.String()},
 	})
 }
 
