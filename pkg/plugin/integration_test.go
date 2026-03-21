@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -677,7 +678,10 @@ func TestUIRequest(t *testing.T) {
 	}
 
 	// Execute a tool that will send a UI request
+	var wg sync.WaitGroup
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		// Give the plugin time to send the UI request
 		time.Sleep(100 * time.Millisecond)
 		// Respond to the UI request with a value
@@ -707,5 +711,8 @@ func TestUIRequest(t *testing.T) {
 	// 4. Send ui_response back to plugin
 	// 5. Plugin completes tool_call with tool_result
 
+	// Wait for the response goroutine to finish before stopping the plugin,
+	// so t.Errorf is never called after the test returns.
+	wg.Wait()
 	p.Stop()
 }
