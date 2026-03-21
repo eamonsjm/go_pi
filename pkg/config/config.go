@@ -145,7 +145,7 @@ func mergeFromFile(cfg *Config, path string) error {
 		if os.IsNotExist(err) {
 			return nil
 		}
-		return err
+		return fmt.Errorf("read config %s: %w", path, err)
 	}
 
 	// Unmarshal into a temporary struct so that zero-value fields in the file
