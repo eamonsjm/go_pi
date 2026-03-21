@@ -50,12 +50,6 @@ type BranchInfo struct {
 	IsActive  bool      // Whether this is the current active branch
 }
 
-// BranchSummaryData is the Data payload for entries of type "branch_summary".
-type BranchSummaryData struct {
-	BranchLeafID string `json:"branch_leaf_id"`
-	Summary      string `json:"summary"`
-}
-
 // Manager handles session persistence using JSONL files.
 // All exported methods are safe for concurrent use.
 type Manager struct {
