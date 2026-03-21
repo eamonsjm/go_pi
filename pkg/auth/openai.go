@@ -52,7 +52,7 @@ func (o *OpenAIOAuth) Name() string { return "OpenAI (ChatGPT)" }
 
 // Login implements OAuthProvider.Login by starting a local HTTP server,
 // opening the browser for authorization, and waiting for the callback.
-func (o *OpenAIOAuth) Login(cb OAuthCallbacks) (*Credential, error) {
+func (o *OpenAIOAuth) Login(ctx context.Context, cb OAuthCallbacks) (*Credential, error) {
 	pkce, err := GeneratePKCE()
 	if err != nil {
 		return nil, fmt.Errorf("generate PKCE: %w", err)
@@ -145,7 +145,7 @@ func (o *OpenAIOAuth) Login(cb OAuthCallbacks) (*Credential, error) {
 		if result.err != nil {
 			return nil, result.err
 		}
-		cred, err := o.exchangeCode(result.code, pkce.Verifier)
+		cred, err := o.exchangeCode(ctx, result.code, pkce.Verifier)
 		if err != nil {
 			return nil, err
 		}
@@ -161,7 +161,7 @@ func (o *OpenAIOAuth) Login(cb OAuthCallbacks) (*Credential, error) {
 
 // exchangeCode exchanges an authorization code for tokens using
 // form-encoded POST to the token endpoint.
-func (o *OpenAIOAuth) exchangeCode(code, codeVerifier string) (*Credential, error) {
+func (o *OpenAIOAuth) exchangeCode(ctx context.Context, code, codeVerifier string) (*Credential, error) {
 	data := url.Values{}
 	data.Set("grant_type", "authorization_code")
 	data.Set("client_id", o.ClientID)
@@ -169,11 +169,13 @@ func (o *OpenAIOAuth) exchangeCode(code, codeVerifier string) (*Credential, erro
 	data.Set("redirect_uri", o.RedirectURI)
 	data.Set("code_verifier", codeVerifier)
 
-	resp, err := o.HTTPClient.Post(
-		o.TokenURL,
-		"application/x-www-form-urlencoded",
-		strings.NewReader(data.Encode()),
-	)
+	req, err := http.NewRequestWithContext(ctx, "POST", o.TokenURL, strings.NewReader(data.Encode()))
+	if err != nil {
+		return nil, fmt.Errorf("create token request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := o.HTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("token exchange: %w", err)
 	}
@@ -196,7 +198,7 @@ func (o *OpenAIOAuth) exchangeCode(code, codeVerifier string) (*Credential, erro
 }
 
 // RefreshToken implements OAuthProvider.RefreshToken.
-func (o *OpenAIOAuth) RefreshToken(cred *Credential) (*Credential, error) {
+func (o *OpenAIOAuth) RefreshToken(ctx context.Context, cred *Credential) (*Credential, error) {
 	if cred.RefreshToken == "" {
 		return nil, fmt.Errorf("no refresh token available")
 	}
@@ -206,11 +208,13 @@ func (o *OpenAIOAuth) RefreshToken(cred *Credential) (*Credential, error) {
 	data.Set("client_id", o.ClientID)
 	data.Set("refresh_token", cred.RefreshToken)
 
-	resp, err := o.HTTPClient.Post(
-		o.TokenURL,
-		"application/x-www-form-urlencoded",
-		strings.NewReader(data.Encode()),
-	)
+	req, err := http.NewRequestWithContext(ctx, "POST", o.TokenURL, strings.NewReader(data.Encode()))
+	if err != nil {
+		return nil, fmt.Errorf("create refresh request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := o.HTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("refresh request: %w", err)
 	}

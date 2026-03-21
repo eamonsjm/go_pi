@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -19,11 +20,11 @@ type mockProvider struct {
 func (m *mockProvider) ID() string   { return m.id }
 func (m *mockProvider) Name() string { return m.id }
 
-func (m *mockProvider) Login(_ OAuthCallbacks) (*Credential, error) {
+func (m *mockProvider) Login(_ context.Context, _ OAuthCallbacks) (*Credential, error) {
 	return nil, nil
 }
 
-func (m *mockProvider) RefreshToken(_ *Credential) (*Credential, error) {
+func (m *mockProvider) RefreshToken(_ context.Context, _ *Credential) (*Credential, error) {
 	if m.refreshErr != nil {
 		return nil, m.refreshErr
 	}
@@ -43,7 +44,7 @@ func TestResolve_Override(t *testing.T) {
 	r := NewResolver(s)
 	r.SetOverride("anthropic", "override-key")
 
-	got, err := r.Resolve("anthropic")
+	got, err := r.Resolve(context.Background(), "anthropic")
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -58,7 +59,7 @@ func TestResolve_StoredAPIKey(t *testing.T) {
 	s.Set("anthropic", &Credential{Type: CredentialAPIKey, Key: "stored-key"})
 	r := NewResolver(s)
 
-	got, err := r.Resolve("anthropic")
+	got, err := r.Resolve(context.Background(), "anthropic")
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -73,7 +74,7 @@ func TestResolve_EnvVar(t *testing.T) {
 	r := NewResolver(s)
 
 	t.Setenv("ANTHROPIC_API_KEY", "env-key")
-	got, err := r.Resolve("anthropic")
+	got, err := r.Resolve(context.Background(), "anthropic")
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -91,7 +92,7 @@ func TestResolve_Precedence(t *testing.T) {
 	t.Setenv("ANTHROPIC_API_KEY", "env-key")
 	r.SetOverride("anthropic", "override-key")
 
-	got, err := r.Resolve("anthropic")
+	got, err := r.Resolve(context.Background(), "anthropic")
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -116,7 +117,7 @@ func TestResolve_OAuthValid(t *testing.T) {
 		apiKey: "derived-api-key",
 	})
 
-	got, err := r.Resolve("anthropic")
+	got, err := r.Resolve(context.Background(), "anthropic")
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -150,7 +151,7 @@ func TestResolve_OAuthExpiredRefresh(t *testing.T) {
 		},
 	})
 
-	got, err := r.Resolve("anthropic")
+	got, err := r.Resolve(context.Background(), "anthropic")
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -199,7 +200,7 @@ func TestResolve_OAuthRefreshError_SurfacedNotSwallowed(t *testing.T) {
 	})
 
 	// OAuth refresh errors must be surfaced, not silently swallowed.
-	_, err := r.Resolve("anthropic")
+	_, err := r.Resolve(context.Background(), "anthropic")
 	if err == nil {
 		t.Fatal("expected error when OAuth refresh fails, got nil")
 	}
@@ -233,7 +234,7 @@ func TestResolve_OAuthRefreshError_EnvVarNotUsedAsFallback(t *testing.T) {
 
 	// Even with an env var set, OAuth errors must not silently fall through.
 	t.Setenv("ANTHROPIC_API_KEY", "env-key")
-	_, err := r.Resolve("anthropic")
+	_, err := r.Resolve(context.Background(), "anthropic")
 	if err == nil {
 		t.Fatal("expected error — OAuth refresh failure should not fall through to env var")
 	}
@@ -247,7 +248,7 @@ func TestResolve_Empty(t *testing.T) {
 	// Clear env vars.
 	t.Setenv("ANTHROPIC_API_KEY", "")
 
-	got, err := r.Resolve("anthropic")
+	got, err := r.Resolve(context.Background(), "anthropic")
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}

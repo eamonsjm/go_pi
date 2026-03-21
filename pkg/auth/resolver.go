@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -59,7 +60,7 @@ func (r *Resolver) IsOAuthToken(provider string) bool {
 // Resolve returns a usable API key for the given provider by walking
 // the resolution chain. Returns an error only if resolution fails at every
 // level; an empty key with nil error means no credentials are configured.
-func (r *Resolver) Resolve(provider string) (string, error) {
+func (r *Resolver) Resolve(ctx context.Context, provider string) (string, error) {
 	// 1. CLI override.
 	if key, ok := r.overrides[provider]; ok && key != "" {
 		return key, nil
@@ -67,7 +68,7 @@ func (r *Resolver) Resolve(provider string) (string, error) {
 
 	// 2-3. Stored credential (API key or OAuth).
 	if cred := r.store.Get(provider); cred != nil {
-		key, err := r.resolveCredential(provider, cred)
+		key, err := r.resolveCredential(ctx, provider, cred)
 		if err == nil && key != "" {
 			return key, nil
 		}
@@ -91,13 +92,13 @@ func (r *Resolver) Resolve(provider string) (string, error) {
 }
 
 // resolveCredential handles stored credential types.
-func (r *Resolver) resolveCredential(provider string, cred *Credential) (string, error) {
+func (r *Resolver) resolveCredential(ctx context.Context, provider string, cred *Credential) (string, error) {
 	switch cred.Type {
 	case CredentialAPIKey:
 		return cred.ResolveKey()
 
 	case CredentialOAuth:
-		return r.resolveOAuth(provider, cred)
+		return r.resolveOAuth(ctx, provider, cred)
 
 	default:
 		return "", fmt.Errorf("unknown credential type %q for %s", cred.Type, provider)
@@ -105,7 +106,7 @@ func (r *Resolver) resolveCredential(provider string, cred *Credential) (string,
 }
 
 // resolveOAuth handles OAuth credentials, refreshing if expired.
-func (r *Resolver) resolveOAuth(provider string, cred *Credential) (string, error) {
+func (r *Resolver) resolveOAuth(ctx context.Context, provider string, cred *Credential) (string, error) {
 	if !cred.IsExpired() {
 		p, ok := r.providers[provider]
 		if ok {
@@ -134,7 +135,7 @@ func (r *Resolver) resolveOAuth(provider string, cred *Credential) (string, erro
 		}
 
 		// Still expired — do the refresh.
-		refreshed, err := p.RefreshToken(cred)
+		refreshed, err := p.RefreshToken(ctx, cred)
 		if err != nil {
 			return fmt.Errorf("token refresh: %w", err)
 		}

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 	"runtime"
@@ -91,7 +92,7 @@ func NewLoginCommand(store *auth.Store, resolver *auth.Resolver) *SlashCommand {
 					resultCh := make(chan loginResult, 1)
 
 					go func() {
-						cred, err := oauthProv.Login(auth.OAuthCallbacks{
+						cred, err := oauthProv.Login(context.TODO(), auth.OAuthCallbacks{
 							OnAuth: func(url, _ string) {
 								urlCh <- url
 							},
@@ -185,7 +186,7 @@ func NewLoginCommand(store *auth.Store, resolver *auth.Resolver) *SlashCommand {
 							}
 						}
 
-						cred, err := anthProv.ExchangeCode(session, code)
+						cred, err := anthProv.ExchangeCode(context.TODO(), session, code)
 						if err != nil {
 							return CommandResultMsg{
 								Text:    fmt.Sprintf("Login failed: %v", err),
@@ -260,7 +261,7 @@ func NewAuthStatusCommand(store *auth.Store, resolver *auth.Resolver) *SlashComm
 				}
 				sort.Strings(providers)
 				for _, p := range providers {
-					key, _ := resolver.Resolve(p)
+					key, _ := resolver.Resolve(context.TODO(), p)
 					cred := store.Get(p)
 
 					if key != "" {

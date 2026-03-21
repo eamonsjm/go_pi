@@ -191,7 +191,7 @@ func main() {
 	}
 
 	// Resolve provider (may fail if no API key — that's ok for interactive mode)
-	provider, providerErr := resolveProvider(cfg, authResolver)
+	provider, providerErr := resolveProvider(context.Background(), cfg, authResolver)
 
 	// Print mode requires a working provider
 	if *printFlag != "" {
@@ -299,12 +299,12 @@ func setupAuth() (*auth.Store, *auth.Resolver, error) {
 	return store, resolver, nil
 }
 
-func resolveProvider(cfg *config.Config, resolver *auth.Resolver) (ai.Provider, error) {
+func resolveProvider(ctx context.Context, cfg *config.Config, resolver *auth.Resolver) (ai.Provider, error) {
 	providerName := cfg.DefaultProvider
 	if providerName == "" {
 		// Auto-detect based on available credentials.
 		for _, name := range []string{"anthropic", "openrouter", "openai", "gemini", "azure"} {
-			key, _ := resolver.Resolve(name)
+			key, _ := resolver.Resolve(ctx, name)
 			if key != "" {
 				providerName = name
 				break
@@ -354,7 +354,7 @@ func resolveProvider(cfg *config.Config, resolver *auth.Resolver) (ai.Provider, 
 		return ai.NewOllamaProvider(os.Getenv("OLLAMA_HOST"))
 	}
 
-	key, err := resolver.Resolve(providerName)
+	key, err := resolver.Resolve(ctx, providerName)
 	if err != nil {
 		return nil, fmt.Errorf("resolve %s credentials: %w", providerName, err)
 	}
@@ -526,7 +526,7 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 		}
 	})
 	app.SetLoginSuccessCallback(func(providerName string) {
-		p, err := resolveProvider(cfg, authResolver)
+		p, err := resolveProvider(context.Background(), cfg, authResolver)
 		if err != nil {
 			log.Printf("Failed to resolve provider after login: %v", err)
 			return
