@@ -596,6 +596,7 @@ func startTestPlugin(t *testing.T, mode string) *PluginProcess {
 		spawnCmd:    func() *exec.Cmd { return helperPluginCmd(mode) },
 		cmd:         cmd,
 		stdin:       stdinPipe,
+		stdout:      stdoutPipe,
 		scanner:     scanner,
 		injectCh:    make(chan PluginMessage, 64),
 		responseCh:  make(chan PluginMessage, 16),

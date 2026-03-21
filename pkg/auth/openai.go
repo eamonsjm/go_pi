@@ -133,7 +133,11 @@ func (o *OpenAIOAuth) Login(cb OAuthCallbacks) (*Credential, error) {
 		_ = server.Serve(listener)
 	}()
 	defer func() {
-		_ = server.Shutdown(context.Background())
+		// Use a timeout so Shutdown doesn't block indefinitely if a
+		// request handler is stuck.
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer shutdownCancel()
+		_ = server.Shutdown(shutdownCtx)
 	}()
 
 	select {

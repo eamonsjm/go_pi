@@ -14,6 +14,36 @@ import (
 	"github.com/ejm/go_pi/pkg/agent"
 )
 
+// stdinProxy copies os.Stdin into an io.Pipe and cancels the context when
+// stdin reaches EOF (connection drop). This allows the RPC server to detect
+// disconnection even while a prompt is executing.
+type stdinProxy struct {
+	pr     *io.PipeReader
+	pw     *io.PipeWriter
+	cancel context.CancelFunc
+	done   chan struct{}
+}
+
+func newStdinProxy(cancel context.CancelFunc) *stdinProxy {
+	pr, pw := io.Pipe()
+	sp := &stdinProxy{pr: pr, pw: pw, cancel: cancel, done: make(chan struct{})}
+	go sp.copy()
+	return sp
+}
+
+func (sp *stdinProxy) copy() {
+	defer close(sp.done)
+	_, _ = io.Copy(sp.pw, os.Stdin)
+	sp.pw.Close()
+	sp.cancel() // stdin closed — cancel running prompts
+}
+
+// close shuts down the proxy, unblocking any pending scanner reads.
+func (sp *stdinProxy) close() {
+	sp.pr.Close()
+	<-sp.done
+}
+
 // JSON-RPC 2.0 types.
 
 // Request is a JSON-RPC 2.0 request.
@@ -76,12 +106,25 @@ func RunRPC(agentLoop *agent.AgentLoop) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// Handle OS interrupt. The goroutine exits via ctx.Done when the
+	// server shuts down, and signal.Stop unregisters the channel so the
+	// runtime can reclaim it.
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt)
 	go func() {
-		<-sigCh
-		cancel()
+		select {
+		case <-sigCh:
+			cancel()
+		case <-ctx.Done():
+		}
+		signal.Stop(sigCh)
 	}()
+
+	// Proxy stdin so we detect connection drops (EOF) even while a
+	// prompt is executing. Without this, a disconnected client leaves
+	// the Prompt goroutine running indefinitely.
+	proxy := newStdinProxy(cancel)
+	defer proxy.close()
 
 	s := &rpcServer{
 		agentLoop: agentLoop,
@@ -89,7 +132,7 @@ func RunRPC(agentLoop *agent.AgentLoop) {
 		cancel:    cancel,
 		writer:    os.Stdout,
 	}
-	s.serve(os.Stdin)
+	s.serve(proxy.pr)
 }
 
 type rpcServer struct {

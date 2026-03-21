@@ -79,6 +79,10 @@ func NewLoginCommand(store *auth.Store, resolver *auth.Resolver) *SlashCommand {
 					// server. Capture the authorize URL via OnAuth so the TUI can
 					// display it and open the browser. Login() runs in a background
 					// goroutine; the waitCmd blocks until the callback completes.
+					//
+					// The goroutine's lifetime is bounded by Login's internal
+					// timeout. Channels are buffered so the goroutine never blocks
+					// on sends, even if the TUI exits before reading the result.
 					type loginResult struct {
 						cred *auth.Credential
 						err  error

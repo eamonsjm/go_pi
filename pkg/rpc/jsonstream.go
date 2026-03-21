@@ -19,11 +19,17 @@ func RunJSONStream(agentLoop *agent.AgentLoop, prompt string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// Handle OS interrupt. The goroutine exits via ctx.Done when the
+	// stream ends, and signal.Stop unregisters the channel.
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt)
 	go func() {
-		<-sigCh
-		cancel()
+		select {
+		case <-sigCh:
+			cancel()
+		case <-ctx.Done():
+		}
+		signal.Stop(sigCh)
 	}()
 
 	if prompt == "" {
@@ -50,7 +56,9 @@ func RunJSONStream(agentLoop *agent.AgentLoop, prompt string) {
 	enc := json.NewEncoder(os.Stdout)
 	events := agentLoop.Events()
 
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		_ = agentLoop.Prompt(ctx, prompt)
 	}()
 
@@ -59,7 +67,12 @@ func RunJSONStream(agentLoop *agent.AgentLoop, prompt string) {
 		enc.Encode(ev) //nolint: errcheck
 
 		if event.Type == agent.EventAgentEnd || event.Type == agent.EventAgentError {
-			return
+			break
 		}
 	}
+
+	// Wait for the Prompt goroutine to finish so it doesn't outlive this
+	// function. Context cancellation (via defer cancel above) ensures
+	// Prompt returns promptly even if the event loop exited early.
+	<-done
 }

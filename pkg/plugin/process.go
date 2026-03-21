@@ -69,6 +69,7 @@ type PluginProcess struct {
 	spawnCmd     func() *exec.Cmd // creates the exec.Cmd for (re)spawning
 	cmd          *exec.Cmd
 	stdin        io.WriteCloser
+	stdout       io.ReadCloser // stored so we can close it to unblock readLoop
 	scanner      *bufio.Scanner
 	tools        []ToolDef
 	commands     []CommandDef
@@ -146,6 +147,7 @@ func startPlugin(name, path string) (*PluginProcess, error) {
 		spawnCmd:    func() *exec.Cmd { return exec.Command(path) },
 		cmd:         cmd,
 		stdin:       stdinPipe,
+		stdout:      stdoutPipe,
 		scanner:     scanner,
 		injectCh:    make(chan PluginMessage, 64),
 		responseCh:  make(chan PluginMessage, 16),
@@ -506,6 +508,10 @@ func (p *PluginProcess) Stop() error {
 	// Unsupervised path (original behavior).
 	_ = p.sendShutdownDirect()
 	_ = p.stdin.Close()
+	// Close stdout to unblock readLoop if the process doesn't exit promptly.
+	if p.stdout != nil {
+		_ = p.stdout.Close()
+	}
 
 	done := make(chan error, 1)
 	go func() {
@@ -543,6 +549,7 @@ func (p *PluginProcess) sendShutdownDirect() error {
 func (p *PluginProcess) shutdownCurrentProcess() {
 	p.mu.Lock()
 	stdin := p.stdin
+	stdout := p.stdout
 	p.mu.Unlock()
 
 	data, err := json.Marshal(HostMessage{Type: "shutdown"})
@@ -555,6 +562,10 @@ func (p *PluginProcess) shutdownCurrentProcess() {
 		}
 	}
 	_ = stdin.Close()
+	// Close stdout to unblock readLoop if the process doesn't exit promptly.
+	if stdout != nil {
+		_ = stdout.Close()
+	}
 }
 
 // isTimeout returns true if the error is a timeout from waitResponse.
@@ -796,6 +807,7 @@ func (p *PluginProcess) respawn() error {
 	p.mu.Lock()
 	p.cmd = cmd
 	p.stdin = stdinPipe
+	p.stdout = stdoutPipe
 	p.scanner = scanner
 	p.injectCh = newInjectCh
 	p.responseCh = newResponseCh
