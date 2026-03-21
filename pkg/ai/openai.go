@@ -212,7 +212,7 @@ func mapToOpenAIMessage(m Message) (oaiMessage, error) {
 	// Build text content, image content, and tool calls.
 	textParts := make([]string, 0, len(m.Content))
 	contentParts := make([]oaiContentPart, 0, len(m.Content))
-	toolCalls := make([]oaiToolCall, 0)
+	toolCalls := make([]oaiToolCall, 0, len(m.Content))
 	hasImages := false
 
 	for _, cb := range m.Content {

@@ -111,7 +111,7 @@ func mapNormalizedRange(s string, normFn func(string) string, normStart, normEnd
 	// Find which lines contain the match.
 	startLine := -1
 	endLine := -1
-	var lineNormOffsets []int // normOffset at start of each line
+	lineNormOffsets := make([]int, 0, len(lines)) // normOffset at start of each line
 
 	for i, line := range lines {
 		normLine := normFn(line)
