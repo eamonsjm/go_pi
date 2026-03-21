@@ -3,6 +3,7 @@ package plugin
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 )
 
@@ -46,7 +47,7 @@ func (t *PluginTool) Execute(ctx context.Context, params map[string]any) (string
 	}
 
 	if isError {
-		return "", fmt.Errorf("%s", content)
+		return "", errors.New(content)
 	}
 
 	return content, nil
