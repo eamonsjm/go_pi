@@ -26,7 +26,17 @@ func RunJSONStream(agentLoop *agent.AgentLoop, prompt string) {
 	}()
 
 	if prompt == "" {
-		prompt = readStdin()
+		info, err := os.Stdin.Stat()
+		if err == nil && info.Mode()&os.ModeCharDevice == 0 {
+			scanner := bufio.NewScanner(os.Stdin)
+			scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
+			for scanner.Scan() {
+				if prompt != "" {
+					prompt += "\n"
+				}
+				prompt += scanner.Text()
+			}
+		}
 		if prompt == "" {
 			data, _ := json.Marshal(Event{Type: "error", Error: "no prompt provided"})
 			_, _ = fmt.Fprintf(os.Stdout, "%s\n", data)
@@ -49,22 +59,4 @@ func RunJSONStream(agentLoop *agent.AgentLoop, prompt string) {
 			return
 		}
 	}
-}
-
-func readStdin() string {
-	info, err := os.Stdin.Stat()
-	if err != nil || info.Mode()&os.ModeCharDevice != 0 {
-		// stdin is a terminal, not piped — return empty.
-		return ""
-	}
-	scanner := bufio.NewScanner(os.Stdin)
-	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
-	var text string
-	for scanner.Scan() {
-		if text != "" {
-			text += "\n"
-		}
-		text += scanner.Text()
-	}
-	return text
 }
