@@ -2,8 +2,20 @@ package ai
 
 import (
 	"context"
+	"fmt"
 	"strings"
+	"sync/atomic"
 )
+
+// toolCallCounter is a global atomic counter for generating unique tool call IDs
+// across all concurrent streams. Providers that don't receive tool call IDs from
+// the API (e.g., Gemini, Ollama) use this to avoid ID collisions.
+var toolCallCounter atomic.Int64
+
+// nextToolCallID returns a globally unique tool call ID with the given prefix.
+func nextToolCallID(prefix string) string {
+	return fmt.Sprintf("%s_%d", prefix, toolCallCounter.Add(1))
+}
 
 // Role represents a message role in the conversation.
 type Role string

@@ -298,7 +298,7 @@ func (p *OllamaProvider) readStream(ctx context.Context, body io.ReadCloser, ch 
 
 		// Tool calls — Ollama emits complete tool calls in a single chunk.
 		for _, tc := range chunk.Message.ToolCalls {
-			callID := fmt.Sprintf("ollama_call_%d", toolCallIdx)
+			callID := nextToolCallID("ollama_call")
 			toolCallIdx++
 
 			ch <- StreamEvent{
