@@ -75,8 +75,9 @@ type PluginProcess struct {
 	commands     []CommandDef
 	capabilities []string
 
-	mu     sync.Mutex
-	closed bool
+	mu           sync.Mutex
+	closed       bool
+	shutdownOnce sync.Once // ensures shutdownCurrentProcess runs at most once during Stop
 
 	// injectCh receives inject_message and log messages from the background reader.
 	injectCh chan PluginMessage
@@ -496,8 +497,9 @@ func (p *PluginProcess) Stop() error {
 		// Cancel pending restarts and signal the supervisor to stop.
 		p.cancel()
 
-		// Send shutdown to the current process.
-		p.shutdownCurrentProcess()
+		// Send shutdown to the current process. Use shutdownOnce because
+		// the supervisor's ctx.Done handler may also attempt shutdown.
+		p.shutdownOnce.Do(p.shutdownCurrentProcess)
 
 		// Wait for the supervisor goroutine to finish.
 		<-p.stopped
@@ -505,22 +507,36 @@ func (p *PluginProcess) Stop() error {
 	}
 
 	// Unsupervised path (original behavior).
-	if err := p.sendShutdownDirect(); err != nil {
-		log.Printf("plugin %s: cleanup: failed to send shutdown: %v", p.name, err)
+	// Capture fields under lock so concurrent goroutines (e.g. handleTimeout)
+	// cannot observe a partially-torn-down state.
+	p.mu.Lock()
+	cmd := p.cmd
+	stdin := p.stdin
+	stdout := p.stdout
+	p.mu.Unlock()
+
+	// Send shutdown directly (bypass Send's closed check).
+	if data, err := json.Marshal(HostMessage{Type: "shutdown"}); err != nil {
+		log.Printf("plugin %s: cleanup: failed to marshal shutdown: %v", p.name, err)
+	} else {
+		data = append(data, '\n')
+		if _, err := stdin.Write(data); err != nil {
+			log.Printf("plugin %s: cleanup: failed to send shutdown: %v", p.name, err)
+		}
 	}
-	if err := p.stdin.Close(); err != nil {
+	if err := stdin.Close(); err != nil {
 		log.Printf("plugin %s: cleanup: failed to close stdin: %v", p.name, err)
 	}
 	// Close stdout to unblock readLoop if the process doesn't exit promptly.
-	if p.stdout != nil {
-		if err := p.stdout.Close(); err != nil {
+	if stdout != nil {
+		if err := stdout.Close(); err != nil {
 			log.Printf("plugin %s: cleanup: failed to close stdout: %v", p.name, err)
 		}
 	}
 
 	done := make(chan error, 1)
 	go func() {
-		done <- p.cmd.Wait()
+		done <- cmd.Wait()
 	}()
 
 	timer := time.NewTimer(shutdownTimeout)
@@ -530,25 +546,13 @@ func (p *PluginProcess) Stop() error {
 	case err := <-done:
 		return err
 	case <-timer.C:
-		if p.cmd.Process != nil {
-			if err := p.cmd.Process.Kill(); err != nil {
+		if cmd.Process != nil {
+			if err := cmd.Process.Kill(); err != nil {
 				log.Printf("plugin %s: cleanup: failed to kill process after shutdown timeout: %v", p.name, err)
 			}
 		}
 		return fmt.Errorf("plugin %s: killed after shutdown timeout", p.name)
 	}
-}
-
-// sendShutdownDirect writes a shutdown message directly to stdin, bypassing
-// the Send method's closed check. Used during Stop when p.closed is already true.
-func (p *PluginProcess) sendShutdownDirect() error {
-	data, err := json.Marshal(HostMessage{Type: "shutdown"})
-	if err != nil {
-		return err
-	}
-	data = append(data, '\n')
-	_, err = p.stdin.Write(data)
-	return err
 }
 
 // shutdownCurrentProcess sends a shutdown message and closes stdin for the
@@ -769,7 +773,9 @@ func (p *PluginProcess) waitAndSupervise(ctx context.Context) {
 		case <-ctx.Done():
 			// Stop requested while process is still running.
 			// Shutdown the current process and wait for it to exit.
-			p.shutdownCurrentProcess()
+			// Use shutdownOnce to avoid racing with Stop() which may
+			// have already called shutdownCurrentProcess.
+			p.shutdownOnce.Do(p.shutdownCurrentProcess)
 
 			timer := time.NewTimer(shutdownTimeout)
 			select {
@@ -781,7 +787,7 @@ func (p *PluginProcess) waitAndSupervise(ctx context.Context) {
 				p.mu.Lock()
 				cmd := p.cmd
 				p.mu.Unlock()
-				if cmd.Process != nil {
+				if cmd != nil && cmd.Process != nil {
 					if err := cmd.Process.Kill(); err != nil {
 						log.Printf("plugin %s: cleanup: failed to kill process during shutdown: %v", p.name, err)
 					}
