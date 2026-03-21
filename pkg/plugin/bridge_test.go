@@ -132,7 +132,10 @@ func TestPluginTool_Execute_CommunicationError(t *testing.T) {
 func TestRandomID_Unique(t *testing.T) {
 	seen := make(map[string]bool)
 	for i := 0; i < 100; i++ {
-		id := randomID()
+		id, err := randomID()
+		if err != nil {
+			t.Fatalf("randomID() returned error: %v", err)
+		}
 		if !strings.HasPrefix(id, "plugin_") {
 			t.Fatalf("id %q does not have plugin_ prefix", id)
 		}

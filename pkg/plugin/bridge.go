@@ -40,7 +40,10 @@ func (t *PluginTool) Execute(ctx context.Context, params map[string]any) (string
 		return "", fmt.Errorf("plugin %s is not running", t.process.name)
 	}
 
-	id := randomID()
+	id, err := randomID()
+	if err != nil {
+		return "", fmt.Errorf("plugin tool %s: %w", t.def.Name, err)
+	}
 	content, isError, err := t.process.ExecuteTool(id, t.def.Name, params)
 	if err != nil {
 		return "", fmt.Errorf("plugin tool %s: %w", t.def.Name, err)
@@ -63,10 +66,10 @@ type PluginCommand struct {
 
 // randomID generates a random hex string suitable for correlating tool call
 // requests and responses.
-func randomID() string {
+func randomID() (string, error) {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
-		panic("crypto/rand.Read failed: " + err.Error())
+		return "", fmt.Errorf("crypto/rand.Read failed: %w", err)
 	}
-	return fmt.Sprintf("plugin_%x", b)
+	return fmt.Sprintf("plugin_%x", b), nil
 }
