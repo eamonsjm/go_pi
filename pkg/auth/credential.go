@@ -92,6 +92,14 @@ func resolveKeyValue(val string) (string, error) {
 	return val, nil
 }
 
+// resolveCommand executes a shell command and returns its trimmed stdout.
+// Results are cached for the lifetime of the process.
+//
+// Security boundary: cmd comes from the user's auth config file (~/.gi/auth.json),
+// which is written with 0600 permissions and verified on load (see Store.Load).
+// The config file IS the trust boundary — if an attacker can write to it, they
+// already have the user's credentials. The !command feature is intentional for
+// password-manager integration (e.g., "!pass show anthropic-key").
 func resolveCommand(cmd string) (string, error) {
 	cmd = strings.TrimSpace(cmd)
 	if cmd == "" {
