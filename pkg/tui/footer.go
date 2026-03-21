@@ -124,10 +124,3 @@ func estimateCost(u ai.Usage) float64 {
 func lipglossWidth(s string) int {
 	return ansi.StringWidth(s)
 }
-
-// stripAnsi removes all ANSI escape sequences from s, returning only the
-// printable content. Delegates to charmbracelet/x/ansi which correctly
-// handles CSI parameter bytes, OSC sequences, and other escape types.
-func stripAnsi(s string) string {
-	return ansi.Strip(s)
-}
