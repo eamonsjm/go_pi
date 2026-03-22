@@ -12,10 +12,10 @@ func TestModelSelector_NewModelSelector(t *testing.T) {
 	if ms.visible {
 		t.Error("expected not visible initially")
 	}
-	if len(ms.models) != len(defaultModels) {
-		t.Errorf("expected %d models, got %d", len(defaultModels), len(ms.models))
+	if len(ms.models) != len(getDefaultModels()) {
+		t.Errorf("expected %d models, got %d", len(getDefaultModels()), len(ms.models))
 	}
-	if len(ms.filtered) != len(defaultModels) {
+	if len(ms.filtered) != len(getDefaultModels()) {
 		t.Errorf("expected all models in filtered, got %d", len(ms.filtered))
 	}
 }
@@ -167,11 +167,11 @@ func TestModelSelector_Update_Enter(t *testing.T) {
 		t.Fatalf("expected modelSelectedMsg, got %T", msg)
 	}
 	// First model should be selected (cursor=0).
-	if sel.model != defaultModels[0].Model {
-		t.Errorf("expected %q, got %q", defaultModels[0].Model, sel.model)
+	if sel.model != getDefaultModels()[0].Model {
+		t.Errorf("expected %q, got %q", getDefaultModels()[0].Model, sel.model)
 	}
-	if sel.provider != defaultModels[0].Provider {
-		t.Errorf("expected provider %q, got %q", defaultModels[0].Provider, sel.provider)
+	if sel.provider != getDefaultModels()[0].Provider {
+		t.Errorf("expected provider %q, got %q", getDefaultModels()[0].Provider, sel.provider)
 	}
 }
 

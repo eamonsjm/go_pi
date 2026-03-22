@@ -46,7 +46,7 @@ func NewHotkeysCommand(kb *KeybindingConfig) *SlashCommand {
 			// Customizable bindings.
 			sb.WriteString("\n  Customizable:\n")
 			for _, b := range kb.AllBindings() {
-				desc := actionDescriptions[b.Action]
+				desc := actionDescription(b.Action)
 				if desc == "" {
 					desc = string(b.Action)
 				}

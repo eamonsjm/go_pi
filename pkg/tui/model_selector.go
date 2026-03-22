@@ -45,40 +45,43 @@ type ModelOption struct {
 // Default model catalogue
 // ---------------------------------------------------------------------------
 
-var defaultModels = []ModelOption{
-	// Anthropic Claude models (latest)
-	{Provider: "anthropic", Model: "claude-opus-4-6", Label: "Claude Opus 4.6 (latest)"},
-	{Provider: "anthropic", Model: "claude-sonnet-4-6", Label: "Claude Sonnet 4.6 (latest)"},
-	{Provider: "anthropic", Model: "claude-haiku-4-5-20251001", Label: "Claude Haiku 4.5"},
+// getDefaultModels returns the default model catalogue.
+func getDefaultModels() []ModelOption {
+	return []ModelOption{
+		// Anthropic Claude models (latest)
+		{Provider: "anthropic", Model: "claude-opus-4-6", Label: "Claude Opus 4.6 (latest)"},
+		{Provider: "anthropic", Model: "claude-sonnet-4-6", Label: "Claude Sonnet 4.6 (latest)"},
+		{Provider: "anthropic", Model: "claude-haiku-4-5-20251001", Label: "Claude Haiku 4.5"},
 
-	// Anthropic Claude models (previous generation)
-	{Provider: "anthropic", Model: "claude-sonnet-4-20250514", Label: "Claude Sonnet 4"},
-	{Provider: "anthropic", Model: "claude-opus-4-20250514", Label: "Claude Opus 4"},
+		// Anthropic Claude models (previous generation)
+		{Provider: "anthropic", Model: "claude-sonnet-4-20250514", Label: "Claude Sonnet 4"},
+		{Provider: "anthropic", Model: "claude-opus-4-20250514", Label: "Claude Opus 4"},
 
-	// OpenAI models
-	{Provider: "openai", Model: "gpt-4.1", Label: "GPT-4.1"},
-	{Provider: "openai", Model: "gpt-4.1-mini", Label: "GPT-4.1 Mini"},
-	{Provider: "openai", Model: "gpt-4.1-nano", Label: "GPT-4.1 Nano"},
-	{Provider: "openai", Model: "gpt-4o", Label: "GPT-4o"},
-	{Provider: "openai", Model: "gpt-4o-mini", Label: "GPT-4o Mini"},
-	{Provider: "openai", Model: "o3", Label: "o3"},
-	{Provider: "openai", Model: "o4-mini", Label: "o4 Mini"},
-	{Provider: "openai", Model: "o3-mini", Label: "o3 Mini"},
+		// OpenAI models
+		{Provider: "openai", Model: "gpt-4.1", Label: "GPT-4.1"},
+		{Provider: "openai", Model: "gpt-4.1-mini", Label: "GPT-4.1 Mini"},
+		{Provider: "openai", Model: "gpt-4.1-nano", Label: "GPT-4.1 Nano"},
+		{Provider: "openai", Model: "gpt-4o", Label: "GPT-4o"},
+		{Provider: "openai", Model: "gpt-4o-mini", Label: "GPT-4o Mini"},
+		{Provider: "openai", Model: "o3", Label: "o3"},
+		{Provider: "openai", Model: "o4-mini", Label: "o4 Mini"},
+		{Provider: "openai", Model: "o3-mini", Label: "o3 Mini"},
 
-	// Google Gemini models
-	{Provider: "gemini", Model: "gemini-2.5-pro", Label: "Gemini 2.5 Pro"},
-	{Provider: "gemini", Model: "gemini-2.5-flash", Label: "Gemini 2.5 Flash"},
-	{Provider: "gemini", Model: "gemini-2.0-flash", Label: "Gemini 2.0 Flash"},
-	{Provider: "gemini", Model: "gemini-1.5-pro", Label: "Gemini 1.5 Pro"},
-	{Provider: "gemini", Model: "gemini-1.5-flash", Label: "Gemini 1.5 Flash"},
+		// Google Gemini models
+		{Provider: "gemini", Model: "gemini-2.5-pro", Label: "Gemini 2.5 Pro"},
+		{Provider: "gemini", Model: "gemini-2.5-flash", Label: "Gemini 2.5 Flash"},
+		{Provider: "gemini", Model: "gemini-2.0-flash", Label: "Gemini 2.0 Flash"},
+		{Provider: "gemini", Model: "gemini-1.5-pro", Label: "Gemini 1.5 Pro"},
+		{Provider: "gemini", Model: "gemini-1.5-flash", Label: "Gemini 1.5 Flash"},
 
-	// OpenRouter (proxy for multiple providers)
-	{Provider: "openrouter", Model: "anthropic/claude-opus-4-6", Label: "Claude Opus 4.6 (OpenRouter)"},
-	{Provider: "openrouter", Model: "anthropic/claude-sonnet-4-6", Label: "Claude Sonnet 4.6 (OpenRouter)"},
-	{Provider: "openrouter", Model: "openai/gpt-4.1", Label: "GPT-4.1 (OpenRouter)"},
-	{Provider: "openrouter", Model: "openai/gpt-4o", Label: "GPT-4o (OpenRouter)"},
-	{Provider: "openrouter", Model: "google/gemini-2.5-pro", Label: "Gemini 2.5 Pro (OpenRouter)"},
-	{Provider: "openrouter", Model: "google/gemini-2.5-flash", Label: "Gemini 2.5 Flash (OpenRouter)"},
+		// OpenRouter (proxy for multiple providers)
+		{Provider: "openrouter", Model: "anthropic/claude-opus-4-6", Label: "Claude Opus 4.6 (OpenRouter)"},
+		{Provider: "openrouter", Model: "anthropic/claude-sonnet-4-6", Label: "Claude Sonnet 4.6 (OpenRouter)"},
+		{Provider: "openrouter", Model: "openai/gpt-4.1", Label: "GPT-4.1 (OpenRouter)"},
+		{Provider: "openrouter", Model: "openai/gpt-4o", Label: "GPT-4o (OpenRouter)"},
+		{Provider: "openrouter", Model: "google/gemini-2.5-pro", Label: "Gemini 2.5 Pro (OpenRouter)"},
+		{Provider: "openrouter", Model: "google/gemini-2.5-flash", Label: "Gemini 2.5 Flash (OpenRouter)"},
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -489,7 +492,7 @@ func (ms *ModelSelector) applyFilterAllProviders() {
 // (case-insensitive). If it does, it returns the matching ModelOption and true.
 // This is used to support `gi claude-haiku-4-5-20251001` as a positional arg.
 func ResolveModelArg(arg string) (ModelOption, bool) {
-	for _, opt := range defaultModels {
+	for _, opt := range getDefaultModels() {
 		if strings.EqualFold(opt.Model, arg) {
 			return opt, true
 		}
@@ -506,7 +509,7 @@ func ResolveModelArg(arg string) (ModelOption, bool) {
 func fuzzyMatchModels(query string) []ModelOption {
 	q := strings.ToLower(query)
 	var matches []ModelOption
-	for _, opt := range defaultModels {
+	for _, opt := range getDefaultModels() {
 		haystack := strings.ToLower(opt.Label + " " + opt.Model + " " + opt.Provider)
 		if strings.Contains(haystack, q) {
 			matches = append(matches, opt)
@@ -535,7 +538,7 @@ func RegisterModelCommand(store *auth.Store) SlashCommand {
 			}
 
 			// 1. Exact match on model ID (case-insensitive).
-			for _, opt := range defaultModels {
+			for _, opt := range getDefaultModels() {
 				if strings.EqualFold(opt.Model, args) {
 					return modelSwitchWithAuthCheck(store, opt)
 				}
@@ -548,7 +551,7 @@ func RegisterModelCommand(store *auth.Store) SlashCommand {
 			case 0:
 				// No match — error with available models.
 				var availableModels []string
-				for _, opt := range defaultModels {
+				for _, opt := range getDefaultModels() {
 					availableModels = append(availableModels, fmt.Sprintf("  %s (%s/%s)", opt.Label, opt.Provider, opt.Model))
 				}
 				errorMsg := fmt.Sprintf("No model matching %q\n\nAvailable models:\n%s", args, strings.Join(availableModels, "\n"))

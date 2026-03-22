@@ -213,32 +213,34 @@ type tokenPricing struct {
 	cacheWritePerM float64
 }
 
-// modelPricingTable maps model name prefixes to pricing.
-var modelPricingTable = []struct {
-	prefix  string
-	pricing tokenPricing
-}{
-	{"claude-opus-4", tokenPricing{15.0, 75.0, 1.50, 18.75}},
-	{"claude-sonnet-4", tokenPricing{3.0, 15.0, 0.30, 3.75}},
-	{"claude-haiku-4", tokenPricing{0.80, 4.0, 0.08, 1.0}},
-	{"gpt-4o", tokenPricing{2.50, 10.0, 0, 0}},
-	{"gpt-4-turbo", tokenPricing{10.0, 30.0, 0, 0}},
-	{"gemini-2.0", tokenPricing{0.10, 0.40, 0, 0}},
-	{"gemini-1.5-pro", tokenPricing{1.25, 5.0, 0, 0}},
+// pricingForModel returns the per-million-token pricing for a model name.
+// It matches by prefix and falls back to Sonnet rates.
+func pricingForModel(model string) tokenPricing {
+	type entry struct {
+		prefix  string
+		pricing tokenPricing
+	}
+	table := []entry{
+		{"claude-opus-4", tokenPricing{15.0, 75.0, 1.50, 18.75}},
+		{"claude-sonnet-4", tokenPricing{3.0, 15.0, 0.30, 3.75}},
+		{"claude-haiku-4", tokenPricing{0.80, 4.0, 0.08, 1.0}},
+		{"gpt-4o", tokenPricing{2.50, 10.0, 0, 0}},
+		{"gpt-4-turbo", tokenPricing{10.0, 30.0, 0, 0}},
+		{"gemini-2.0", tokenPricing{0.10, 0.40, 0, 0}},
+		{"gemini-1.5-pro", tokenPricing{1.25, 5.0, 0, 0}},
+	}
+	for _, e := range table {
+		if strings.HasPrefix(model, e.prefix) {
+			return e.pricing
+		}
+	}
+	// Default: Sonnet rates.
+	return tokenPricing{3.0, 15.0, 0.30, 3.75}
 }
-
-// defaultPricing is used when no model-specific pricing is found (Sonnet rates).
-var defaultPricing = tokenPricing{3.0, 15.0, 0.30, 3.75}
 
 // calculateCost computes USD cost from token usage and model name.
 func calculateCost(usage ai.Usage, model string) float64 {
-	pricing := defaultPricing
-	for _, entry := range modelPricingTable {
-		if strings.HasPrefix(model, entry.prefix) {
-			pricing = entry.pricing
-			break
-		}
-	}
+	pricing := pricingForModel(model)
 
 	nonCacheInput := usage.InputTokens - usage.CacheRead
 	if nonCacheInput < 0 {
