@@ -19,8 +19,8 @@ import (
 //
 // Usage:
 //
-//	/export            — export to ~/.gi/exports/<session-id>.html
-//	/export path.html  — export to the specified path
+//	/export              — export to ~/.gi/exports/<session-id>.html
+//	/export myfile.html  — export to ~/.gi/exports/myfile.html
 func NewExportCommand(sessionMgr *session.Manager) *SlashCommand {
 	return &SlashCommand{
 		Name:        "export",
@@ -37,18 +37,33 @@ func NewExportCommand(sessionMgr *session.Manager) *SlashCommand {
 					return CommandResultMsg{Text: "Session has no messages to export.", IsError: true}
 				}
 
-				// Determine output path.
-				outPath := strings.TrimSpace(args)
-				if outPath == "" {
-					home, err := os.UserHomeDir()
-					if err != nil {
-						return CommandResultMsg{Text: "Failed to determine home directory: " + err.Error(), IsError: true}
-					}
-					dir := filepath.Join(home, ".gi", "exports")
-					if err := os.MkdirAll(dir, 0o700); err != nil {
-						return CommandResultMsg{Text: "Failed to create export dir: " + err.Error(), IsError: true}
-					}
-					outPath = filepath.Join(dir, sessionID+".html")
+				// Determine output path — always restricted to ~/.gi/exports/.
+				home, err := os.UserHomeDir()
+				if err != nil {
+					return CommandResultMsg{Text: "Failed to determine home directory: " + err.Error(), IsError: true}
+				}
+				exportDir := filepath.Join(home, ".gi", "exports")
+				if err := os.MkdirAll(exportDir, 0o700); err != nil {
+					return CommandResultMsg{Text: "Failed to create export dir: " + err.Error(), IsError: true}
+				}
+
+				arg := strings.TrimSpace(args)
+				var outPath string
+				if arg == "" {
+					outPath = filepath.Join(exportDir, sessionID+".html")
+				} else {
+					// Treat the argument as a filename within the exports directory.
+					// Strip any directory components to prevent traversal.
+					outPath = filepath.Join(exportDir, filepath.Base(arg))
+				}
+
+				// Final safety check: resolved path must be inside exportDir.
+				resolved, err := filepath.Abs(outPath)
+				if err != nil {
+					return CommandResultMsg{Text: "Invalid export path: " + err.Error(), IsError: true}
+				}
+				if !strings.HasPrefix(resolved, exportDir+string(filepath.Separator)) && resolved != exportDir {
+					return CommandResultMsg{Text: "Export path must be within " + exportDir, IsError: true}
 				}
 
 				htmlContent := renderSessionHTML(sessionID, msgs)
