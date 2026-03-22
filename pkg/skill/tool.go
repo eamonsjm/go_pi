@@ -58,7 +58,7 @@ func (t *SkillTool) Execute(ctx context.Context, params map[string]any) (string,
 		return "", fmt.Errorf("unknown skill: %q. Available skills: %s", name, strings.Join(t.registry.Names(), ", "))
 	}
 
-	body, err := s.LoadBody()
+	body, err := s.LoadBody(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to load skill %q: %w", name, err)
 	}

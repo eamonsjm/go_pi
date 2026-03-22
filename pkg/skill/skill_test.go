@@ -1,6 +1,7 @@
 package skill
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -249,7 +250,7 @@ func TestLoadBody_FromParsedSkill(t *testing.T) {
 		t.Fatalf("ParseSkill returned error: %v", err)
 	}
 
-	body, err := s.LoadBody()
+	body, err := s.LoadBody(context.Background())
 	if err != nil {
 		t.Fatalf("LoadBody returned error: %v", err)
 	}
@@ -272,7 +273,7 @@ func TestLoadBody_FromFilePath(t *testing.T) {
 	}
 	s.Path = path
 
-	body, err := s.LoadBody()
+	body, err := s.LoadBody(context.Background())
 	if err != nil {
 		t.Fatalf("LoadBody returned error: %v", err)
 	}
@@ -281,7 +282,7 @@ func TestLoadBody_FromFilePath(t *testing.T) {
 	}
 
 	// Second call should return cached result.
-	body2, err := s.LoadBody()
+	body2, err := s.LoadBody(context.Background())
 	if err != nil {
 		t.Fatalf("LoadBody (cached) returned error: %v", err)
 	}
@@ -303,7 +304,7 @@ func TestLoadBody_FromEmbedFS(t *testing.T) {
 	}
 	s.SetEmbedSource(embFS, "skills/commit.md")
 
-	body, err := s.LoadBody()
+	body, err := s.LoadBody(context.Background())
 	if err != nil {
 		t.Fatalf("LoadBody returned error: %v", err)
 	}
@@ -314,7 +315,7 @@ func TestLoadBody_FromEmbedFS(t *testing.T) {
 
 func TestLoadBody_NoSource(t *testing.T) {
 	s := &Skill{Name: "orphan"}
-	_, err := s.LoadBody()
+	_, err := s.LoadBody(context.Background())
 	if err == nil {
 		t.Fatal("expected error for skill with no source, got nil")
 	}

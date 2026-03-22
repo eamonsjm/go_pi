@@ -1,6 +1,7 @@
 package skill
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -13,7 +14,7 @@ func TestLoadEmbed_DiscoverSkills(t *testing.T) {
 		"review.md": &fstest.MapFile{Data: []byte(minimalSkillMD)},
 	}
 
-	skills, err := LoadEmbed(embFS)
+	skills, err := LoadEmbed(context.Background(), embFS)
 	if err != nil {
 		t.Fatalf("LoadEmbed returned error: %v", err)
 	}
@@ -39,7 +40,7 @@ func TestLoadEmbed_NestedDirs(t *testing.T) {
 		"sub/not-a-skill.txt": &fstest.MapFile{Data: []byte("ignore me")},
 	}
 
-	skills, err := LoadEmbed(embFS)
+	skills, err := LoadEmbed(context.Background(), embFS)
 	if err != nil {
 		t.Fatalf("LoadEmbed returned error: %v", err)
 	}
@@ -54,7 +55,7 @@ func TestLoadEmbed_LazyBody(t *testing.T) {
 		"commit.md": &fstest.MapFile{Data: []byte(validSkillMD)},
 	}
 
-	skills, err := LoadEmbed(embFS)
+	skills, err := LoadEmbed(context.Background(), embFS)
 	if err != nil {
 		t.Fatalf("LoadEmbed returned error: %v", err)
 	}
@@ -68,7 +69,7 @@ func TestLoadEmbed_LazyBody(t *testing.T) {
 	}
 
 	// LoadBody should work via embed FS.
-	body, err := skills[0].LoadBody()
+	body, err := skills[0].LoadBody(context.Background())
 	if err != nil {
 		t.Fatalf("LoadBody returned error: %v", err)
 	}
@@ -80,7 +81,7 @@ func TestLoadEmbed_LazyBody(t *testing.T) {
 func TestLoadEmbed_Empty(t *testing.T) {
 	embFS := fstest.MapFS{}
 
-	skills, err := LoadEmbed(embFS)
+	skills, err := LoadEmbed(context.Background(), embFS)
 	if err != nil {
 		t.Fatalf("LoadEmbed returned error: %v", err)
 	}
@@ -94,7 +95,7 @@ func TestLoadEmbed_InvalidSkill(t *testing.T) {
 		"bad.md": &fstest.MapFile{Data: []byte(noFrontmatterMD)},
 	}
 
-	_, err := LoadEmbed(embFS)
+	_, err := LoadEmbed(context.Background(), embFS)
 	if err == nil {
 		t.Fatal("expected error for invalid skill, got nil")
 	}
@@ -106,7 +107,7 @@ func TestLoadDir_DiscoverSkills(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "review.md"), minimalSkillMD)
 	writeFile(t, filepath.Join(dir, "readme.txt"), "not a skill")
 
-	skills, err := LoadDir(dir, "user")
+	skills, err := LoadDir(context.Background(), dir,"user")
 	if err != nil {
 		t.Fatalf("LoadDir returned error: %v", err)
 	}
@@ -131,7 +132,7 @@ func TestLoadDir_LazyBody(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "commit.md"), validSkillMD)
 
-	skills, err := LoadDir(dir, "project")
+	skills, err := LoadDir(context.Background(), dir,"project")
 	if err != nil {
 		t.Fatalf("LoadDir returned error: %v", err)
 	}
@@ -139,7 +140,7 @@ func TestLoadDir_LazyBody(t *testing.T) {
 		t.Fatalf("got %d skills, want 1", len(skills))
 	}
 
-	body, err := skills[0].LoadBody()
+	body, err := skills[0].LoadBody(context.Background())
 	if err != nil {
 		t.Fatalf("LoadBody returned error: %v", err)
 	}
@@ -149,7 +150,7 @@ func TestLoadDir_LazyBody(t *testing.T) {
 }
 
 func TestLoadDir_MissingDir(t *testing.T) {
-	skills, err := LoadDir("/nonexistent/path/skills", "user")
+	skills, err := LoadDir(context.Background(), "/nonexistent/path/skills", "user")
 	if err != nil {
 		t.Fatalf("LoadDir should return nil error for missing dir, got: %v", err)
 	}
@@ -161,7 +162,7 @@ func TestLoadDir_MissingDir(t *testing.T) {
 func TestLoadDir_EmptyDir(t *testing.T) {
 	dir := t.TempDir()
 
-	skills, err := LoadDir(dir, "user")
+	skills, err := LoadDir(context.Background(), dir,"user")
 	if err != nil {
 		t.Fatalf("LoadDir returned error: %v", err)
 	}
@@ -179,7 +180,7 @@ func TestLoadDir_SkipsSubdirs(t *testing.T) {
 	}
 	writeFile(t, filepath.Join(subdir, "nested.md"), minimalSkillMD)
 
-	skills, err := LoadDir(dir, "user")
+	skills, err := LoadDir(context.Background(), dir,"user")
 	if err != nil {
 		t.Fatalf("LoadDir returned error: %v", err)
 	}
@@ -196,7 +197,7 @@ func TestLoadDir_InvalidSkill(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "bad.md"), noFrontmatterMD)
 
-	_, err := LoadDir(dir, "user")
+	_, err := LoadDir(context.Background(), dir,"user")
 	if err == nil {
 		t.Fatal("expected error for invalid skill, got nil")
 	}
@@ -235,7 +236,7 @@ Project body.
 	reg := NewRegistry()
 
 	// Load in override order: built-in first, then user, then project.
-	builtins, err := LoadEmbed(embFS)
+	builtins, err := LoadEmbed(context.Background(), embFS)
 	if err != nil {
 		t.Fatalf("LoadEmbed: %v", err)
 	}
@@ -243,7 +244,7 @@ Project body.
 		reg.Register(s)
 	}
 
-	userSkills, err := LoadDir(userDir, "user")
+	userSkills, err := LoadDir(context.Background(), userDir,"user")
 	if err != nil {
 		t.Fatalf("LoadDir user: %v", err)
 	}
@@ -251,7 +252,7 @@ Project body.
 		reg.Register(s)
 	}
 
-	projectSkills, err := LoadDir(projectDir, "project")
+	projectSkills, err := LoadDir(context.Background(), projectDir,"project")
 	if err != nil {
 		t.Fatalf("LoadDir project: %v", err)
 	}
@@ -294,7 +295,7 @@ User body.
 
 	reg := NewRegistry()
 
-	builtins, err := LoadEmbed(embFS)
+	builtins, err := LoadEmbed(context.Background(), embFS)
 	if err != nil {
 		t.Fatalf("LoadEmbed: %v", err)
 	}
@@ -302,7 +303,7 @@ User body.
 		reg.Register(s)
 	}
 
-	userSkills, err := LoadDir(userDir, "user")
+	userSkills, err := LoadDir(context.Background(), userDir,"user")
 	if err != nil {
 		t.Fatalf("LoadDir user: %v", err)
 	}
@@ -329,7 +330,7 @@ func TestOverrideSemantics_NonOverlapping(t *testing.T) {
 
 	reg := NewRegistry()
 
-	builtins, err := LoadEmbed(embFS)
+	builtins, err := LoadEmbed(context.Background(), embFS)
 	if err != nil {
 		t.Fatalf("LoadEmbed: %v", err)
 	}
@@ -337,7 +338,7 @@ func TestOverrideSemantics_NonOverlapping(t *testing.T) {
 		reg.Register(s)
 	}
 
-	userSkills, err := LoadDir(userDir, "user")
+	userSkills, err := LoadDir(context.Background(), userDir,"user")
 	if err != nil {
 		t.Fatalf("LoadDir user: %v", err)
 	}
