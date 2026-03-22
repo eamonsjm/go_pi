@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 	"unicode/utf8"
 
@@ -150,11 +149,11 @@ func (a *AgentLoop) maybeAutoCompact(ctx context.Context) error {
 	// large tool result can exceed the token threshold, but summarizing
 	// very few messages wastes an LLM call without meaningful reduction.
 	if msgCount < minAutoCompactMessages {
-		log.Printf("agent: auto-compaction skipped (messages=%d, min=%d)", msgCount, minAutoCompactMessages)
+		a.logger.Printf("agent: auto-compaction skipped (messages=%d, min=%d)", msgCount, minAutoCompactMessages)
 		return nil
 	}
 
-	log.Printf("agent: auto-compaction triggered (input_tokens=%d, threshold=%d)", lastInput, threshold)
+	a.logger.Printf("agent: auto-compaction triggered (input_tokens=%d, threshold=%d)", lastInput, threshold)
 	return a.autoCompact(ctx)
 }
 

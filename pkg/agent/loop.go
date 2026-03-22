@@ -36,6 +36,10 @@ type AgentLoop struct {
 	reserveTokens    int // reserve buffer in tokens
 	keepRecentTokens int // approx tokens to preserve during compaction
 
+	// logger is used for operational log messages (dropped messages,
+	// compaction events, etc.). Defaults to log.Default().
+	logger *log.Logger
+
 	// workingDir is passed to tools via context so they can resolve relative
 	// paths without relying on process-global os.Chdir.
 	workingDir string
@@ -71,6 +75,7 @@ func NewAgentLoop(provider ai.Provider, toolRegistry *tools.Registry, opts ...Op
 		tools:            toolRegistry,
 		hooks:            hooks,
 		metrics:          metrics,
+		logger:           log.Default(),
 		maxTokens:        8192,
 		thinking:         ai.ThinkingOff,
 		contextWindow:    200000,
@@ -183,7 +188,7 @@ func (a *AgentLoop) Steer(text string) {
 	select {
 	case a.steerCh <- text:
 	default:
-		log.Printf("agent: steer message dropped (channel full): %s", text)
+		a.logger.Printf("agent: steer message dropped (channel full): %s", text)
 	}
 }
 
@@ -193,7 +198,7 @@ func (a *AgentLoop) FollowUp(text string) {
 	select {
 	case a.followUpCh <- text:
 	default:
-		log.Printf("agent: follow-up message dropped (channel full): %s", text)
+		a.logger.Printf("agent: follow-up message dropped (channel full): %s", text)
 	}
 }
 
@@ -259,7 +264,7 @@ steerDrained:
 
 		// Check if auto-compaction is needed before the next LLM call.
 		if err := a.maybeAutoCompact(ctx); err != nil {
-			log.Printf("agent: auto-compaction failed: %v", err)
+			a.logger.Printf("agent: auto-compaction failed: %v", err)
 			// Non-fatal: continue with the existing context.
 		}
 
@@ -420,7 +425,7 @@ func (a *AgentLoop) doTurn(ctx context.Context) (*ai.Message, error) {
 				var input any
 				if inputJSON != "" {
 					if err := json.Unmarshal([]byte(inputJSON), &input); err != nil {
-						log.Printf("agent: invalid tool input JSON for %s (id=%s): %v", currentTool.name, currentTool.id, err)
+						a.logger.Printf("agent: invalid tool input JSON for %s (id=%s): %v", currentTool.name, currentTool.id, err)
 						input = inputJSON
 					}
 				}
