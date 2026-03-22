@@ -3,6 +3,7 @@
 package tui
 
 import (
+	"fmt"
 	"os/exec"
 	"syscall"
 )
@@ -14,5 +15,8 @@ func configureShellProcessGroup(cmd *exec.Cmd) {
 
 // killShellProcessGroup kills the entire process group.
 func killShellProcessGroup(pid int) error {
+	if pid <= 0 {
+		return fmt.Errorf("invalid pid %d: refusing to kill process group", pid)
+	}
 	return syscall.Kill(-pid, syscall.SIGKILL)
 }
