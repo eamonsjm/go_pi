@@ -75,25 +75,41 @@ func RunJSONStream(agentLoop *agent.AgentLoop, prompt string) {
 	done := make(chan struct{})
 	var promptErr error
 	go func() {
-		defer close(done)
+		defer func() {
+			if r := recover(); r != nil {
+				promptErr = fmt.Errorf("panic in Prompt: %v", r)
+			}
+			close(done)
+		}()
 		promptErr = agentLoop.Prompt(ctx, prompt)
 	}()
 
 	var sawError bool
-	for event := range events {
-		ev := EventFromAgent(event)
-		if err := enc.Encode(ev); err != nil {
-			log.Printf("jsonstream: write failed: %v", err)
-			cancel()
-			break
-		}
+loop:
+	for {
+		select {
+		case event, ok := <-events:
+			if !ok {
+				break loop
+			}
+			ev := EventFromAgent(event)
+			if err := enc.Encode(ev); err != nil {
+				log.Printf("jsonstream: write failed: %v", err)
+				cancel()
+				break loop
+			}
 
-		if event.Type == agent.EventAgentError {
-			sawError = true
-			break
-		}
-		if event.Type == agent.EventAgentEnd {
-			break
+			if event.Type == agent.EventAgentError {
+				sawError = true
+				break loop
+			}
+			if event.Type == agent.EventAgentEnd {
+				break loop
+			}
+		case <-done:
+			// Prompt goroutine finished (possibly via panic recovery)
+			// before closing the events channel.
+			break loop
 		}
 	}
 
