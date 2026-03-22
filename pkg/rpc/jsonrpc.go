@@ -289,22 +289,38 @@ func (s *rpcServer) handlePrompt(ctx context.Context, cancel context.CancelFunc,
 	var promptErr error
 	done := make(chan struct{})
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				promptErr = fmt.Errorf("panic in Prompt: %v", r)
+			}
+			close(done)
+		}()
 		promptErr = s.agentLoop.Prompt(ctx, params.Text)
-		close(done)
 	}()
 
 	var resultText strings.Builder
-	for event := range events {
-		ev := EventFromAgent(event)
-		s.sendNotification(Notification{
-			JSONRPC: "2.0",
-			Method:  "agent/event",
-			Params:  ev,
-		}, cancel)
+loop:
+	for {
+		select {
+		case event, ok := <-events:
+			if !ok {
+				break loop
+			}
+			ev := EventFromAgent(event)
+			s.sendNotification(Notification{
+				JSONRPC: "2.0",
+				Method:  "agent/event",
+				Params:  ev,
+			}, cancel)
 
-		// Accumulate assistant text for the final response.
-		if event.Type == agent.EventAssistantText {
-			resultText.WriteString(event.Delta)
+			// Accumulate assistant text for the final response.
+			if event.Type == agent.EventAssistantText {
+				resultText.WriteString(event.Delta)
+			}
+		case <-done:
+			// Prompt goroutine finished (possibly via panic recovery)
+			// before closing the events channel.
+			break loop
 		}
 	}
 
