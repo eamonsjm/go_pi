@@ -48,7 +48,9 @@ func NewManager(toolRegistry ToolRegistry) *Manager {
 // SetRestartConfig sets the restart configuration for plugins. If cfg is nil,
 // auto-restart is disabled.
 func (m *Manager) SetRestartConfig(cfg *RestartConfig) {
+	m.mu.Lock()
 	m.restartCfg = cfg
+	m.mu.Unlock()
 }
 
 // Discover scans the given directories for plugins. Each subdirectory is
@@ -233,14 +235,18 @@ func (m *Manager) initializePlugin(ctx context.Context, p *PluginProcess, cfg Pl
 // SetHeartbeatConfig sets the heartbeat configuration for the manager.
 // If cfg is nil, heartbeats are disabled.
 func (m *Manager) SetHeartbeatConfig(cfg *HeartbeatConfig) {
+	m.mu.Lock()
 	m.heartbeatCfg = cfg
+	m.mu.Unlock()
 }
 
 // StartHeartbeats begins periodic heartbeat checks on all alive plugins.
 // Call this after Initialize. The goroutine runs until ctx is cancelled
 // or Shutdown is called.
 func (m *Manager) StartHeartbeats(ctx context.Context) {
+	m.mu.Lock()
 	if m.heartbeatCfg == nil {
+		m.mu.Unlock()
 		return
 	}
 
@@ -249,9 +255,11 @@ func (m *Manager) StartHeartbeats(ctx context.Context) {
 	m.heartbeatDone = make(chan struct{})
 
 	cfg := *m.heartbeatCfg
+	done := m.heartbeatDone
+	m.mu.Unlock()
 
 	go func() {
-		defer close(m.heartbeatDone)
+		defer close(done)
 
 		ticker := time.NewTicker(cfg.Interval)
 		defer ticker.Stop()
@@ -309,13 +317,21 @@ func (m *Manager) PluginHealthy(name string) bool {
 // Shutdown sends a shutdown message to all plugins and waits for them to exit.
 // If heartbeats are running, they are stopped first.
 func (m *Manager) Shutdown() error {
-	// Stop heartbeat goroutine if running.
-	if m.heartbeatCancel != nil {
-		m.heartbeatCancel()
-		if m.heartbeatDone != nil {
-			<-m.heartbeatDone
+	// Stop heartbeat goroutine if running. Read and clear the fields under
+	// lock, but wait on the done channel outside the lock to avoid deadlock
+	// with heartbeatAll (which takes mu.RLock).
+	m.mu.Lock()
+	cancel := m.heartbeatCancel
+	done := m.heartbeatDone
+	m.heartbeatCancel = nil
+	m.heartbeatDone = nil
+	m.mu.Unlock()
+
+	if cancel != nil {
+		cancel()
+		if done != nil {
+			<-done
 		}
-		m.heartbeatCancel = nil
 	}
 
 	m.mu.Lock()
