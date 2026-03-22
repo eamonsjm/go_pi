@@ -241,7 +241,10 @@ func (a *AgentLoop) FollowUp(text string) {
 // is cancelled.
 func (a *AgentLoop) Prompt(ctx context.Context, text string) error {
 	a.ensureInit()
-	if a.provider == nil {
+	a.mu.Lock()
+	provider := a.provider
+	a.mu.Unlock()
+	if provider == nil {
 		return ErrNoProvider
 	}
 	ctx, cancel := context.WithCancel(ctx)
@@ -375,6 +378,7 @@ func (a *AgentLoop) doTurn(ctx context.Context) (*ai.Message, error) {
 	defer cancel()
 
 	a.mu.Lock()
+	provider := a.provider
 	req := ai.StreamRequest{
 		Model:         a.model,
 		SystemPrompt:  a.systemPrompt,
@@ -385,7 +389,7 @@ func (a *AgentLoop) doTurn(ctx context.Context) (*ai.Message, error) {
 	}
 	a.mu.Unlock()
 
-	stream, err := a.provider.Stream(ctx, req)
+	stream, err := provider.Stream(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("provider stream: %w", err)
 	}
@@ -504,9 +508,17 @@ func (a *AgentLoop) doTurn(ctx context.Context) (*ai.Message, error) {
 // executeTool runs a single tool call and emits the corresponding events.
 // It returns a tool_result message ready to be appended to the conversation.
 func (a *AgentLoop) executeTool(ctx context.Context, tc ai.ContentBlock) ai.Message {
+	// Snapshot mutable fields under lock to avoid races with concurrent setters.
+	a.mu.Lock()
+	workingDir := a.workingDir
+	toolsReg := a.tools
+	hooks := a.hooks
+	metrics := a.metrics
+	a.mu.Unlock()
+
 	// Inject working directory into context so tools can resolve relative paths.
-	if a.workingDir != "" {
-		ctx = tools.ContextWithWorkingDir(ctx, a.workingDir)
+	if workingDir != "" {
+		ctx = tools.ContextWithWorkingDir(ctx, workingDir)
 	}
 
 	params := toParamsMap(tc.Input)
@@ -533,7 +545,7 @@ func (a *AgentLoop) executeTool(ctx context.Context, tc ai.ContentBlock) ai.Mess
 		return ai.NewToolResultMessage(tc.ToolUseID, errMsg, true)
 	}
 
-	tool, ok := a.tools.Get(tc.ToolName)
+	tool, ok := toolsReg.Get(tc.ToolName)
 	if !ok {
 		errMsg := fmt.Sprintf("unknown tool: %s", tc.ToolName)
 		a.emit(ctx, AgentEvent{
@@ -547,7 +559,7 @@ func (a *AgentLoop) executeTool(ctx context.Context, tc ai.ContentBlock) ai.Mess
 	}
 
 	// Fire before-execution hooks
-	if err := a.hooks.Before(ctx, tc.ToolName, params); err != nil {
+	if err := hooks.Before(ctx, tc.ToolName, params); err != nil {
 		errMsg := fmt.Sprintf("hook error: %v", err)
 		a.emit(ctx, AgentEvent{
 			Type:       EventToolExecEnd,
@@ -578,7 +590,7 @@ func (a *AgentLoop) executeTool(ctx context.Context, tc ai.ContentBlock) ai.Mess
 
 		// Fire after-execution hooks
 		var hookErr error
-		resultText, hookErr = a.hooks.After(ctx, tc.ToolName, params, resultText, nil)
+		resultText, hookErr = hooks.After(ctx, tc.ToolName, params, resultText, nil)
 		if hookErr != nil {
 			isError = true
 			resultText = hookErr.Error()
@@ -608,7 +620,7 @@ func (a *AgentLoop) executeTool(ctx context.Context, tc ai.ContentBlock) ai.Mess
 
 	// Fire after-execution hooks
 	var hookErr error
-	result, hookErr = a.hooks.After(ctx, tc.ToolName, params, result, nil)
+	result, hookErr = hooks.After(ctx, tc.ToolName, params, result, nil)
 	if hookErr != nil {
 		isError = true
 		result = hookErr.Error()
@@ -619,7 +631,7 @@ func (a *AgentLoop) executeTool(ctx context.Context, tc ai.ContentBlock) ai.Mess
 		compressedSize := len(result)
 		cmd, _ := params["command"].(string)
 		category := tools.DetectCategory(cmd)
-		a.metrics.Record(category, originalSize, compressedSize, 0)
+		metrics.Record(category, originalSize, compressedSize, 0)
 	}
 
 	a.emit(ctx, AgentEvent{
