@@ -243,6 +243,76 @@ func TestHookRegistry(t *testing.T) {
 	}
 }
 
+// panicBeforeHook panics during BeforeExecute.
+type panicBeforeHook struct{}
+
+func (h *panicBeforeHook) BeforeExecute(_ context.Context, _ string, _ map[string]any) error {
+	panic("boom in before")
+}
+
+func (h *panicBeforeHook) AfterExecute(_ context.Context, _ string, _ map[string]any, result string, err error) (string, error) {
+	return result, err
+}
+
+// panicAfterHook panics during AfterExecute.
+type panicAfterHook struct{}
+
+func (h *panicAfterHook) BeforeExecute(_ context.Context, _ string, _ map[string]any) error {
+	return nil
+}
+
+func (h *panicAfterHook) AfterExecute(_ context.Context, _ string, _ map[string]any, _ string, _ error) (string, error) {
+	panic("boom in after")
+}
+
+func TestHookRegistryBeforePanicRecovery(t *testing.T) {
+	registry := NewHookRegistry()
+	registry.Register(&panicBeforeHook{})
+
+	err := registry.Before(context.Background(), "bash", nil)
+	if err == nil {
+		t.Fatal("expected error from panicking before-hook, got nil")
+	}
+	if got := err.Error(); got != `before-hook "bash" panicked: boom in before` {
+		t.Errorf("unexpected error message: %s", got)
+	}
+}
+
+func TestHookRegistryAfterPanicRecovery(t *testing.T) {
+	registry := NewHookRegistry()
+	registry.Register(&panicAfterHook{})
+
+	result, err := registry.After(context.Background(), "bash", nil, "input", nil)
+	if err == nil {
+		t.Fatal("expected error from panicking after-hook, got nil")
+	}
+	if got := err.Error(); got != `after-hook "bash" panicked: boom in after` {
+		t.Errorf("unexpected error message: %s", got)
+	}
+	if result != "" {
+		t.Errorf("expected empty result after panic, got %q", result)
+	}
+}
+
+func TestHookRegistryPanicDoesNotAffectOtherHooks(t *testing.T) {
+	// Verify that a non-panicking hook works normally when no panic occurs.
+	registry := NewHookRegistry()
+	registry.Register(&ANSIStripper{})
+
+	err := registry.Before(context.Background(), "bash", nil)
+	if err != nil {
+		t.Fatalf("unexpected error from normal hook: %v", err)
+	}
+
+	result, err := registry.After(context.Background(), "bash", nil, "\x1b[31mred\x1b[0m", nil)
+	if err != nil {
+		t.Fatalf("unexpected error from normal hook: %v", err)
+	}
+	if result != "red" {
+		t.Errorf("expected %q, got %q", "red", result)
+	}
+}
+
 func TestMakeCommandMapping(t *testing.T) {
 	mapping := makeCommandMapping()
 
