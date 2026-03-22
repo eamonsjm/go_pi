@@ -384,5 +384,14 @@ func (p *OllamaProvider) readStream(ctx context.Context, body io.ReadCloser, ch 
 
 	if err := scanner.Err(); err != nil {
 		trySend(ctx, ch, StreamEvent{Type: EventError, Error: fmt.Errorf("ollama: stream read error: %w", err)})
+		return
+	}
+
+	// If we got here without done:true, still end gracefully.
+	if started {
+		trySend(ctx, ch, StreamEvent{
+			Type:  EventMessageEnd,
+			Usage: &Usage{},
+		})
 	}
 }

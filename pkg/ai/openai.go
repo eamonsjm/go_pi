@@ -492,5 +492,14 @@ func (p *OpenAIProvider) readSSEStream(ctx context.Context, body io.ReadCloser, 
 
 	if err := scanner.Err(); err != nil {
 		trySend(ctx, ch, StreamEvent{Type: EventError, Error: fmt.Errorf("openai: stream read error: %w", err)})
+		return
+	}
+
+	// If we got here without [DONE], still end gracefully.
+	if started {
+		trySend(ctx, ch, StreamEvent{
+			Type:  EventMessageEnd,
+			Usage: &usage,
+		})
 	}
 }

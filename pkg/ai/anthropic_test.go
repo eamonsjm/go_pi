@@ -917,8 +917,8 @@ func TestAnthropicStream_PartialToolUse(t *testing.T) {
 	if hasEnd {
 		t.Error("should NOT have tool_use_end (stream cut off)")
 	}
-	if hasMessageEnd {
-		t.Error("should NOT have message_end (stream cut off)")
+	if !hasMessageEnd {
+		t.Error("expected fallback message_end on unexpected stream close")
 	}
 }
 
