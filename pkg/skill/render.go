@@ -47,23 +47,40 @@ func evalConditionals(body string, vars map[string]string) string {
 	})
 }
 
-// varRe matches {{varname}} where varname is word characters (letters, digits, underscore).
-var varRe = regexp.MustCompile(`\{\{(\w+)\}\}`)
+// varRe matches {{varname}} or {{shell:varname}} where varname is word characters.
+// The optional "shell:" prefix triggers shell-safe quoting of the substituted value.
+var varRe = regexp.MustCompile(`\{\{(shell:)?(\w+)\}\}`)
 
 // substituteVars replaces {{var}} with the corresponding value from vars.
+// {{shell:var}} replaces with a shell-quoted (single-quote escaped) value.
 // Undefined variables are left as-is.
 func substituteVars(body string, vars map[string]string) string {
 	return varRe.ReplaceAllStringFunc(body, func(match string) string {
 		sub := varRe.FindStringSubmatch(match)
-		if len(sub) < 2 {
+		if len(sub) < 3 {
 			return match
 		}
-		name := sub[1]
-		if v, ok := vars[name]; ok {
-			return v
+		shellEscape := sub[1] == "shell:"
+		name := sub[2]
+		v, ok := vars[name]
+		if !ok {
+			return match // leave undefined vars untouched
 		}
-		return match // leave undefined vars untouched
+		if shellEscape {
+			return ShellQuote(v)
+		}
+		return v
 	})
+}
+
+// ShellQuote wraps s in single quotes, escaping any embedded single quotes
+// using the '\'' idiom (end quote, escaped literal quote, restart quote).
+// This is safe for embedding user-supplied values in shell command strings.
+//
+// Use {{shell:var}} in skill templates for variables that appear in command
+// contexts to prevent shell injection.
+func ShellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // ContextVars returns the standard context variables: cwd, branch, model.
