@@ -309,71 +309,81 @@ func (p *OllamaProvider) readStream(ctx context.Context, body io.ReadCloser, ch 
 
 		select {
 		case <-ctx.Done():
-			ch <- StreamEvent{Type: EventError, Error: ctx.Err()}
+			trySend(ctx, ch, StreamEvent{Type: EventError, Error: ctx.Err()})
 			return
 		default:
 		}
 
 		var chunk ollamaStreamChunk
 		if err := json.Unmarshal(line, &chunk); err != nil {
-			ch <- StreamEvent{Type: EventError, Error: fmt.Errorf("ollama: failed to parse chunk: %w", err)}
+			trySend(ctx, ch, StreamEvent{Type: EventError, Error: fmt.Errorf("ollama: failed to parse chunk: %w", err)})
 			return
 		}
 
 		if !started {
 			started = true
-			ch <- StreamEvent{Type: EventMessageStart}
+			if !trySend(ctx, ch, StreamEvent{Type: EventMessageStart}) {
+				return
+			}
 		}
 
 		// Text delta.
 		if chunk.Message.Content != "" {
-			ch <- StreamEvent{Type: EventTextDelta, Delta: chunk.Message.Content}
+			if !trySend(ctx, ch, StreamEvent{Type: EventTextDelta, Delta: chunk.Message.Content}) {
+				return
+			}
 		}
 
 		// Tool calls — Ollama emits complete tool calls in a single chunk.
 		for _, tc := range chunk.Message.ToolCalls {
 			callID := nextToolCallID("ollama_call")
 
-			ch <- StreamEvent{
+			if !trySend(ctx, ch, StreamEvent{
 				Type:       EventToolUseStart,
 				ToolCallID: callID,
 				ToolName:   tc.Function.Name,
+			}) {
+				return
 			}
 
 			// Serialize the arguments as a single delta.
 			argsJSON, err := json.Marshal(tc.Function.Arguments)
 			if err != nil {
-				ch <- StreamEvent{Type: EventError, Error: fmt.Errorf("ollama: failed to marshal tool call arguments: %w", err)}
+				trySend(ctx, ch, StreamEvent{Type: EventError, Error: fmt.Errorf("ollama: failed to marshal tool call arguments: %w", err)})
 				return
 			}
-			ch <- StreamEvent{
+			if !trySend(ctx, ch, StreamEvent{
 				Type:         EventToolUseDelta,
 				ToolCallID:   callID,
 				ToolName:     tc.Function.Name,
 				PartialInput: string(argsJSON),
+			}) {
+				return
 			}
 
-			ch <- StreamEvent{
+			if !trySend(ctx, ch, StreamEvent{
 				Type:       EventToolUseEnd,
 				ToolCallID: callID,
 				ToolName:   tc.Function.Name,
+			}) {
+				return
 			}
 		}
 
 		// Final chunk.
 		if chunk.Done {
-			ch <- StreamEvent{
+			trySend(ctx, ch, StreamEvent{
 				Type: EventMessageEnd,
 				Usage: &Usage{
 					InputTokens:  chunk.PromptEvalCount,
 					OutputTokens: chunk.EvalCount,
 				},
-			}
+			})
 			return
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
-		ch <- StreamEvent{Type: EventError, Error: fmt.Errorf("ollama: stream read error: %w", err)}
+		trySend(ctx, ch, StreamEvent{Type: EventError, Error: fmt.Errorf("ollama: stream read error: %w", err)})
 	}
 }

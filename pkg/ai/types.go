@@ -195,6 +195,26 @@ type StreamEvent struct {
 	Error error
 }
 
+// trySend attempts to send an event on ch. If the channel buffer has room, the
+// event is always delivered. If the buffer is full and ctx is cancelled, the
+// send is abandoned and false is returned. This prevents goroutine leaks when
+// the consumer stops reading the event channel.
+func trySend(ctx context.Context, ch chan<- StreamEvent, event StreamEvent) bool {
+	// Fast path: deliver immediately if the buffer has room.
+	select {
+	case ch <- event:
+		return true
+	default:
+	}
+	// Slow path: buffer is full — wait for space or cancellation.
+	select {
+	case ch <- event:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
 // StreamEventType identifies what kind of stream event this is.
 type StreamEventType string
 

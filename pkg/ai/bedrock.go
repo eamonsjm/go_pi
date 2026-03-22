@@ -230,14 +230,16 @@ func (p *BedrockProvider) readEventStream(ctx context.Context, output *bedrockru
 	for event := range stream.Events() {
 		select {
 		case <-ctx.Done():
-			ch <- StreamEvent{Type: EventError, Error: ctx.Err()}
+			trySend(ctx, ch, StreamEvent{Type: EventError, Error: ctx.Err()})
 			return
 		default:
 		}
 
 		switch ev := event.(type) {
 		case *types.ConverseStreamOutputMemberMessageStart:
-			ch <- StreamEvent{Type: EventMessageStart}
+			if !trySend(ctx, ch, StreamEvent{Type: EventMessageStart}) {
+				return
+			}
 
 		case *types.ConverseStreamOutputMemberContentBlockStart:
 			if start, ok := ev.Value.Start.(*types.ContentBlockStartMemberToolUse); ok {
@@ -245,25 +247,31 @@ func (p *BedrockProvider) readEventStream(ctx context.Context, output *bedrockru
 				id := derefStr(start.Value.ToolUseId)
 				name := derefStr(start.Value.Name)
 				activeTools[idx] = &bedrockToolState{id: id, name: name}
-				ch <- StreamEvent{
+				if !trySend(ctx, ch, StreamEvent{
 					Type:       EventToolUseStart,
 					ToolCallID: id,
 					ToolName:   name,
+				}) {
+					return
 				}
 			}
 
 		case *types.ConverseStreamOutputMemberContentBlockDelta:
 			switch delta := ev.Value.Delta.(type) {
 			case *types.ContentBlockDeltaMemberText:
-				ch <- StreamEvent{Type: EventTextDelta, Delta: delta.Value}
+				if !trySend(ctx, ch, StreamEvent{Type: EventTextDelta, Delta: delta.Value}) {
+					return
+				}
 			case *types.ContentBlockDeltaMemberToolUse:
 				idx := derefInt32(ev.Value.ContentBlockIndex)
 				if state := activeTools[idx]; state != nil {
-					ch <- StreamEvent{
+					if !trySend(ctx, ch, StreamEvent{
 						Type:         EventToolUseDelta,
 						ToolCallID:   state.id,
 						ToolName:     state.name,
 						PartialInput: derefStr(delta.Value.Input),
+					}) {
+						return
 					}
 				}
 			}
@@ -271,19 +279,21 @@ func (p *BedrockProvider) readEventStream(ctx context.Context, output *bedrockru
 		case *types.ConverseStreamOutputMemberContentBlockStop:
 			idx := derefInt32(ev.Value.ContentBlockIndex)
 			if state := activeTools[idx]; state != nil {
-				ch <- StreamEvent{
+				if !trySend(ctx, ch, StreamEvent{
 					Type:       EventToolUseEnd,
 					ToolCallID: state.id,
 					ToolName:   state.name,
+				}) {
+					return
 				}
 				delete(activeTools, idx)
 			}
 
 		case *types.ConverseStreamOutputMemberMessageStop:
-			ch <- StreamEvent{
+			trySend(ctx, ch, StreamEvent{
 				Type:  EventMessageEnd,
 				Usage: &usage,
-			}
+			})
 			return
 
 		case *types.ConverseStreamOutputMemberMetadata:
@@ -295,7 +305,7 @@ func (p *BedrockProvider) readEventStream(ctx context.Context, output *bedrockru
 	}
 
 	if err := stream.Err(); err != nil {
-		ch <- StreamEvent{Type: EventError, Error: fmt.Errorf("bedrock: stream error: %w", err)}
+		trySend(ctx, ch, StreamEvent{Type: EventError, Error: fmt.Errorf("bedrock: stream error: %w", err)})
 	}
 }
 
