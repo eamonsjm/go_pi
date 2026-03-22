@@ -26,6 +26,7 @@ package sdk
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -289,15 +290,20 @@ func (s *Session) Prompt(ctx context.Context, text string) error {
 	// Persist all new messages generated during this prompt (assistant turns,
 	// tool results, etc.). The user message was already saved above, so skip
 	// it by starting from beforeCount+1.
+	var saveErr error
 	allMsgs := s.loop.Messages()
 	for i := beforeCount + 1; i < len(allMsgs); i++ {
-		if err := s.sessionMgr.SaveMessage(allMsgs[i]); err != nil {
-			return fmt.Errorf("sdk prompt: save generated message: %w", err)
+		if saveErr = s.sessionMgr.SaveMessage(allMsgs[i]); saveErr != nil {
+			saveErr = fmt.Errorf("sdk prompt: save generated message: %w", saveErr)
+			break
 		}
 	}
 
 	if err != nil {
-		return fmt.Errorf("sdk prompt: agent loop: %w", err)
+		return fmt.Errorf("sdk prompt: agent loop: %w", errors.Join(err, saveErr))
+	}
+	if saveErr != nil {
+		return saveErr
 	}
 	return nil
 }

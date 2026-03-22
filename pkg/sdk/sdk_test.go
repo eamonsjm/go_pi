@@ -2,6 +2,8 @@ package sdk
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/ejm/go_pi/pkg/agent"
@@ -244,6 +246,85 @@ func TestWithAzureOptions(t *testing.T) {
 	}
 	if cfg.AzureDeployment != "gpt-4o" {
 		t.Errorf("expected AzureDeployment %q, got %q", "gpt-4o", cfg.AzureDeployment)
+	}
+}
+
+// failOnSecondCallProvider sends a response with a tool call on the first
+// Stream call so the agent loop iterates. On the second call it streams an
+// error event. This produces messages (assistant + tool result) before the
+// loop errors — the exact scenario where error shadowing was possible.
+type failOnSecondCallProvider struct {
+	calls int
+}
+
+func (m *failOnSecondCallProvider) Name() string { return "mock-fail2" }
+
+func (m *failOnSecondCallProvider) Stream(_ context.Context, _ ai.StreamRequest) (<-chan ai.StreamEvent, error) {
+	m.calls++
+	if m.calls > 1 {
+		ch := make(chan ai.StreamEvent, 2)
+		go func() {
+			ch <- ai.StreamEvent{Type: ai.EventError, Error: errors.New("provider unavailable")}
+			close(ch)
+		}()
+		return ch, nil
+	}
+
+	// First call: return a response with a tool call so the loop iterates.
+	ch := make(chan ai.StreamEvent, 10)
+	go func() {
+		ch <- ai.StreamEvent{Type: ai.EventMessageStart}
+		ch <- ai.StreamEvent{Type: ai.EventTextDelta, Delta: "Let me check."}
+		ch <- ai.StreamEvent{
+			Type:       ai.EventToolUseStart,
+			ToolCallID: "call_1",
+			ToolName:   "nonexistent_tool",
+		}
+		ch <- ai.StreamEvent{Type: ai.EventToolUseEnd}
+		ch <- ai.StreamEvent{Type: ai.EventMessageEnd, Usage: &ai.Usage{InputTokens: 10, OutputTokens: 5}}
+		close(ch)
+	}()
+	return ch, nil
+}
+
+func TestPromptLoopErrorNotShadowed(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	mock := &failOnSecondCallProvider{}
+	s, err := NewSession(context.Background(),
+		WithProvider(mock),
+		WithModel("test-model"),
+		WithSessionDir(tmpDir),
+	)
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	defer s.Close()
+
+	events := s.Events()
+	go func() { for range events {} }() // drain events
+
+	// The first Stream call returns a tool call. The loop executes the tool
+	// (it will fail because "nonexistent_tool" isn't registered, producing a
+	// tool error result). On the second iteration, Stream returns an error.
+	// The loop generates assistant + tool_result messages before erroring.
+	// The returned error must mention "agent loop", not just a save failure.
+	err = s.Prompt(context.Background(), "Hello")
+	if err == nil {
+		t.Fatal("expected error from Prompt, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "agent loop") {
+		t.Errorf("expected 'agent loop' in error, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "provider unavailable") {
+		t.Errorf("expected 'provider unavailable' in error chain, got: %v", err)
+	}
+
+	// Verify that messages were generated (assistant + tool result at minimum).
+	msgs := s.Messages()
+	if len(msgs) < 3 {
+		t.Errorf("expected at least 3 messages (user + assistant + tool_result), got %d", len(msgs))
 	}
 }
 
