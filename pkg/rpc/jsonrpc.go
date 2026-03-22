@@ -7,10 +7,11 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"strings"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
+	"syscall"
 
 	"github.com/ejm/go_pi/pkg/agent"
 )
@@ -111,7 +112,7 @@ func RunRPC(agentLoop *agent.AgentLoop) {
 	// server shuts down, and signal.Stop unregisters the channel so the
 	// runtime can reclaim it.
 	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, os.Interrupt)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		select {
 		case <-sigCh:

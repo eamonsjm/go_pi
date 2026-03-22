@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/ejm/go_pi/pkg/agent"
 )
@@ -23,7 +24,7 @@ func RunJSONStream(agentLoop *agent.AgentLoop, prompt string) {
 	// Handle OS interrupt. The goroutine exits via ctx.Done when the
 	// stream ends, and signal.Stop unregisters the channel.
 	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, os.Interrupt)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		select {
 		case <-sigCh:
