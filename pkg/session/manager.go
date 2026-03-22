@@ -263,7 +263,12 @@ func (m *Manager) LatestSessionID(ctx context.Context) string {
 func (m *Manager) AppendEntry(ctx context.Context, entry Entry) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	return m.appendEntryLocked(ctx, entry)
+}
 
+// appendEntryLocked is the lock-free core of AppendEntry.
+// The caller must hold m.mu (write lock).
+func (m *Manager) appendEntryLocked(ctx context.Context, entry Entry) error {
 	if m.current == "" {
 		return ErrNoActiveSession
 	}
@@ -423,21 +428,25 @@ func RepairOrphanedToolUse(msgs []ai.Message) []ai.Message {
 // and appends it. Duplicate assistant tool_use messages are detected and
 // silently skipped to prevent session bloat from model retries (e.g. after
 // crash recovery where RepairOrphanedToolUse injects synthetic errors).
+//
+// The entire check-then-append sequence is performed under a single lock
+// to prevent races between concurrent SaveMessage calls.
 func (m *Manager) SaveMessage(ctx context.Context, msg ai.Message) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	// Skip tool_result messages that reference deduplicated tool_use IDs.
-	if msg.Role == ai.RoleUser && m.shouldSkipToolResult(msg) {
+	if msg.Role == ai.RoleUser && m.shouldSkipToolResultLocked(msg) {
 		return nil
 	}
 
 	// Skip assistant messages whose tool_use blocks are content-identical
 	// to those in the most recent assistant entry.
 	if msg.Role == ai.RoleAssistant {
-		if skippedIDs := m.findDuplicateToolUseIDs(msg); len(skippedIDs) > 0 {
-			m.mu.Lock()
+		if skippedIDs := m.findDuplicateToolUseIDsLocked(msg); len(skippedIDs) > 0 {
 			for _, id := range skippedIDs {
 				m.skippedToolUses[id] = true
 			}
-			m.mu.Unlock()
 			return nil
 		}
 	}
@@ -451,21 +460,19 @@ func (m *Manager) SaveMessage(ctx context.Context, msg ai.Message) error {
 			Content: msg.Content,
 		},
 	}
-	return m.AppendEntry(ctx, entry)
+	return m.appendEntryLocked(ctx, entry)
 }
 
-// findDuplicateToolUseIDs checks if an assistant message's tool_use blocks
-// are content-identical (same name and input, ignoring API-generated IDs) to
-// those in the most recent assistant entry. Returns the new message's tool_use
-// IDs if duplicate, nil otherwise.
-func (m *Manager) findDuplicateToolUseIDs(msg ai.Message) []string {
+// findDuplicateToolUseIDsLocked checks if an assistant message's tool_use
+// blocks are content-identical (same name and input, ignoring API-generated
+// IDs) to those in the most recent assistant entry. Returns the new message's
+// tool_use IDs if duplicate, nil otherwise.
+// The caller must hold m.mu.
+func (m *Manager) findDuplicateToolUseIDsLocked(msg ai.Message) []string {
 	newCalls := msg.GetToolCalls()
 	if len(newCalls) == 0 {
 		return nil
 	}
-
-	m.mu.RLock()
-	defer m.mu.RUnlock()
 
 	// Walk backwards to find the last assistant message with tool_use blocks.
 	for i := len(m.entries) - 1; i >= 0 && i >= len(m.entries)-20; i-- {
@@ -494,10 +501,11 @@ func (m *Manager) findDuplicateToolUseIDs(msg ai.Message) []string {
 	return nil
 }
 
-// shouldSkipToolResult returns true if every tool_result block in msg
+// shouldSkipToolResultLocked returns true if every tool_result block in msg
 // references a tool_use ID that was previously skipped by dedup. When true,
 // the matched IDs are removed from the skip set.
-func (m *Manager) shouldSkipToolResult(msg ai.Message) bool {
+// The caller must hold m.mu (write lock).
+func (m *Manager) shouldSkipToolResultLocked(msg ai.Message) bool {
 	var resultIDs []string
 	for _, cb := range msg.Content {
 		if cb.Type == ai.ContentTypeToolResult {
@@ -507,9 +515,6 @@ func (m *Manager) shouldSkipToolResult(msg ai.Message) bool {
 	if len(resultIDs) == 0 {
 		return false
 	}
-
-	m.mu.Lock()
-	defer m.mu.Unlock()
 
 	if len(m.skippedToolUses) == 0 {
 		return false
