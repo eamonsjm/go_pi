@@ -893,9 +893,8 @@ func (p *PluginProcess) respawn() error {
 	p.heartbeatCh = newHeartbeatCh
 	p.healthy = true // Reset health on restart.
 	p.closed = false // Allow Send to work again for initialization.
-	p.mu.Unlock()
-
 	p.startReadLoop()
+	p.mu.Unlock()
 
 	// Re-apply memory limit on the new process.
 	p.applyMemoryLimit()
