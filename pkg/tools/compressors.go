@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Package-level compiled regexps (avoid recompiling on every call).
@@ -27,14 +28,19 @@ const (
 	CompressionHigh
 )
 
+// MetricsRecorder is the interface for recording compression metrics.
+type MetricsRecorder interface {
+	Record(category CommandCategory, originalSize, compressedSize int, duration time.Duration)
+}
+
 // GoTestAggregator compresses Go test output while preserving critical information.
 type GoTestAggregator struct {
 	level   CompressionLevel
-	metrics *Metrics
+	metrics MetricsRecorder
 }
 
 // NewGoTestAggregator creates a test output aggregator.
-func NewGoTestAggregator(level CompressionLevel, metrics *Metrics) *GoTestAggregator {
+func NewGoTestAggregator(level CompressionLevel, metrics MetricsRecorder) *GoTestAggregator {
 	return &GoTestAggregator{level: level, metrics: metrics}
 }
 
@@ -146,11 +152,11 @@ func (a *GoTestAggregator) compress(output string) string {
 // GoBuildErrorExtractor pulls out build errors from verbose output.
 type GoBuildErrorExtractor struct {
 	level   CompressionLevel
-	metrics *Metrics
+	metrics MetricsRecorder
 }
 
 // NewGoBuildErrorExtractor creates a build error extractor.
-func NewGoBuildErrorExtractor(level CompressionLevel, metrics *Metrics) *GoBuildErrorExtractor {
+func NewGoBuildErrorExtractor(level CompressionLevel, metrics MetricsRecorder) *GoBuildErrorExtractor {
 	return &GoBuildErrorExtractor{level: level, metrics: metrics}
 }
 
@@ -250,11 +256,11 @@ func (e *GoBuildErrorExtractor) extract(output string) string {
 // GitLogCompactor reduces git log output size.
 type GitLogCompactor struct {
 	level   CompressionLevel
-	metrics *Metrics
+	metrics MetricsRecorder
 }
 
 // NewGitLogCompactor creates a git log compactor.
-func NewGitLogCompactor(level CompressionLevel, metrics *Metrics) *GitLogCompactor {
+func NewGitLogCompactor(level CompressionLevel, metrics MetricsRecorder) *GitLogCompactor {
 	return &GitLogCompactor{level: level, metrics: metrics}
 }
 
@@ -376,11 +382,11 @@ func (c *GitLogCompactor) compact(output string) string {
 // LinterOutputGrouper aggregates linter output by file.
 type LinterOutputGrouper struct {
 	level   CompressionLevel
-	metrics *Metrics
+	metrics MetricsRecorder
 }
 
 // NewLinterOutputGrouper creates a linter output grouper.
-func NewLinterOutputGrouper(level CompressionLevel, metrics *Metrics) *LinterOutputGrouper {
+func NewLinterOutputGrouper(level CompressionLevel, metrics MetricsRecorder) *LinterOutputGrouper {
 	return &LinterOutputGrouper{level: level, metrics: metrics}
 }
 
