@@ -192,7 +192,7 @@ func TestSessionResume(t *testing.T) {
 	}
 	defer s2.Close()
 
-	if err := s2.Resume(sessionID); err != nil {
+	if err := s2.Resume(context.Background(), sessionID); err != nil {
 		t.Fatalf("Resume: %v", err)
 	}
 

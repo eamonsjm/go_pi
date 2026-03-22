@@ -75,7 +75,7 @@ func main() {
 	// If a session ID was provided, resume that session instead
 	if sessionID != "" {
 		fmt.Printf("Resuming session %s...\n\n", sessionID)
-		if err := s.Resume(sessionID); err != nil {
+		if err := s.Resume(ctx, sessionID); err != nil {
 			log.Printf("Warning: could not resume session: %v\n", err)
 		}
 	} else {

@@ -389,8 +389,8 @@ func (s *Session) Close() error {
 }
 
 // Resume loads a previous session and restores its conversation history.
-func (s *Session) Resume(sessionID string) error {
-	if err := s.sessionMgr.LoadSession(sessionID); err != nil {
+func (s *Session) Resume(ctx context.Context, sessionID string) error {
+	if err := s.sessionMgr.LoadSession(ctx, sessionID); err != nil {
 		return fmt.Errorf("sdk: resume session: %w", err)
 	}
 	msgs := s.sessionMgr.GetMessages()

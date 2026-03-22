@@ -2,6 +2,7 @@ package session
 
 import (
 	"bufio"
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -106,7 +107,8 @@ func (m *Manager) CurrentID() string {
 }
 
 // LoadSession loads an existing session from disk by ID.
-func (m *Manager) LoadSession(id string) (retErr error) {
+// The context allows the caller to cancel the potentially long read.
+func (m *Manager) LoadSession(ctx context.Context, id string) (retErr error) {
 	path := m.sessionPath(id)
 	f, err := os.Open(path)
 	if err != nil {
@@ -123,6 +125,9 @@ func (m *Manager) LoadSession(id string) (retErr error) {
 	// Allow large lines for messages with big tool results.
 	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 	for scanner.Scan() {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("load session %s: %w", id, err)
+		}
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
 			continue
@@ -153,16 +158,20 @@ func (m *Manager) LoadSession(id string) (retErr error) {
 }
 
 // ListSessions returns metadata for all sessions on disk, sorted by
-// most recently updated first.
-func (m *Manager) ListSessions() []SessionInfo {
+// most recently updated first. The context allows the caller to cancel
+// the potentially long scan of all session files.
+func (m *Manager) ListSessions(ctx context.Context) ([]SessionInfo, error) {
 	pattern := filepath.Join(m.dir, "*.jsonl")
 	matches, err := filepath.Glob(pattern)
 	if err != nil || len(matches) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	var sessions []SessionInfo
 	for _, path := range matches {
+		if err := ctx.Err(); err != nil {
+			return nil, fmt.Errorf("list sessions: %w", err)
+		}
 		base := filepath.Base(path)
 		id := strings.TrimSuffix(base, ".jsonl")
 		info, err := os.Stat(path)
@@ -180,6 +189,10 @@ func (m *Manager) ListSessions() []SessionInfo {
 			count := 0
 			var allEntries []Entry
 			for scanner.Scan() {
+				if err := ctx.Err(); err != nil {
+					_ = f.Close()
+					return nil, fmt.Errorf("list sessions: %w", err)
+				}
 				line := strings.TrimSpace(scanner.Text())
 				if line == "" {
 					continue
@@ -222,14 +235,14 @@ func (m *Manager) ListSessions() []SessionInfo {
 	sort.Slice(sessions, func(i, j int) bool {
 		return sessions[i].UpdatedAt.After(sessions[j].UpdatedAt)
 	})
-	return sessions
+	return sessions, nil
 }
 
 // LatestSessionID returns the ID of the most recently updated session, or
-// empty string if no sessions exist on disk.
-func (m *Manager) LatestSessionID() string {
-	sessions := m.ListSessions()
-	if len(sessions) == 0 {
+// empty string if no sessions exist on disk or the context is cancelled.
+func (m *Manager) LatestSessionID(ctx context.Context) string {
+	sessions, err := m.ListSessions(ctx)
+	if err != nil || len(sessions) == 0 {
 		return ""
 	}
 	return sessions[0].ID
@@ -774,7 +787,8 @@ func (m *Manager) GetUserEntries() []Entry {
 // CollectUserPrompts reads all session files and extracts unique user prompt
 // texts, returned most-recent-first. The result is deduplicated and limited
 // to at most maxPrompts entries. This is used for reverse-search (ctrl+r).
-func (m *Manager) CollectUserPrompts(maxPrompts int) []string {
+// The context allows the caller to cancel the potentially long scan.
+func (m *Manager) CollectUserPrompts(ctx context.Context, maxPrompts int) []string {
 	pattern := filepath.Join(m.dir, "*.jsonl")
 	matches, err := filepath.Glob(pattern)
 	if err != nil || len(matches) == 0 {
@@ -790,6 +804,9 @@ func (m *Manager) CollectUserPrompts(maxPrompts int) []string {
 	var prompts []promptEntry
 
 	for _, path := range matches {
+		if ctx.Err() != nil {
+			return nil
+		}
 		f, err := os.Open(path)
 		if err != nil {
 			continue
@@ -797,6 +814,10 @@ func (m *Manager) CollectUserPrompts(maxPrompts int) []string {
 		scanner := bufio.NewScanner(f)
 		scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 		for scanner.Scan() {
+			if ctx.Err() != nil {
+				_ = f.Close()
+				return nil
+			}
 			line := strings.TrimSpace(scanner.Text())
 			if line == "" {
 				continue

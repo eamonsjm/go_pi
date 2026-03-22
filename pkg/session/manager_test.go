@@ -2,14 +2,15 @@ package session
 
 import (
 	"bufio"
+	"context"
 	"fmt"
-	"unicode/utf8"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/ejm/go_pi/pkg/ai"
 )
@@ -122,7 +123,7 @@ func TestLoadSession(t *testing.T) {
 
 	// Load the session in a fresh manager.
 	m2 := NewManager(dir)
-	if err := m2.LoadSession(id); err != nil {
+	if err := m2.LoadSession(context.Background(),id); err != nil {
 		t.Fatalf("LoadSession: %v", err)
 	}
 
@@ -144,7 +145,7 @@ func TestLoadSession(t *testing.T) {
 
 func TestLoadSessionNotFound(t *testing.T) {
 	m := NewManager(t.TempDir())
-	err := m.LoadSession("nonexistent")
+	err := m.LoadSession(context.Background(),"nonexistent")
 	if err == nil {
 		t.Error("expected error loading nonexistent session")
 	}
@@ -168,7 +169,7 @@ func TestListSessions(t *testing.T) {
 		t.Fatalf("SaveMessage: %v", err)
 	}
 
-	sessions := m.ListSessions()
+	sessions, _ := m.ListSessions(context.Background())
 	if len(sessions) != 2 {
 		t.Fatalf("expected 2 sessions, got %d", len(sessions))
 	}
@@ -191,7 +192,7 @@ func TestListSessions(t *testing.T) {
 
 func TestListSessionsEmpty(t *testing.T) {
 	m := NewManager(t.TempDir())
-	sessions := m.ListSessions()
+	sessions, _ := m.ListSessions(context.Background())
 	if len(sessions) != 0 {
 		t.Errorf("expected 0 sessions, got %d", len(sessions))
 	}
@@ -202,7 +203,7 @@ func TestLatestSessionID(t *testing.T) {
 	m := NewManager(dir)
 
 	// No sessions — should return empty.
-	if got := m.LatestSessionID(); got != "" {
+	if got := m.LatestSessionID(context.Background()); got != "" {
 		t.Errorf("expected empty, got %q", got)
 	}
 
@@ -220,7 +221,7 @@ func TestLatestSessionID(t *testing.T) {
 		t.Fatalf("SaveMessage: %v", err)
 	}
 
-	if got := m.LatestSessionID(); got != id2 {
+	if got := m.LatestSessionID(context.Background()); got != id2 {
 		t.Errorf("expected latest %q, got %q", id2, got)
 	}
 }
@@ -240,7 +241,7 @@ func TestListSessionsPreview(t *testing.T) {
 		t.Fatalf("SaveMessage: %v", err)
 	}
 
-	sessions := m.ListSessions()
+	sessions, _ := m.ListSessions(context.Background())
 	if len(sessions) != 1 {
 		t.Fatalf("expected 1 session, got %d", len(sessions))
 	}
@@ -265,7 +266,7 @@ func TestMultipleSessions(t *testing.T) {
 	}
 
 	// Load session 1 and verify its messages.
-	if err := m.LoadSession(id1); err != nil {
+	if err := m.LoadSession(context.Background(),id1); err != nil {
 		t.Fatalf("LoadSession(%s): %v", id1, err)
 	}
 	msgs1 := m.GetMessages()
@@ -274,7 +275,7 @@ func TestMultipleSessions(t *testing.T) {
 	}
 
 	// Load session 2 and verify its messages.
-	if err := m.LoadSession(id2); err != nil {
+	if err := m.LoadSession(context.Background(),id2); err != nil {
 		t.Fatalf("LoadSession(%s): %v", id2, err)
 	}
 	msgs2 := m.GetMessages()
@@ -473,7 +474,7 @@ func TestListSessionsDuringConcurrentWrites(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for i := 0; i < readsPerReader; i++ {
-				sessions := m.ListSessions()
+				sessions, _ := m.ListSessions(context.Background())
 				// Should always see at least 1 session (the one we created).
 				if len(sessions) < 1 {
 					t.Errorf("ListSessions returned %d sessions, expected >= 1", len(sessions))
@@ -559,7 +560,7 @@ func TestConcurrentAppendEntryDataIntegrity(t *testing.T) {
 
 	// Reload from disk and verify all entries survived.
 	m2 := NewManager(dir)
-	if err := m2.LoadSession(id); err != nil {
+	if err := m2.LoadSession(context.Background(),id); err != nil {
 		t.Fatalf("LoadSession: %v", err)
 	}
 
@@ -744,7 +745,7 @@ func TestRepairOrphanedToolUse_ViaGetMessages(t *testing.T) {
 
 	// Reload in a fresh manager.
 	m2 := NewManager(dir)
-	if err := m2.LoadSession(id); err != nil {
+	if err := m2.LoadSession(context.Background(),id); err != nil {
 		t.Fatalf("LoadSession: %v", err)
 	}
 
@@ -1027,7 +1028,7 @@ func TestLoadSessionPreservesTree(t *testing.T) {
 
 	// Reload in fresh manager — last entry is e3 so active branch should be e3.
 	m2 := NewManager(dir)
-	if err := m2.LoadSession(id); err != nil {
+	if err := m2.LoadSession(context.Background(),id); err != nil {
 		t.Fatalf("LoadSession: %v", err)
 	}
 
@@ -1158,7 +1159,7 @@ func TestListSessionsShowsBranches(t *testing.T) {
 	m.AppendEntry(Entry{ID: "e3", Timestamp: time.Now().UTC(), Type: "message",
 		Data: MessageData{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "c"}}}})
 
-	sessions := m.ListSessions()
+	sessions, _ := m.ListSessions(context.Background())
 	if len(sessions) != 1 {
 		t.Fatalf("expected 1 session, got %d", len(sessions))
 	}
@@ -1566,7 +1567,7 @@ func TestCollectUserPrompts_Basic(t *testing.T) {
 	_ = id2
 	_ = m.SaveMessage(ai.Message{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "third prompt"}}})
 
-	prompts := m.CollectUserPrompts(100)
+	prompts := m.CollectUserPrompts(context.Background(),100)
 	if len(prompts) != 3 {
 		t.Fatalf("expected 3 prompts, got %d: %v", len(prompts), prompts)
 	}
@@ -1586,7 +1587,7 @@ func TestCollectUserPrompts_Deduplicates(t *testing.T) {
 	_ = m.SaveMessage(ai.Message{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "duplicate"}}})
 	_ = m.SaveMessage(ai.Message{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "unique"}}})
 
-	prompts := m.CollectUserPrompts(100)
+	prompts := m.CollectUserPrompts(context.Background(),100)
 	if len(prompts) != 2 {
 		t.Fatalf("expected 2 unique prompts, got %d: %v", len(prompts), prompts)
 	}
@@ -1601,7 +1602,7 @@ func TestCollectUserPrompts_RespectsMax(t *testing.T) {
 		_ = m.SaveMessage(ai.Message{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: fmt.Sprintf("prompt %d", i)}}})
 	}
 
-	prompts := m.CollectUserPrompts(5)
+	prompts := m.CollectUserPrompts(context.Background(),5)
 	if len(prompts) != 5 {
 		t.Fatalf("expected 5 prompts (capped), got %d", len(prompts))
 	}
@@ -1611,7 +1612,7 @@ func TestCollectUserPrompts_EmptyDir(t *testing.T) {
 	dir := t.TempDir()
 	m := NewManager(dir)
 
-	prompts := m.CollectUserPrompts(100)
+	prompts := m.CollectUserPrompts(context.Background(),100)
 	if len(prompts) != 0 {
 		t.Errorf("expected 0 prompts from empty dir, got %d", len(prompts))
 	}

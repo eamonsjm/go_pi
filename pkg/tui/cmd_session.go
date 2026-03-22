@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -52,7 +53,7 @@ func NewResumeCommand(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, c
 
 			// No argument: list sessions.
 			if args == "" {
-				sessions := sessionMgr.ListSessions()
+				sessions, _ := sessionMgr.ListSessions(context.TODO())
 				if len(sessions) == 0 {
 					chatView.AddSystemMessage("No saved sessions found.")
 					return nil
@@ -63,14 +64,15 @@ func NewResumeCommand(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, c
 			}
 
 			// Argument provided: resolve to a session ID.
-			targetID := resolveSessionArg(args, lastListed, sessionMgr.ListSessions())
+			allSessions, _ := sessionMgr.ListSessions(context.TODO())
+			targetID := resolveSessionArg(args, lastListed, allSessions)
 			if targetID == "" {
 				chatView.AddSystemMessage(fmt.Sprintf("Session not found: %s", args))
 				return nil
 			}
 
 			// Load the session.
-			if err := sessionMgr.LoadSession(targetID); err != nil {
+			if err := sessionMgr.LoadSession(context.TODO(), targetID); err != nil {
 				chatView.AddSystemMessage(fmt.Sprintf("Failed to load session: %v", err))
 				return nil
 			}

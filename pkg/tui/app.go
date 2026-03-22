@@ -794,7 +794,7 @@ func (a *App) handleAction(action Action) tea.Cmd {
 		}
 		var prompts []string
 		if a.sessionMgr != nil {
-			prompts = a.sessionMgr.CollectUserPrompts(1000)
+			prompts = a.sessionMgr.CollectUserPrompts(context.TODO(), 1000)
 		}
 		// Merge in-memory editor history (most recent first), deduplicating.
 		seen := make(map[string]bool, len(prompts))

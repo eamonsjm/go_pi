@@ -267,7 +267,7 @@ func main() {
 
 	if *sessionFlag != "" {
 		// Explicit --session flag: load the specified session.
-		if err := sessionMgr.LoadSession(*sessionFlag); err != nil {
+		if err := sessionMgr.LoadSession(context.Background(), *sessionFlag); err != nil {
 			log.Fatalf("Failed to load session: %v", err)
 		}
 		restoredMsgs = sessionMgr.GetMessages()
@@ -278,8 +278,8 @@ func main() {
 		sessionMgr.NewSession()
 	} else {
 		// Auto-resume the most recent session.
-		if latest := sessionMgr.LatestSessionID(); latest != "" {
-			if err := sessionMgr.LoadSession(latest); err == nil {
+		if latest := sessionMgr.LatestSessionID(context.Background()); latest != "" {
+			if err := sessionMgr.LoadSession(context.Background(), latest); err == nil {
 				restoredMsgs = sessionMgr.GetMessages()
 				restoredSessionID = latest
 				agentLoop.SetMessages(restoredMsgs)
