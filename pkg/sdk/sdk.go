@@ -86,6 +86,16 @@ type SessionConfig struct {
 	// ReserveTokens is the token buffer for auto-compaction. Default: 16384.
 	ReserveTokens int
 
+	// AzureEndpoint is the Azure OpenAI resource endpoint
+	// (e.g. "https://my-resource.openai.azure.com"). Required when Provider is "azure".
+	// Falls back to AZURE_OPENAI_ENDPOINT env var if empty.
+	AzureEndpoint string
+
+	// AzureDeployment is the Azure OpenAI deployment name (e.g. "gpt-4o").
+	// Required when Provider is "azure".
+	// Falls back to AZURE_OPENAI_DEPLOYMENT env var if empty.
+	AzureDeployment string
+
 	// Messages pre-loads conversation history (e.g. from a restored session).
 	Messages []ai.Message
 
@@ -164,6 +174,21 @@ func WithTools(registry *tools.Registry) SessionOption {
 func WithContextWindow(tokens int) SessionOption {
 	return func(c *SessionConfig) {
 		c.ContextWindow = tokens
+	}
+}
+
+// WithAzureEndpoint sets the Azure OpenAI resource endpoint
+// (e.g. "https://my-resource.openai.azure.com").
+func WithAzureEndpoint(endpoint string) SessionOption {
+	return func(c *SessionConfig) {
+		c.AzureEndpoint = endpoint
+	}
+}
+
+// WithAzureDeployment sets the Azure OpenAI deployment name (e.g. "gpt-4o").
+func WithAzureDeployment(deployment string) SessionOption {
+	return func(c *SessionConfig) {
+		c.AzureDeployment = deployment
 	}
 }
 
@@ -405,7 +430,7 @@ func resolveProvider(ctx context.Context, cfg *SessionConfig) (ai.Provider, erro
 	case "gemini":
 		return ai.NewGeminiProvider(cfg.APIKey)
 	case "azure":
-		return ai.NewAzureOpenAIProvider(cfg.APIKey, "", "")
+		return ai.NewAzureOpenAIProvider(cfg.APIKey, cfg.AzureEndpoint, cfg.AzureDeployment)
 	case "bedrock":
 		return ai.NewBedrockProvider(ctx, cfg.APIKey)
 	case "ollama":

@@ -219,6 +219,34 @@ func TestSessionSetters(t *testing.T) {
 	s.SetMaxTokens(4096)
 }
 
+func TestAzureOptions(t *testing.T) {
+	cfg := &SessionConfig{
+		Provider:        "azure",
+		APIKey:          "test-key",
+		AzureEndpoint:   "https://myresource.openai.azure.com",
+		AzureDeployment: "gpt-4o",
+	}
+	p, err := resolveProvider(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("resolveProvider: %v", err)
+	}
+	if p.Name() != "azure" {
+		t.Errorf("expected provider name %q, got %q", "azure", p.Name())
+	}
+}
+
+func TestWithAzureOptions(t *testing.T) {
+	cfg := &SessionConfig{}
+	WithAzureEndpoint("https://myresource.openai.azure.com")(cfg)
+	WithAzureDeployment("gpt-4o")(cfg)
+	if cfg.AzureEndpoint != "https://myresource.openai.azure.com" {
+		t.Errorf("expected AzureEndpoint %q, got %q", "https://myresource.openai.azure.com", cfg.AzureEndpoint)
+	}
+	if cfg.AzureDeployment != "gpt-4o" {
+		t.Errorf("expected AzureDeployment %q, got %q", "gpt-4o", cfg.AzureDeployment)
+	}
+}
+
 func TestResolveProviderDefaults(t *testing.T) {
 	tests := []struct {
 		provider  string
