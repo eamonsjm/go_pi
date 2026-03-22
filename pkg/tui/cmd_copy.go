@@ -4,6 +4,7 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ejm/go_pi/pkg/ai"
@@ -52,10 +53,11 @@ func NewCopyCommand(sessionMgr *session.Manager) *SlashCommand {
 					}
 				}
 
-				// Truncate preview for the confirmation message.
+				// Truncate preview for the confirmation message (rune-aware to avoid splitting multi-byte UTF-8).
 				preview := text
-				if len(preview) > 80 {
-					preview = preview[:77] + "..."
+				if utf8.RuneCountInString(preview) > 80 {
+					r := []rune(preview)
+					preview = string(r[:77]) + "..."
 				}
 				return CommandResultMsg{Text: "Copied to clipboard: " + preview}
 			}
