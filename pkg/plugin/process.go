@@ -2,7 +2,6 @@ package plugin
 
 import (
 	"bufio"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -108,7 +107,7 @@ type PluginProcess struct {
 
 	// Supervisor fields (set when EnableAutoRestart is called).
 	supervised bool
-	cancel     context.CancelFunc
+	stopCh     chan struct{} // closed to signal supervisor to stop
 	stopped    chan struct{} // closed when supervisor exits
 	stopErr    error         // error from the last process exit
 }
@@ -494,8 +493,8 @@ func (p *PluginProcess) Stop() error {
 	p.mu.Unlock()
 
 	if supervised {
-		// Cancel pending restarts and signal the supervisor to stop.
-		p.cancel()
+		// Signal the supervisor to stop.
+		close(p.stopCh)
 
 		// Send shutdown to the current process. Use shutdownOnce because
 		// the supervisor's ctx.Done handler may also attempt shutdown.
@@ -685,17 +684,16 @@ func (p *PluginProcess) EnableAutoRestart(cfg RestartConfig) {
 	cfgCopy := cfg
 	p.restartCfg = &cfgCopy
 	p.supervised = true
-	ctx, cancel := context.WithCancel(context.Background())
-	p.cancel = cancel
+	p.stopCh = make(chan struct{})
 	p.stopped = make(chan struct{})
 
-	go p.waitAndSupervise(ctx)
+	go p.waitAndSupervise(p.stopCh)
 }
 
 // waitAndSupervise is the supervisor goroutine. It calls cmd.Wait() in a loop,
 // restarting the process on unexpected exit with exponential backoff. It is the
 // sole owner of cmd.Wait() — no other code should call it when supervised.
-func (p *PluginProcess) waitAndSupervise(ctx context.Context) {
+func (p *PluginProcess) waitAndSupervise(stopCh <-chan struct{}) {
 	defer close(p.stopped)
 
 	for {
@@ -750,10 +748,10 @@ func (p *PluginProcess) waitAndSupervise(ctx context.Context) {
 			log.Printf("plugin %s: crashed (exit: %v), restarting in %v (attempt %d/%d)",
 				p.name, err, backoff, count, maxAttempts)
 
-			// Wait for backoff or cancellation.
+			// Wait for backoff or stop signal.
 			select {
 			case <-time.After(backoff):
-			case <-ctx.Done():
+			case <-stopCh:
 				p.mu.Lock()
 				p.restarting = false
 				p.mu.Unlock()
@@ -773,7 +771,7 @@ func (p *PluginProcess) waitAndSupervise(ctx context.Context) {
 			p.mu.Unlock()
 			// Loop back to wait on the new process.
 
-		case <-ctx.Done():
+		case <-stopCh:
 			// Stop requested while process is still running.
 			// Shutdown the current process and wait for it to exit.
 			// Use shutdownOnce to avoid racing with Stop() which may

@@ -18,7 +18,9 @@ func newTestServer() (*rpcServer, *bytes.Buffer) {
 func TestRPCParseError(t *testing.T) {
 	s, out := newTestServer()
 
-	s.serve(context.Background(), strings.NewReader("not json\n"))
+	_, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s.serve(context.Background(), strings.NewReader("not json\n"), cancel)
 
 	var resp Response
 	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
@@ -35,7 +37,9 @@ func TestRPCParseError(t *testing.T) {
 func TestRPCMethodNotFound(t *testing.T) {
 	s, out := newTestServer()
 
-	s.serve(context.Background(), strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"nonexistent"}` + "\n"))
+	_, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s.serve(context.Background(), strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"nonexistent"}`+"\n"), cancel)
 
 	var resp Response
 	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
@@ -52,7 +56,9 @@ func TestRPCMethodNotFound(t *testing.T) {
 func TestRPCInvalidVersion(t *testing.T) {
 	s, out := newTestServer()
 
-	s.serve(context.Background(), strings.NewReader(`{"jsonrpc":"1.0","id":1,"method":"cancel"}` + "\n"))
+	_, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s.serve(context.Background(), strings.NewReader(`{"jsonrpc":"1.0","id":1,"method":"cancel"}`+"\n"), cancel)
 
 	var resp Response
 	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
@@ -69,7 +75,9 @@ func TestRPCInvalidVersion(t *testing.T) {
 func TestRPCSteerInvalidParams(t *testing.T) {
 	s, out := newTestServer()
 
-	s.serve(context.Background(), strings.NewReader(`{"jsonrpc":"2.0","id":2,"method":"steer","params":{}}` + "\n"))
+	_, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s.serve(context.Background(), strings.NewReader(`{"jsonrpc":"2.0","id":2,"method":"steer","params":{}}`+"\n"), cancel)
 
 	var resp Response
 	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
@@ -86,7 +94,9 @@ func TestRPCSteerInvalidParams(t *testing.T) {
 func TestRPCPromptInvalidParams(t *testing.T) {
 	s, out := newTestServer()
 
-	s.serve(context.Background(), strings.NewReader(`{"jsonrpc":"2.0","id":3,"method":"prompt","params":{}}` + "\n"))
+	_, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s.serve(context.Background(), strings.NewReader(`{"jsonrpc":"2.0","id":3,"method":"prompt","params":{}}`+"\n"), cancel)
 
 	var resp Response
 	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
@@ -107,7 +117,7 @@ func TestRPCNotification(t *testing.T) {
 		JSONRPC: "2.0",
 		Method:  "agent/event",
 		Params:  Event{Type: "agent_start"},
-	})
+	}, nil)
 
 	var n Notification
 	if err := json.Unmarshal(out.Bytes(), &n); err != nil {
@@ -124,11 +134,10 @@ func TestRPCShutdown(t *testing.T) {
 
 	var out bytes.Buffer
 	s := &rpcServer{
-		cancel: cancel,
 		writer: &out,
 	}
 
-	s.serve(ctx, strings.NewReader(`{"jsonrpc":"2.0","id":99,"method":"shutdown"}` + "\n"))
+	s.serve(ctx, strings.NewReader(`{"jsonrpc":"2.0","id":99,"method":"shutdown"}`+"\n"), cancel)
 
 	var resp Response
 	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {

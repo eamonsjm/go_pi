@@ -129,22 +129,20 @@ func RunRPC(agentLoop *agent.AgentLoop) {
 
 	s := &rpcServer{
 		agentLoop: agentLoop,
-		cancel:    cancel,
 		writer:    os.Stdout,
 	}
-	s.serve(ctx, proxy.pr)
+	s.serve(ctx, proxy.pr, cancel)
 }
 
 type rpcServer struct {
 	agentLoop *agent.AgentLoop
-	cancel    context.CancelFunc
 	writer    io.Writer
 
 	mu      sync.Mutex // protects writes to writer
 	running bool       // true while a prompt is executing
 }
 
-func (s *rpcServer) serve(ctx context.Context, r io.Reader) {
+func (s *rpcServer) serve(ctx context.Context, r io.Reader, cancel context.CancelFunc) {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
 
@@ -166,7 +164,7 @@ func (s *rpcServer) serve(ctx context.Context, r io.Reader) {
 					Message: "Parse error",
 					Data:    err.Error(),
 				},
-			})
+			}, cancel)
 			continue
 		}
 
@@ -178,11 +176,11 @@ func (s *rpcServer) serve(ctx context.Context, r io.Reader) {
 					Code:    CodeInvalidRequest,
 					Message: "Invalid Request: jsonrpc must be \"2.0\"",
 				},
-			})
+			}, cancel)
 			continue
 		}
 
-		s.handleRequest(ctx, req)
+		s.handleRequest(ctx, cancel, req)
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -190,17 +188,17 @@ func (s *rpcServer) serve(ctx context.Context, r io.Reader) {
 	}
 }
 
-func (s *rpcServer) handleRequest(ctx context.Context, req Request) {
+func (s *rpcServer) handleRequest(ctx context.Context, cancel context.CancelFunc, req Request) {
 	switch req.Method {
 	case "prompt":
-		s.handlePrompt(ctx, req)
+		s.handlePrompt(ctx, cancel, req)
 	case "cancel":
 		s.agentLoop.Cancel()
 		s.sendResponse(Response{
 			JSONRPC: "2.0",
 			ID:      req.ID,
 			Result:  map[string]string{"status": "cancelled"},
-		})
+		}, cancel)
 	case "steer":
 		var params PromptParams
 		if err := json.Unmarshal(req.Params, &params); err != nil || params.Text == "" {
@@ -211,7 +209,7 @@ func (s *rpcServer) handleRequest(ctx context.Context, req Request) {
 					Code:    CodeInvalidParams,
 					Message: "Invalid params: expected {\"text\": \"...\"}",
 				},
-			})
+			}, cancel)
 			return
 		}
 		s.agentLoop.Steer(params.Text)
@@ -219,14 +217,14 @@ func (s *rpcServer) handleRequest(ctx context.Context, req Request) {
 			JSONRPC: "2.0",
 			ID:      req.ID,
 			Result:  map[string]string{"status": "steered"},
-		})
+		}, cancel)
 	case "shutdown":
 		s.sendResponse(Response{
 			JSONRPC: "2.0",
 			ID:      req.ID,
 			Result:  map[string]string{"status": "shutting_down"},
-		})
-		s.cancel()
+		}, cancel)
+		cancel()
 	default:
 		s.sendResponse(Response{
 			JSONRPC: "2.0",
@@ -235,11 +233,11 @@ func (s *rpcServer) handleRequest(ctx context.Context, req Request) {
 				Code:    CodeMethodNotFound,
 				Message: fmt.Sprintf("Method not found: %s", req.Method),
 			},
-		})
+		}, cancel)
 	}
 }
 
-func (s *rpcServer) handlePrompt(ctx context.Context, req Request) {
+func (s *rpcServer) handlePrompt(ctx context.Context, cancel context.CancelFunc, req Request) {
 	s.mu.Lock()
 	if s.running {
 		s.mu.Unlock()
@@ -250,7 +248,7 @@ func (s *rpcServer) handlePrompt(ctx context.Context, req Request) {
 				Code:    CodeInternalError,
 				Message: "A prompt is already running. Use \"cancel\" first.",
 			},
-		})
+		}, cancel)
 		return
 	}
 	s.running = true
@@ -271,7 +269,7 @@ func (s *rpcServer) handlePrompt(ctx context.Context, req Request) {
 				Code:    CodeInvalidParams,
 				Message: "Invalid params: expected {\"text\": \"...\"}",
 			},
-		})
+		}, cancel)
 		return
 	}
 
@@ -291,7 +289,7 @@ func (s *rpcServer) handlePrompt(ctx context.Context, req Request) {
 			JSONRPC: "2.0",
 			Method:  "agent/event",
 			Params:  ev,
-		})
+		}, cancel)
 
 		// Accumulate assistant text for the final response.
 		if event.Type == agent.EventAssistantText {
@@ -309,7 +307,7 @@ func (s *rpcServer) handlePrompt(ctx context.Context, req Request) {
 				Code:    CodeInternalError,
 				Message: promptErr.Error(),
 			},
-		})
+		}, cancel)
 		return
 	}
 
@@ -317,10 +315,10 @@ func (s *rpcServer) handlePrompt(ctx context.Context, req Request) {
 		JSONRPC: "2.0",
 		ID:      req.ID,
 		Result:  PromptResult{Text: resultText.String()},
-	})
+	}, cancel)
 }
 
-func (s *rpcServer) sendResponse(resp Response) {
+func (s *rpcServer) sendResponse(resp Response, cancel context.CancelFunc) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	data, err := json.Marshal(resp)
@@ -330,11 +328,13 @@ func (s *rpcServer) sendResponse(resp Response) {
 	}
 	if _, err := fmt.Fprintf(s.writer, "%s\n", data); err != nil {
 		log.Printf("rpc: failed to write response: %v", err)
-		s.cancel()
+		if cancel != nil {
+			cancel()
+		}
 	}
 }
 
-func (s *rpcServer) sendNotification(n Notification) {
+func (s *rpcServer) sendNotification(n Notification, cancel context.CancelFunc) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	data, err := json.Marshal(n)
@@ -344,6 +344,8 @@ func (s *rpcServer) sendNotification(n Notification) {
 	}
 	if _, err := fmt.Fprintf(s.writer, "%s\n", data); err != nil {
 		log.Printf("rpc: failed to write notification: %v", err)
-		s.cancel()
+		if cancel != nil {
+			cancel()
+		}
 	}
 }
