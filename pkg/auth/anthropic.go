@@ -44,9 +44,33 @@ type AnthropicOAuth struct {
 	HTTPClient   *http.Client
 }
 
+// AnthropicOption configures an AnthropicOAuth provider.
+type AnthropicOption func(*AnthropicOAuth)
+
+// WithAnthropicAuthorizeURL sets the base URL for /oauth/authorize.
+func WithAnthropicAuthorizeURL(url string) AnthropicOption {
+	return func(a *AnthropicOAuth) { a.AuthorizeURL = url }
+}
+
+// WithAnthropicTokenURL sets the base URL for /v1/oauth/token.
+func WithAnthropicTokenURL(url string) AnthropicOption {
+	return func(a *AnthropicOAuth) { a.TokenURL = url }
+}
+
+// WithAnthropicClientID sets the OAuth client ID.
+func WithAnthropicClientID(id string) AnthropicOption {
+	return func(a *AnthropicOAuth) { a.ClientID = id }
+}
+
+// WithAnthropicHTTPClient sets the HTTP client used for token requests.
+func WithAnthropicHTTPClient(c *http.Client) AnthropicOption {
+	return func(a *AnthropicOAuth) { a.HTTPClient = c }
+}
+
 // NewAnthropicOAuth creates an Anthropic OAuth provider with default settings.
-func NewAnthropicOAuth() *AnthropicOAuth {
-	return &AnthropicOAuth{
+// Use AnthropicOption functions to customize.
+func NewAnthropicOAuth(opts ...AnthropicOption) *AnthropicOAuth {
+	a := &AnthropicOAuth{
 		AuthorizeURL: defaultAnthropicAuthorizeURL,
 		TokenURL:     defaultAnthropicTokenURL,
 		ClientID:     defaultAnthropicClientID,
@@ -54,6 +78,10 @@ func NewAnthropicOAuth() *AnthropicOAuth {
 		Scope:        defaultAnthropicScope,
 		HTTPClient:   &http.Client{Timeout: 30 * time.Second},
 	}
+	for _, opt := range opts {
+		opt(a)
+	}
+	return a
 }
 
 func (a *AnthropicOAuth) ID() string   { return "anthropic" }

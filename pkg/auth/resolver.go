@@ -81,7 +81,7 @@ func (r *Resolver) Resolve(ctx context.Context, provider string) (string, error)
 	}
 
 	// 4. Environment variable (API key credentials only).
-	if envName, ok := config.ProviderAPIKeyEnvVars[provider]; ok {
+	if envName, ok := config.ProviderAPIKeyEnvVar(provider); ok {
 		if val := os.Getenv(envName); val != "" {
 			return val, nil
 		}

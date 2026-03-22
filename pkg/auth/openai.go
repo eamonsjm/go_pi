@@ -38,9 +38,33 @@ type OpenAIOAuth struct {
 	HTTPClient   *http.Client
 }
 
+// OpenAIOption configures an OpenAIOAuth provider.
+type OpenAIOption func(*OpenAIOAuth)
+
+// WithOpenAIAuthorizeURL sets the authorization endpoint URL.
+func WithOpenAIAuthorizeURL(url string) OpenAIOption {
+	return func(o *OpenAIOAuth) { o.AuthorizeURL = url }
+}
+
+// WithOpenAITokenURL sets the token endpoint URL.
+func WithOpenAITokenURL(url string) OpenAIOption {
+	return func(o *OpenAIOAuth) { o.TokenURL = url }
+}
+
+// WithOpenAIClientID sets the OAuth client ID.
+func WithOpenAIClientID(id string) OpenAIOption {
+	return func(o *OpenAIOAuth) { o.ClientID = id }
+}
+
+// WithOpenAIHTTPClient sets the HTTP client used for token requests.
+func WithOpenAIHTTPClient(c *http.Client) OpenAIOption {
+	return func(o *OpenAIOAuth) { o.HTTPClient = c }
+}
+
 // NewOpenAIOAuth creates an OpenAI OAuth provider with default settings.
-func NewOpenAIOAuth() *OpenAIOAuth {
-	return &OpenAIOAuth{
+// Use OpenAIOption functions to customize.
+func NewOpenAIOAuth(opts ...OpenAIOption) *OpenAIOAuth {
+	o := &OpenAIOAuth{
 		AuthorizeURL: defaultOpenAIAuthorizeURL,
 		TokenURL:     defaultOpenAITokenURL,
 		ClientID:     defaultOpenAIClientID,
@@ -48,6 +72,10 @@ func NewOpenAIOAuth() *OpenAIOAuth {
 		Scope:        defaultOpenAIScope,
 		HTTPClient:   &http.Client{Timeout: 30 * time.Second},
 	}
+	for _, opt := range opts {
+		opt(o)
+	}
+	return o
 }
 
 func (o *OpenAIOAuth) ID() string   { return "openai" }

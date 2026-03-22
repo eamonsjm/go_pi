@@ -295,7 +295,7 @@ func NewAuthStatusCommand(store *auth.Store, resolver *auth.Resolver) *SlashComm
 						} else {
 							sb.WriteString(" (env var)")
 						}
-					} else if envName, ok := config.ProviderConfigEnvVars[p]; ok {
+					} else if envName, ok := config.ProviderConfigEnvVar(p); ok {
 						if val := os.Getenv(envName); val != "" {
 							fmt.Fprintf(&sb, "\n  %s: configured (%s set)", p, envName)
 						} else {
