@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"fmt"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -46,7 +47,7 @@ func (r *HookRegistry) Before(ctx context.Context, toolName string, params map[s
 
 	for _, h := range hooks {
 		if err := h.BeforeExecute(ctx, toolName, params); err != nil {
-			return err
+			return fmt.Errorf("before-hook %q: %w", toolName, err)
 		}
 	}
 	return nil

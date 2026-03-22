@@ -149,7 +149,7 @@ func (s *Store) Providers() []string {
 // This prevents concurrent processes from racing on token refresh.
 func (s *Store) WithLock(fn func() error) error {
 	if err := s.Lock(); err != nil {
-		return err
+		return fmt.Errorf("lock auth store: %w", err)
 	}
 	defer s.Unlock()
 	return fn()
