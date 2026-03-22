@@ -229,6 +229,19 @@ func (a *AgentLoop) Prompt(ctx context.Context, text string) error {
 // run is the core loop. It sends messages to the model, processes tool calls,
 // handles steering, and loops until the model is done.
 func (a *AgentLoop) run(ctx context.Context) error {
+	// Drain stale steering messages left over from a previous Prompt() call.
+	// steerCh is a buffered channel that persists across calls; unconsumed
+	// messages would cause the next tool-execution phase to skip tools
+	// unexpectedly.
+	for {
+		select {
+		case <-a.steerCh:
+		default:
+			goto steerDrained
+		}
+	}
+steerDrained:
+
 	a.emit(ctx, AgentEvent{Type: EventAgentStart})
 	defer a.emit(ctx, AgentEvent{Type: EventAgentEnd})
 
