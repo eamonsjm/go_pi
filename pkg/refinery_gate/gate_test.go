@@ -238,6 +238,75 @@ func TestCheckCI_MissingWorkflow(t *testing.T) {
 	}
 }
 
+func TestCheckCI_KeepsLatestRunPerWorkflow(t *testing.T) {
+	// API returns runs in non-descending order: older failed Build run appears
+	// after the newer successful one. The gate must pick the latest (highest RunID).
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		response := map[string]interface{}{
+			"workflow_runs": []map[string]interface{}{
+				{
+					"id":         900,
+					"name":       "Build",
+					"status":     "completed",
+					"conclusion": "failure",
+					"html_url":   "https://github.com/eamonsjm/go_pi/actions/runs/900",
+				},
+				{
+					"id":         1050,
+					"name":       "Build",
+					"status":     "completed",
+					"conclusion": "success",
+					"html_url":   "https://github.com/eamonsjm/go_pi/actions/runs/1050",
+				},
+				{
+					"id":         1002,
+					"name":       "Lint",
+					"status":     "completed",
+					"conclusion": "success",
+					"html_url":   "https://github.com/eamonsjm/go_pi/actions/runs/1002",
+				},
+				{
+					"id":         1003,
+					"name":       "Tests",
+					"status":     "completed",
+					"conclusion": "success",
+					"html_url":   "https://github.com/eamonsjm/go_pi/actions/runs/1003",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
+
+	checker := &GateChecker{
+		client:    server.Client(),
+		owner:     "eamonsjm",
+		repo:      "go_pi",
+		token:     "fake-token",
+		branch:    "main",
+		workflows: []string{"Build", "Lint", "Tests"},
+		apiURL:    server.URL + "/repos/eamonsjm/go_pi/actions/runs?branch=main&per_page=50",
+	}
+
+	status, err := checker.CheckCI(context.Background())
+	if err != nil {
+		t.Fatalf("CheckCI failed: %v", err)
+	}
+
+	if !status.Passed {
+		t.Errorf("Expected gate to pass (latest Build run succeeded), but got: %s", status.Reason)
+	}
+
+	buildStatus := status.WorkflowStatuses["Build"]
+	if buildStatus.RunID != 1050 {
+		t.Errorf("Expected Build RunID 1050 (latest), got %d", buildStatus.RunID)
+	}
+	if buildStatus.Conclusion != "success" {
+		t.Errorf("Expected Build conclusion 'success', got '%s'", buildStatus.Conclusion)
+	}
+}
+
 // captureTransport records the request URL and returns a canned JSON response.
 type captureTransport struct {
 	capturedURL string

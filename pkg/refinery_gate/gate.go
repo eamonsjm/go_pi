@@ -69,13 +69,11 @@ func (gc *GateChecker) CheckCI(ctx context.Context) (*GateStatus, error) {
 		return gs, fmt.Errorf("failed to fetch workflow runs: %w", err)
 	}
 
-	// Group runs by workflow name
+	// Group runs by workflow name, keeping the latest (highest RunID) for each
 	workflowMap := make(map[string]Status)
 	for _, run := range runs {
-		name := run.Name
-		// Only track the latest run for each workflow
-		if _, exists := workflowMap[name]; !exists {
-			workflowMap[name] = run
+		if existing, exists := workflowMap[run.Name]; !exists || run.RunID > existing.RunID {
+			workflowMap[run.Name] = run
 		}
 	}
 
