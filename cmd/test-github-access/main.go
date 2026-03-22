@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
@@ -9,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/signal"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -22,6 +24,9 @@ func main() {
 }
 
 func run() error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
 	owner := flag.String("owner", "eamonsjm", "GitHub owner")
 	repo := flag.String("repo", "go_pi", "GitHub repo")
 	flag.Parse()
@@ -65,7 +70,7 @@ func run() error {
 
 	// Try to fetch workflow runs for this repo
 	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/actions/runs", *owner, *repo)
-	req, err := http.NewRequest("GET", apiURL, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create HTTP request: %w", err)
 	}
