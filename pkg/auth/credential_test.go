@@ -1,11 +1,74 @@
 package auth
 
 import (
+	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 )
+
+func TestCredential_String_RedactsSecrets(t *testing.T) {
+	c := Credential{
+		Type:         CredentialAPIKey,
+		Key:          "sk-ant-live-supersecret",
+		RefreshToken: "rt-secret",
+		AccessToken:  "at-secret",
+		ExpiresAt:    1234567890,
+	}
+	s := c.String()
+
+	if strings.Contains(s, "supersecret") || strings.Contains(s, "rt-secret") || strings.Contains(s, "at-secret") {
+		t.Errorf("String() leaked secret values: %s", s)
+	}
+	if !strings.Contains(s, "api_key") {
+		t.Errorf("String() should contain credential type, got: %s", s)
+	}
+	if !strings.Contains(s, "Key:[set]") {
+		t.Errorf("String() should indicate Key is set, got: %s", s)
+	}
+	if !strings.Contains(s, "RefreshToken:[set]") {
+		t.Errorf("String() should indicate RefreshToken is set, got: %s", s)
+	}
+}
+
+func TestCredential_String_EmptyFields(t *testing.T) {
+	c := Credential{Type: CredentialOAuth}
+	s := c.String()
+
+	if !strings.Contains(s, "Key:[empty]") {
+		t.Errorf("String() should indicate Key is empty, got: %s", s)
+	}
+	if !strings.Contains(s, "RefreshToken:[empty]") {
+		t.Errorf("String() should indicate RefreshToken is empty, got: %s", s)
+	}
+	if !strings.Contains(s, "AccessToken:[empty]") {
+		t.Errorf("String() should indicate AccessToken is empty, got: %s", s)
+	}
+}
+
+func TestCredential_SprintfV_UsesStringer(t *testing.T) {
+	c := Credential{
+		Type: CredentialAPIKey,
+		Key:  "sk-ant-live-supersecret",
+	}
+
+	for _, verb := range []string{"%v", "%+v", "%s"} {
+		out := fmt.Sprintf(verb, c)
+		if strings.Contains(out, "supersecret") {
+			t.Errorf("fmt.Sprintf(%q, cred) leaked secret: %s", verb, out)
+		}
+	}
+}
+
+func TestCredential_GoString(t *testing.T) {
+	c := Credential{Type: CredentialAPIKey, Key: "secret"}
+	s := fmt.Sprintf("%#v", c)
+	if strings.Contains(s, "secret") && !strings.Contains(s, "[set]") {
+		t.Errorf("GoString() leaked secret via %%#v: %s", s)
+	}
+}
 
 func TestIsExpired_NotOAuth(t *testing.T) {
 	c := &Credential{Type: CredentialAPIKey, Key: "sk-123"}
