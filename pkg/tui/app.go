@@ -60,6 +60,9 @@ type App struct {
 	onModelChange  func(provider, model string)
 	onLoginSuccess func(provider string)
 
+	// Application lifecycle context for long-running or cancellable operations.
+	ctx context.Context
+
 	// Dependencies for keybinding actions.
 	cfg       *config.Config
 	agentLoop *agent.AgentLoop
@@ -276,6 +279,7 @@ func (a *App) RestoreSession(sessionID string, msgs []ai.Message) {
 // commands like /compact are cancelled when the application exits.
 func (a *App) RegisterBuiltinCommands(ctx context.Context, agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg *config.Config, authStore *auth.Store, authResolver *auth.Resolver) {
 	// Store dependencies needed for keybinding actions.
+	a.ctx = ctx
 	a.cfg = cfg
 	a.agentLoop = agentLoop
 	a.sessionMgr = sessionMgr
@@ -300,7 +304,7 @@ func (a *App) RegisterBuiltinCommands(ctx context.Context, agentLoop *agent.Agen
 	a.RegisterCommand(NewSettingsCommand(cfg, agentLoop, a.header))
 	a.RegisterCommand(NewRTKCommand(cfg, agentLoop.Metrics()))
 	a.RegisterCommand(NewNewSessionCommand(agentLoop, sessionMgr, a.chat, a.header))
-	a.RegisterCommand(NewResumeCommand(agentLoop, sessionMgr, a.chat, a.header))
+	a.RegisterCommand(NewResumeCommand(ctx, agentLoop, sessionMgr, a.chat, a.header))
 	a.RegisterCommand(NewSessionInfoCommand(sessionMgr, a.chat,
 		func() ProviderInfo {
 			info := a.providerInfo
@@ -324,7 +328,7 @@ func (a *App) RegisterBuiltinCommands(ctx context.Context, agentLoop *agent.Agen
 	if authStore != nil && authResolver != nil {
 		a.RegisterCommand(NewLoginCommand(authStore, authResolver))
 		a.RegisterCommand(NewLogoutCommand(authStore))
-		a.RegisterCommand(NewAuthStatusCommand(authStore, authResolver))
+		a.RegisterCommand(NewAuthStatusCommand(ctx, authStore, authResolver))
 	}
 
 	// Alias commands.
@@ -835,7 +839,7 @@ func (a *App) handleAction(action Action) tea.Cmd {
 		}
 		var prompts []string
 		if a.sessionMgr != nil {
-			prompts = a.sessionMgr.CollectUserPrompts(context.TODO(), 1000)
+			prompts = a.sessionMgr.CollectUserPrompts(a.ctx, 1000)
 		}
 		// Merge in-memory editor history (most recent first), deduplicating.
 		seen := make(map[string]bool, len(prompts))

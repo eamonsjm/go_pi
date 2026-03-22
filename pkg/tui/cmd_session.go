@@ -40,7 +40,7 @@ func NewNewSessionCommand(agentLoop *agent.AgentLoop, sessionMgr *session.Manage
 //
 // When invoked with no arguments, it lists available sessions in the chat.
 // When invoked with an ID or index number, it loads that session directly.
-func NewResumeCommand(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, chatView *ChatView, header *Header) *SlashCommand {
+func NewResumeCommand(ctx context.Context, agentLoop *agent.AgentLoop, sessionMgr *session.Manager, chatView *ChatView, header *Header) *SlashCommand {
 	// lastListed holds the sessions from the most recent /resume listing so
 	// that numeric indices can be resolved on a subsequent /resume <n> call.
 	var lastListed []session.SessionInfo
@@ -53,7 +53,7 @@ func NewResumeCommand(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, c
 
 			// No argument: list sessions.
 			if args == "" {
-				sessions, _ := sessionMgr.ListSessions(context.TODO())
+				sessions, _ := sessionMgr.ListSessions(ctx)
 				if len(sessions) == 0 {
 					chatView.AddSystemMessage("No saved sessions found.")
 					return nil
@@ -64,7 +64,7 @@ func NewResumeCommand(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, c
 			}
 
 			// Argument provided: resolve to a session ID.
-			allSessions, _ := sessionMgr.ListSessions(context.TODO())
+			allSessions, _ := sessionMgr.ListSessions(ctx)
 			targetID := resolveSessionArg(args, lastListed, allSessions)
 			if targetID == "" {
 				chatView.AddSystemMessage(fmt.Sprintf("Session not found: %s", args))
@@ -72,7 +72,7 @@ func NewResumeCommand(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, c
 			}
 
 			// Load the session.
-			if err := sessionMgr.LoadSession(context.TODO(), targetID); err != nil {
+			if err := sessionMgr.LoadSession(ctx, targetID); err != nil {
 				chatView.AddSystemMessage(fmt.Sprintf("Failed to load session: %v", err))
 				return nil
 			}
