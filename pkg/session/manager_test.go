@@ -3,6 +3,7 @@ package session
 import (
 	"bufio"
 	"fmt"
+	"unicode/utf8"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1613,5 +1614,36 @@ func TestCollectUserPrompts_EmptyDir(t *testing.T) {
 	prompts := m.CollectUserPrompts(100)
 	if len(prompts) != 0 {
 		t.Errorf("expected 0 prompts from empty dir, got %d", len(prompts))
+	}
+}
+
+func TestTruncatePreview(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  string
+		maxLen int
+		want   string
+	}{
+		{"short ASCII", "hello", 80, "hello"},
+		{"exact limit", "abcde", 5, "abcde"},
+		{"truncate ASCII", "abcdefghij", 8, "abcde..."},
+		{"emoji at boundary", strings.Repeat("a", 75) + "\U0001F600\U0001F601", 80, strings.Repeat("a", 75) + "..."},
+		{"multi-byte CJK", strings.Repeat("a", 56) + "\u4e16\u754c", 60, strings.Repeat("a", 56) + "..."},
+		{"all emoji", "\U0001F600\U0001F601\U0001F602\U0001F603\U0001F604\U0001F605\U0001F606\U0001F607\U0001F608\U0001F609\U0001F60A\U0001F60B\U0001F60C\U0001F60D", 20, "\U0001F600\U0001F601\U0001F602\U0001F603..."},
+		{"empty string", "", 10, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := truncatePreview(tt.input, tt.maxLen)
+			if got != tt.want {
+				t.Errorf("truncatePreview(%q, %d) = %q, want %q", tt.input, tt.maxLen, got, tt.want)
+			}
+			if !utf8.ValidString(got) {
+				t.Errorf("truncatePreview(%q, %d) produced invalid UTF-8: %q", tt.input, tt.maxLen, got)
+			}
+			if len(got) > tt.maxLen {
+				t.Errorf("truncatePreview(%q, %d) result too long: %d bytes", tt.input, tt.maxLen, len(got))
+			}
+		})
 	}
 }

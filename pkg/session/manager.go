@@ -13,8 +13,24 @@ import (
 	"sync"
 	"time"
 
+	"unicode/utf8"
+
 	"github.com/ejm/go_pi/pkg/ai"
 )
+
+// truncatePreview truncates s to at most maxLen bytes on a valid UTF-8 boundary
+// and appends "..." if the string was shortened.
+func truncatePreview(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	// Back up from the target cut point to avoid splitting a multi-byte rune.
+	truncLen := maxLen - 3 // leave room for "..."
+	for truncLen > 0 && !utf8.RuneStart(s[truncLen]) {
+		truncLen--
+	}
+	return s[:truncLen] + "..."
+}
 
 // Entry represents a single session entry persisted as one line of JSONL.
 type Entry struct {
@@ -184,9 +200,7 @@ func (m *Manager) ListSessions() []SessionInfo {
 						} else {
 							si.Preview = text
 						}
-						if len(si.Preview) > 80 {
-							si.Preview = si.Preview[:77] + "..."
-						}
+						si.Preview = truncatePreview(si.Preview, 80)
 					}
 				}
 			}
@@ -589,9 +603,7 @@ func (m *Manager) GetBranches() []BranchInfo {
 					} else {
 						bi.Preview = text
 					}
-					if len(bi.Preview) > 60 {
-						bi.Preview = bi.Preview[:57] + "..."
-					}
+					bi.Preview = truncatePreview(bi.Preview, 60)
 				}
 			}
 			currentID = e.ParentID
@@ -702,9 +714,7 @@ func (m *Manager) FormatTree() string {
 				}
 			}
 		}
-		if len(lastUserMsg) > 50 {
-			lastUserMsg = lastUserMsg[:47] + "..."
-		}
+		lastUserMsg = truncatePreview(lastUserMsg, 50)
 
 		// Find fork point (first entry on this branch that differs from other branches).
 		forkDepth := findForkDepth(entries, byID, leaf.ID, leaves)
