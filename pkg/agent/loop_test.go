@@ -1084,6 +1084,127 @@ func TestRichToolCallWithError(t *testing.T) {
 	}
 }
 
+// --- hook error tests -------------------------------------------------------
+
+// mockHook implements tools.Hook for testing hook error paths.
+type mockHook struct {
+	beforeErr error
+	afterErr  error
+}
+
+func (h *mockHook) BeforeExecute(_ context.Context, _ string, _ map[string]any) error {
+	return h.beforeErr
+}
+
+func (h *mockHook) AfterExecute(_ context.Context, _ string, _ map[string]any, result string, err error) (string, error) {
+	if h.afterErr != nil {
+		return "", h.afterErr
+	}
+	return result, err
+}
+
+func TestHookBeforeErrorReturnsToolError(t *testing.T) {
+	provider := &mockProvider{
+		streamFn: toolThenText("my_tool", "tc-1", `{}`, "ok"),
+	}
+	reg := tools.NewRegistry()
+	executed := false
+	reg.Register(&callbackTool{name: "my_tool", fn: func() (string, error) {
+		executed = true
+		return "should not run", nil
+	}})
+	a := NewAgentLoop(provider, reg)
+
+	// Replace hooks with a registry containing a failing Before hook.
+	hookReg := tools.NewHookRegistry()
+	hookReg.Register(&mockHook{beforeErr: errors.New("permission denied by policy")})
+	a.hooks = hookReg
+
+	ch := a.Events()
+	go func() {
+		if err := a.Prompt(context.Background(), "call tool"); err != nil {
+			t.Errorf("Prompt returned error: %v", err)
+		}
+	}()
+
+	events := drainEvents(ch, 2*time.Second)
+
+	if executed {
+		t.Error("tool should not have been executed when Before hook fails")
+	}
+
+	found := false
+	for _, ev := range events {
+		if ev.Type == EventToolExecEnd && ev.ToolCallID == "tc-1" {
+			found = true
+			if !ev.ToolError {
+				t.Error("expected ToolError=true when Before hook returns error")
+			}
+			if !strings.Contains(ev.ToolResult, "hook error") {
+				t.Errorf("expected hook error in result, got %q", ev.ToolResult)
+			}
+			if !strings.Contains(ev.ToolResult, "permission denied by policy") {
+				t.Errorf("expected original error message in result, got %q", ev.ToolResult)
+			}
+		}
+	}
+	if !found {
+		t.Error("expected EventToolExecEnd for hook before error")
+	}
+}
+
+func TestRichToolAfterHookErrorReturnsToolError(t *testing.T) {
+	provider := &mockProvider{
+		streamFn: toolThenText("rich_tool", "tc-1", `{}`, "ok"),
+	}
+	reg := tools.NewRegistry()
+	reg.Register(&mockRichTool{
+		name: "rich_tool",
+		blocks: []ai.ContentBlock{
+			{Type: ai.ContentTypeText, Text: "success output"},
+		},
+	})
+	a := NewAgentLoop(provider, reg)
+
+	// Replace hooks with a registry containing a failing After hook.
+	hookReg := tools.NewHookRegistry()
+	hookReg.Register(&mockHook{afterErr: errors.New("post-processing failed")})
+	a.hooks = hookReg
+
+	ch := a.Events()
+	go func() {
+		if err := a.Prompt(context.Background(), "call rich tool"); err != nil {
+			t.Errorf("Prompt returned error: %v", err)
+		}
+	}()
+
+	events := drainEvents(ch, 2*time.Second)
+
+	found := false
+	for _, ev := range events {
+		if ev.Type == EventToolExecEnd && ev.ToolCallID == "tc-1" {
+			found = true
+			if !ev.ToolError {
+				t.Error("expected ToolError=true when After hook returns error for RichTool")
+			}
+			if ev.ToolResult != "post-processing failed" {
+				t.Errorf("expected after-hook error message, got %q", ev.ToolResult)
+			}
+		}
+	}
+	if !found {
+		t.Error("expected EventToolExecEnd for rich tool after-hook error")
+	}
+
+	// The message should be a plain error result, not a rich result.
+	msgs := a.Messages()
+	toolResultMsg := msgs[2]
+	cb := toolResultMsg.Content[0]
+	if !cb.IsError {
+		t.Error("expected tool result message to be marked as error")
+	}
+}
+
 // --- panicking tool mocks ---------------------------------------------------
 
 type panicTool struct {
