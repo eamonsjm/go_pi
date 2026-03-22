@@ -89,8 +89,8 @@ func ActiveTheme() Theme {
 // SetTheme sets the active theme and rebuilds all component styles.
 func SetTheme(t Theme) {
 	themeMu.Lock()
+	defer themeMu.Unlock()
 	activeTheme = t
-	themeMu.Unlock()
 	applyTheme(t)
 }
 
