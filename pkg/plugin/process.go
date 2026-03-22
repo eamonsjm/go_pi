@@ -307,7 +307,7 @@ func (p *PluginProcess) Initialize(cfg PluginConfig) error {
 		Type:   "initialize",
 		Config: &cfg,
 	}); err != nil {
-		return err
+		return fmt.Errorf("sending initialize message: %w", err)
 	}
 
 	msg, err := p.waitResponse(p.timeouts.InitTimeout)
@@ -544,7 +544,10 @@ func (p *PluginProcess) Stop() error {
 
 	select {
 	case err := <-done:
-		return err
+		if err != nil {
+			return fmt.Errorf("plugin %s: process exited: %w", p.name, err)
+		}
+		return nil
 	case <-timer.C:
 		if cmd.Process != nil {
 			if err := cmd.Process.Kill(); err != nil {
