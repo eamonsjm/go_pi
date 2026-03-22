@@ -553,6 +553,53 @@ func TestCompactStreamError(t *testing.T) {
 	}
 }
 
+func TestCompactStreamErrorDrainsChannel(t *testing.T) {
+	// Verify that when an EventError arrives mid-stream, the remaining events
+	// are drained so the producer goroutine can exit cleanly.
+	goroutineDone := make(chan struct{})
+	provider := &mockProvider{
+		streamFn: func(ctx context.Context, _ ai.StreamRequest) (<-chan ai.StreamEvent, error) {
+			ch := make(chan ai.StreamEvent) // unbuffered — producer blocks until consumer reads
+			go func() {
+				defer close(ch)
+				defer close(goroutineDone)
+				ch <- ai.StreamEvent{Type: ai.EventTextDelta, Delta: "partial"}
+				ch <- ai.StreamEvent{Type: ai.EventError, Error: fmt.Errorf("mid-stream failure")}
+				// These events come after the error. Without drain, the
+				// producer would block here forever on an unbuffered channel.
+				select {
+				case ch <- ai.StreamEvent{Type: ai.EventTextDelta, Delta: "trailing"}:
+				case <-ctx.Done():
+					return
+				}
+			}()
+			return ch, nil
+		},
+	}
+
+	reg := tools.NewRegistry()
+	a := NewAgentLoop(provider, reg, WithMessages([]ai.Message{
+		ai.NewTextMessage(ai.RoleUser, "hello"),
+	}))
+
+	err := a.Compact(context.Background(), "")
+	if err == nil {
+		t.Fatal("expected error from stream")
+	}
+	if !strings.Contains(err.Error(), "mid-stream failure") {
+		t.Errorf("expected mid-stream failure error, got %v", err)
+	}
+
+	// The producer goroutine must finish promptly — if the stream isn't
+	// drained or the context isn't cancelled, this will time out.
+	select {
+	case <-goroutineDone:
+		// ok
+	case <-time.After(2 * time.Second):
+		t.Fatal("producer goroutine did not exit; stream was not drained after error")
+	}
+}
+
 func TestCompactProviderStartError(t *testing.T) {
 	// If the provider.Stream call itself fails, Compact should propagate it.
 	provider := &mockProvider{
