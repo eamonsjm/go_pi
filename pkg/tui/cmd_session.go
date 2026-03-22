@@ -202,7 +202,7 @@ func countMessageTypes(msgs []ai.Message) (user, assistant, toolCalls, toolResul
 			}
 		}
 	}
-	return
+	return user, assistant, toolCalls, toolResults
 }
 
 // tokenPricing holds per-million-token prices for a model.
