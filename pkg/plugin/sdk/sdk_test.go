@@ -4,8 +4,10 @@ import (
 	"bufio"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -43,11 +45,21 @@ func pipePlugin(t *testing.T, p *Plugin) (send func(hostMessage), recv func() pl
 			}
 		}
 
+		// Snapshot slices under lock to match Run() behavior.
+		p.mu.Lock()
+		tools := make([]toolEntry, len(p.tools))
+		copy(tools, p.tools)
+		commands := make([]commandEntry, len(p.commands))
+		copy(commands, p.commands)
+		eventHandlers := make([]EventHandler, len(p.eventHandlers))
+		copy(eventHandlers, p.eventHandlers)
+		p.mu.Unlock()
+
 		caps := pluginMessage{Type: "capabilities"}
-		for _, tool := range p.tools {
+		for _, tool := range tools {
 			caps.Tools = append(caps.Tools, tool.def)
 		}
-		for _, cmd := range p.commands {
+		for _, cmd := range commands {
 			caps.Commands = append(caps.Commands, cmd.def)
 		}
 		p.send(caps)
@@ -60,7 +72,7 @@ func pipePlugin(t *testing.T, p *Plugin) (send func(hostMessage), recv func() pl
 			if msg.Type == "shutdown" {
 				return
 			}
-			p.dispatch(msg)
+			p.dispatch(msg, tools, commands, eventHandlers)
 			if p.failed.Load() {
 				return
 			}
@@ -459,5 +471,43 @@ func TestSchemaHelper(t *testing.T) {
 	req := s["required"].([]string)
 	if len(req) != 1 || req[0] != "text" {
 		t.Errorf("required = %v, want [text]", req)
+	}
+}
+
+func TestConcurrentRegistration(t *testing.T) {
+	p := NewPlugin("test")
+	var wg sync.WaitGroup
+
+	// Register tools, commands, and event handlers concurrently.
+	for i := 0; i < 50; i++ {
+		wg.Add(3)
+		name := fmt.Sprintf("item_%d", i)
+		go func() {
+			defer wg.Done()
+			p.Tool(name, "desc", nil, func(ctx ToolContext) (string, error) {
+				return "ok", nil
+			})
+		}()
+		go func() {
+			defer wg.Done()
+			p.Command(name, "desc", func(ctx CommandContext) (string, error) {
+				return "ok", nil
+			})
+		}()
+		go func() {
+			defer wg.Done()
+			p.OnEvent(func(e Event) {})
+		}()
+	}
+	wg.Wait()
+
+	if len(p.tools) != 50 {
+		t.Errorf("expected 50 tools, got %d", len(p.tools))
+	}
+	if len(p.commands) != 50 {
+		t.Errorf("expected 50 commands, got %d", len(p.commands))
+	}
+	if len(p.eventHandlers) != 50 {
+		t.Errorf("expected 50 event handlers, got %d", len(p.eventHandlers))
 	}
 }

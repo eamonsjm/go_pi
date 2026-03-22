@@ -153,6 +153,7 @@ func NewPlugin(name string) *Plugin {
 // The schema should be a JSON Schema object describing the tool's input parameters.
 // Returns the plugin for chaining.
 func (p *Plugin) Tool(name, description string, inputSchema any, handler ToolHandler) *Plugin {
+	p.mu.Lock()
 	p.tools = append(p.tools, toolEntry{
 		def: toolDef{
 			Name:        name,
@@ -161,12 +162,14 @@ func (p *Plugin) Tool(name, description string, inputSchema any, handler ToolHan
 		},
 		handler: handler,
 	})
+	p.mu.Unlock()
 	return p
 }
 
 // Command registers a slash command with the given name, description, and handler.
 // Returns the plugin for chaining.
 func (p *Plugin) Command(name, description string, handler CommandHandler) *Plugin {
+	p.mu.Lock()
 	p.commands = append(p.commands, commandEntry{
 		def: commandDef{
 			Name:        name,
@@ -174,13 +177,16 @@ func (p *Plugin) Command(name, description string, handler CommandHandler) *Plug
 		},
 		handler: handler,
 	})
+	p.mu.Unlock()
 	return p
 }
 
 // OnEvent registers an event handler. Multiple handlers can be registered.
 // Returns the plugin for chaining.
 func (p *Plugin) OnEvent(handler EventHandler) *Plugin {
+	p.mu.Lock()
 	p.eventHandlers = append(p.eventHandlers, handler)
+	p.mu.Unlock()
 	return p
 }
 
@@ -224,12 +230,23 @@ func (p *Plugin) Run() {
 		}
 	}
 
+	// Snapshot registered handlers under lock so concurrent calls to
+	// Tool/Command/OnEvent after Run starts cannot race with reads.
+	p.mu.Lock()
+	tools := make([]toolEntry, len(p.tools))
+	copy(tools, p.tools)
+	commands := make([]commandEntry, len(p.commands))
+	copy(commands, p.commands)
+	eventHandlers := make([]EventHandler, len(p.eventHandlers))
+	copy(eventHandlers, p.eventHandlers)
+	p.mu.Unlock()
+
 	// Send capabilities.
 	caps := pluginMessage{Type: "capabilities"}
-	for _, t := range p.tools {
+	for _, t := range tools {
 		caps.Tools = append(caps.Tools, t.def)
 	}
-	for _, c := range p.commands {
+	for _, c := range commands {
 		caps.Commands = append(caps.Commands, c.def)
 	}
 	p.send(caps)
@@ -237,7 +254,7 @@ func (p *Plugin) Run() {
 		return
 	}
 
-	p.logf("info", "%s initialized (%d tools, %d commands)", p.name, len(p.tools), len(p.commands))
+	p.logf("info", "%s initialized (%d tools, %d commands)", p.name, len(tools), len(commands))
 
 	// Main message loop.
 	for scanner.Scan() {
@@ -246,7 +263,7 @@ func (p *Plugin) Run() {
 			p.logf("warn", "failed to parse message: %v", err)
 			continue
 		}
-		p.dispatch(msg)
+		p.dispatch(msg, tools, commands, eventHandlers)
 		if p.failed.Load() || p.done.Load() {
 			return
 		}
@@ -272,21 +289,21 @@ func (p *Plugin) Log(level, message string) {
 	})
 }
 
-func (p *Plugin) dispatch(msg hostMessage) {
+func (p *Plugin) dispatch(msg hostMessage, tools []toolEntry, commands []commandEntry, eventHandlers []EventHandler) {
 	switch msg.Type {
 	case "tool_call":
-		p.handleToolCall(msg)
+		p.handleToolCall(msg, tools)
 	case "command":
-		p.handleCommand(msg)
+		p.handleCommand(msg, commands)
 	case "event":
-		p.handleEvent(msg)
+		p.handleEvent(msg, eventHandlers)
 	case "shutdown":
 		p.done.Store(true)
 	}
 }
 
-func (p *Plugin) handleToolCall(msg hostMessage) {
-	for _, t := range p.tools {
+func (p *Plugin) handleToolCall(msg hostMessage, tools []toolEntry) {
+	for _, t := range tools {
 		if t.def.Name == msg.Name {
 			ctx := ToolContext{
 				ID:     msg.ID,
@@ -320,8 +337,8 @@ func (p *Plugin) handleToolCall(msg hostMessage) {
 	})
 }
 
-func (p *Plugin) handleCommand(msg hostMessage) {
-	for _, c := range p.commands {
+func (p *Plugin) handleCommand(msg hostMessage, commands []commandEntry) {
+	for _, c := range commands {
 		if c.def.Name == msg.Name {
 			ctx := CommandContext{
 				Name:   msg.Name,
@@ -351,11 +368,11 @@ func (p *Plugin) handleCommand(msg hostMessage) {
 	})
 }
 
-func (p *Plugin) handleEvent(msg hostMessage) {
+func (p *Plugin) handleEvent(msg hostMessage, eventHandlers []EventHandler) {
 	if msg.Event == nil {
 		return
 	}
-	for _, h := range p.eventHandlers {
+	for _, h := range eventHandlers {
 		h(*msg.Event)
 	}
 }
