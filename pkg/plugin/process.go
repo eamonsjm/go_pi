@@ -79,6 +79,7 @@ type PluginProcess struct {
 	mu           sync.Mutex
 	closed       bool
 	shutdownOnce sync.Once // ensures shutdownCurrentProcess runs at most once during Stop
+	readLoopWg   sync.WaitGroup // tracks readLoop goroutine lifecycle
 
 	// injectCh receives inject_message and log messages from the background reader.
 	injectCh chan PluginMessage
@@ -159,7 +160,7 @@ func startPlugin(name, path string) (*PluginProcess, error) {
 	}
 
 	// Start background reader that routes incoming messages.
-	go p.readLoop()
+	p.startReadLoop()
 
 	return p, nil
 }
@@ -264,6 +265,16 @@ func (p *PluginProcess) readLoop() {
 			}
 		}
 	}
+}
+
+// startReadLoop launches readLoop in a goroutine with WaitGroup tracking,
+// enabling callers to wait for the goroutine to finish via readLoopWg.
+func (p *PluginProcess) startReadLoop() {
+	p.readLoopWg.Add(1)
+	go func() {
+		defer p.readLoopWg.Done()
+		p.readLoop()
+	}()
 }
 
 // Send writes a HostMessage to the plugin's stdin as a JSONL line.
@@ -556,6 +567,10 @@ func (p *PluginProcess) Stop() error {
 		}
 	}
 
+	// Wait for readLoop goroutine to finish and close all channels before
+	// proceeding to reap the subprocess.
+	p.readLoopWg.Wait()
+
 	done := make(chan error, 1)
 	go func() {
 		done <- cmd.Wait()
@@ -720,6 +735,7 @@ func (p *PluginProcess) EnableAutoRestart(cfg RestartConfig) {
 // sole owner of cmd.Wait() — no other code should call it when supervised.
 func (p *PluginProcess) waitAndSupervise(stopCh <-chan struct{}) {
 	defer close(p.stopped)
+	defer p.readLoopWg.Wait() // ensure readLoop is done before signaling stopped
 
 	for {
 		p.mu.Lock()
@@ -829,6 +845,10 @@ func (p *PluginProcess) waitAndSupervise(stopCh <-chan struct{}) {
 // and re-initializes the plugin. The old channels must already be closed
 // (by readLoop exiting) before calling this.
 func (p *PluginProcess) respawn() error {
+	// Ensure the previous readLoop goroutine has fully exited before
+	// replacing channels and starting a new one.
+	p.readLoopWg.Wait()
+
 	cmd := p.spawnCmd()
 
 	stdinPipe, err := cmd.StdinPipe()
@@ -875,7 +895,7 @@ func (p *PluginProcess) respawn() error {
 	p.closed = false // Allow Send to work again for initialization.
 	p.mu.Unlock()
 
-	go p.readLoop()
+	p.startReadLoop()
 
 	// Re-apply memory limit on the new process.
 	p.applyMemoryLimit()
