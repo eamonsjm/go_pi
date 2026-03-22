@@ -554,7 +554,7 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 		}
 	})
 	app.SetLoginSuccessCallback(func(providerName string) {
-		p, err := resolveProvider(context.Background(), cfg, authResolver)
+		p, err := resolveProvider(ctx, cfg, authResolver)
 		if err != nil {
 			log.Printf("Failed to resolve provider after login: %v", err)
 			return
@@ -572,7 +572,7 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 				Description: cmdDef.Description,
 				Execute: func(args string) tea.Cmd {
 					return func() tea.Msg {
-						text, isErr, err := proc.ExecuteCommand(context.Background(), cmdDef.Name, args)
+						text, isErr, err := proc.ExecuteCommand(ctx, cmdDef.Name, args)
 						if err != nil {
 							return tui.CommandResultMsg{Text: err.Error(), IsError: true}
 						}
@@ -592,7 +592,7 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 				Description: s.Description,
 				Execute: func(args string) tea.Cmd {
 					return func() tea.Msg {
-						body, err := s.LoadBody(context.Background())
+						body, err := s.LoadBody(ctx)
 						if err != nil {
 							return tui.CommandResultMsg{Text: fmt.Sprintf("Failed to load skill: %v", err), IsError: true}
 						}
@@ -600,7 +600,7 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 						if err != nil {
 							return tui.CommandResultMsg{Text: err.Error(), IsError: true}
 						}
-						vars := skill.ContextVars(context.Background(), cfg.DefaultModel)
+						vars := skill.ContextVars(ctx, cfg.DefaultModel)
 						for k, v := range argVars {
 							vars[k] = v
 						}
