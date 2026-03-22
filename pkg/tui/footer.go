@@ -65,9 +65,11 @@ func (f *Footer) View() string {
 	// Context usage.
 	ctxStr := fmt.Sprintf("%.0f%%", f.contextPct)
 
+	s := Styles()
+
 	// Build the line.
-	left := MutedStyle.Render(dir)
-	right := MutedStyle.Render(strings.Join([]string{tokens, costStr, ctxStr}, "  "))
+	left := s.MutedStyle.Render(dir)
+	right := s.MutedStyle.Render(strings.Join([]string{tokens, costStr, ctxStr}, "  "))
 
 	// Pad so left is left-aligned and right is right-aligned.
 	gap := f.width - ansi.StringWidth(left) - ansi.StringWidth(right)
@@ -76,7 +78,7 @@ func (f *Footer) View() string {
 	}
 	padding := strings.Repeat(" ", gap)
 
-	line := FooterStyle.Width(f.width).Render(left + padding + right)
+	line := s.FooterStyle.Width(f.width).Render(left + padding + right)
 	return line
 }
 

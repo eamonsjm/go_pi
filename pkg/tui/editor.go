@@ -269,8 +269,9 @@ func NewEditor() *Editor {
 
 	// Style the textarea itself.
 	ta.FocusedStyle.CursorLine = lipgloss.NewStyle()
-	ta.FocusedStyle.Base = lipgloss.NewStyle().Foreground(ColorText)
-	ta.BlurredStyle.Base = lipgloss.NewStyle().Foreground(ColorMuted)
+	s := Styles()
+	ta.FocusedStyle.Base = lipgloss.NewStyle().Foreground(s.ColorText)
+	ta.BlurredStyle.Base = lipgloss.NewStyle().Foreground(s.ColorMuted)
 
 	// Extend word navigation to also accept Ctrl+Left/Right.
 	ta.KeyMap.WordForward = key.NewBinding(
@@ -847,7 +848,7 @@ func (e *Editor) fileCompletionHint() string {
 	if truncated {
 		hint += fmt.Sprintf("  (+%d more)", len(e.completer.matches)-maxShow)
 	}
-	return MutedStyle.Render(hint)
+	return Styles().MutedStyle.Render(hint)
 }
 
 // commandHint returns an autocomplete hint string when the current input looks
@@ -878,21 +879,22 @@ func (e *Editor) commandHint() string {
 	for _, cmd := range matches {
 		parts = append(parts, fmt.Sprintf("/%s — %s", cmd.Name, cmd.Description))
 	}
-	return MutedStyle.Render(strings.Join(parts, "\n"))
+	return Styles().MutedStyle.Render(strings.Join(parts, "\n"))
 }
 
 // borderStyle returns the appropriate border style based on the current state.
 func (e *Editor) borderStyle() lipgloss.Style {
+	s := Styles()
 	if e.searching {
-		return EditorSearchStyle
+		return s.EditorSearchStyle
 	}
 	switch e.state {
 	case editorRunning:
-		return EditorActiveStyle
+		return s.EditorActiveStyle
 	case editorThinking:
-		return EditorThinkingStyle
+		return s.EditorThinkingStyle
 	default:
-		return EditorStyle
+		return s.EditorStyle
 	}
 }
 
@@ -1097,7 +1099,7 @@ func (e *Editor) searchHint() string {
 	} else if e.searchQuery != "" {
 		matchInfo = " (no matches)"
 	}
-	return MutedStyle.Render(fmt.Sprintf("reverse-search: %s%s", e.searchQuery, matchInfo))
+	return Styles().MutedStyle.Render(fmt.Sprintf("reverse-search: %s%s", e.searchQuery, matchInfo))
 }
 
 // parseSlashCommand splits "/name some args" into ("name", "some args").

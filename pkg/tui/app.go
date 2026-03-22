@@ -708,7 +708,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // View renders the full TUI layout.
 func (a *App) View() string {
 	if a.quitting {
-		return MutedStyle.Render("Goodbye.") + "\n"
+		return Styles().MutedStyle.Render("Goodbye.") + "\n"
 	}
 
 	if a.width == 0 || a.height == 0 {

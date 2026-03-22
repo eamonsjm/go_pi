@@ -453,7 +453,7 @@ func (c *ChatView) View() string {
 		return view
 	}
 
-	indicator := NewContentBelowStyle.Render("↓ new content below ↓")
+	indicator := Styles().NewContentBelowStyle.Render("↓ new content below ↓")
 	indicatorWidth := ansi.StringWidth(indicator)
 
 	padding := (c.width - indicatorWidth) / 2
@@ -533,18 +533,19 @@ func (c *ChatView) renderBlock(sb *strings.Builder, blk *chatBlock) {
 }
 
 func (c *ChatView) renderUser(sb *strings.Builder, blk chatBlock) {
-	label := UserRoleStyle.Render("You:")
+	s := Styles()
+	label := s.UserRoleStyle.Render("You:")
 	sb.WriteString(label + " ")
 	w := c.width - ansi.StringWidth(label) - 1
 	if w < 20 {
 		w = 20
 	}
-	sb.WriteString(UserMsgStyle.Render(wordwrap.String(blk.text, w)))
+	sb.WriteString(s.UserMsgStyle.Render(wordwrap.String(blk.text, w)))
 	sb.WriteString("\n")
 }
 
 func (c *ChatView) renderAssistant(sb *strings.Builder, blk chatBlock) {
-	label := AssistantRoleStyle.Render("Assistant:")
+	label := Styles().AssistantRoleStyle.Render("Assistant:")
 	sb.WriteString(label + "\n")
 
 	if blk.streaming {
@@ -564,7 +565,7 @@ func (c *ChatView) renderAssistant(sb *strings.Builder, blk chatBlock) {
 			if w < 40 {
 				w = 40
 			}
-			sb.WriteString(AssistantMsgStyle.Render(wordwrap.String(tail, w)))
+			sb.WriteString(Styles().AssistantMsgStyle.Render(wordwrap.String(tail, w)))
 		}
 	} else {
 		rendered := blk.text
@@ -579,61 +580,65 @@ func (c *ChatView) renderAssistant(sb *strings.Builder, blk chatBlock) {
 }
 
 func (c *ChatView) renderThinking(sb *strings.Builder, blk chatBlock) {
-	indicator := ThinkingLabelStyle.Render("  thinking...")
+	s := Styles()
+	indicator := s.ThinkingLabelStyle.Render("  thinking...")
 	if blk.collapsed {
 		lines := strings.Count(blk.text, "\n") + 1
-		summary := MutedStyle.Render(fmt.Sprintf(" (%d lines — Ctrl+T to expand)", lines))
+		summary := s.MutedStyle.Render(fmt.Sprintf(" (%d lines — Ctrl+T to expand)", lines))
 		sb.WriteString(indicator + summary + "\n")
 	} else {
 		sb.WriteString(indicator + "\n")
 		// Indent thinking text.
 		for _, line := range strings.Split(blk.text, "\n") {
-			sb.WriteString(ThinkingStyle.Render("  "+line) + "\n")
+			sb.WriteString(s.ThinkingStyle.Render("  "+line) + "\n")
 		}
 	}
 }
 
 func (c *ChatView) renderToolCall(sb *strings.Builder, blk chatBlock) {
+	s := Styles()
+
 	// Tool invocation line.
 	argsStr := formatArgs(blk.toolArgs)
 	header := fmt.Sprintf("  %s(%s)",
-		ToolCallStyle.Render(blk.toolName),
-		ToolArgsStyle.Render(argsStr),
+		s.ToolCallStyle.Render(blk.toolName),
+		s.ToolArgsStyle.Render(argsStr),
 	)
 	sb.WriteString(header + "\n")
 
 	// Tool result (if available).
 	if blk.toolResult != "" {
 		if blk.toolError {
-			sb.WriteString(ToolErrorStyle.Render("  error: "+truncateLines(blk.toolResult, 10)) + "\n")
+			sb.WriteString(s.ToolErrorStyle.Render("  error: "+truncateLines(blk.toolResult, 10)) + "\n")
 		} else if blk.collapsed {
 			preview := truncateLines(blk.toolResult, 10)
-			sb.WriteString(ToolResultStyle.Render(preview) + "\n")
+			sb.WriteString(s.ToolResultStyle.Render(preview) + "\n")
 			total := strings.Count(blk.toolResult, "\n") + 1
 			if total > 10 {
-				more := MutedStyle.Render(fmt.Sprintf("  ... %d more lines (Ctrl+R to expand)", total-10))
+				more := s.MutedStyle.Render(fmt.Sprintf("  ... %d more lines (Ctrl+R to expand)", total-10))
 				sb.WriteString(more + "\n")
 			}
 		} else {
-			sb.WriteString(ToolResultStyle.Render(blk.toolResult) + "\n")
+			sb.WriteString(s.ToolResultStyle.Render(blk.toolResult) + "\n")
 		}
 	} else {
-		sb.WriteString(SpinnerStyle.Render("  running...") + "\n")
+		sb.WriteString(s.SpinnerStyle.Render("  running...") + "\n")
 	}
 }
 
 func (c *ChatView) renderError(sb *strings.Builder, blk chatBlock) {
 	w := c.msgWidth()
-	sb.WriteString(ErrorMsgStyle.Render(wordwrap.String("Error: "+blk.text, w)) + "\n")
+	sb.WriteString(Styles().ErrorMsgStyle.Render(wordwrap.String("Error: "+blk.text, w)) + "\n")
 }
 
 func (c *ChatView) renderSystem(sb *strings.Builder, blk chatBlock) {
 	w := c.msgWidth()
-	sb.WriteString(SystemMsgStyle.Render(wordwrap.String(blk.text, w)) + "\n")
+	sb.WriteString(Styles().SystemMsgStyle.Render(wordwrap.String(blk.text, w)) + "\n")
 }
 
 func (c *ChatView) renderPlugin(sb *strings.Builder, blk chatBlock) {
-	label := PluginNameStyle.Render(fmt.Sprintf("[%s]", blk.pluginName))
+	s := Styles()
+	label := s.PluginNameStyle.Render(fmt.Sprintf("[%s]", blk.pluginName))
 
 	if blk.logLevel != "" {
 		// Log message with level-appropriate styling, wrapped to fit.
@@ -643,11 +648,11 @@ func (c *ChatView) renderPlugin(sb *strings.Builder, blk chatBlock) {
 		}
 		switch blk.logLevel {
 		case "error":
-			sb.WriteString(label + " " + ErrorMsgStyle.Render(wordwrap.String(blk.text, w)) + "\n")
+			sb.WriteString(label + " " + s.ErrorMsgStyle.Render(wordwrap.String(blk.text, w)) + "\n")
 		case "warn":
-			sb.WriteString(label + " " + PluginLogWarnStyle.Render(wordwrap.String(blk.text, w)) + "\n")
+			sb.WriteString(label + " " + s.PluginLogWarnStyle.Render(wordwrap.String(blk.text, w)) + "\n")
 		default:
-			sb.WriteString(label + " " + MutedStyle.Render(wordwrap.String(blk.text, w)) + "\n")
+			sb.WriteString(label + " " + s.MutedStyle.Render(wordwrap.String(blk.text, w)) + "\n")
 		}
 		return
 	}
@@ -664,11 +669,12 @@ func (c *ChatView) renderPlugin(sb *strings.Builder, blk chatBlock) {
 }
 
 func (c *ChatView) renderCompaction(sb *strings.Builder, blk chatBlock) {
-	header := SystemMsgStyle.Render("--- Context compacted ---")
+	s := Styles()
+	header := s.SystemMsgStyle.Render("--- Context compacted ---")
 	sb.WriteString(header + "\n")
 	if blk.collapsed {
 		lines := strings.Count(blk.text, "\n") + 1
-		summary := MutedStyle.Render(fmt.Sprintf("  (%d lines — press 'c' to expand)", lines))
+		summary := s.MutedStyle.Render(fmt.Sprintf("  (%d lines — press 'c' to expand)", lines))
 		sb.WriteString(summary + "\n")
 	} else {
 		rendered := blk.text

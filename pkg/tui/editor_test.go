@@ -92,21 +92,23 @@ func TestEditor_SetCommands(t *testing.T) {
 func TestEditor_BorderStyle(t *testing.T) {
 	e := NewEditor()
 
+	st := Styles()
+
 	e.state = editorIdle
 	s := e.borderStyle()
-	if s.GetBorderBottomForeground() != EditorStyle.GetBorderBottomForeground() {
+	if s.GetBorderBottomForeground() != st.EditorStyle.GetBorderBottomForeground() {
 		t.Error("idle state should use EditorStyle")
 	}
 
 	e.state = editorRunning
 	s = e.borderStyle()
-	if s.GetBorderBottomForeground() != EditorActiveStyle.GetBorderBottomForeground() {
+	if s.GetBorderBottomForeground() != st.EditorActiveStyle.GetBorderBottomForeground() {
 		t.Error("running state should use EditorActiveStyle")
 	}
 
 	e.state = editorThinking
 	s = e.borderStyle()
-	if s.GetBorderBottomForeground() != EditorThinkingStyle.GetBorderBottomForeground() {
+	if s.GetBorderBottomForeground() != st.EditorThinkingStyle.GetBorderBottomForeground() {
 		t.Error("thinking state should use EditorThinkingStyle")
 	}
 }

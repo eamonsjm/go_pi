@@ -5,9 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sync"
 
-	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 )
 
@@ -70,28 +68,17 @@ var (
 	}
 )
 
-var (
-	activeTheme Theme
-	themeMu     sync.RWMutex
-)
-
-func init() {
-	activeTheme = DarkTheme
-}
-
 // ActiveTheme returns a copy of the current theme.
 func ActiveTheme() Theme {
-	themeMu.RLock()
-	defer themeMu.RUnlock()
-	return activeTheme
+	return currentStyles.Load().theme
 }
 
 // SetTheme sets the active theme and rebuilds all component styles.
+// The new snapshot is swapped in atomically so concurrent readers in
+// View() goroutines always see a consistent set of styles.
 func SetTheme(t Theme) {
-	themeMu.Lock()
-	defer themeMu.Unlock()
-	activeTheme = t
-	applyTheme(t)
+	s := buildStyles(t)
+	currentStyles.Store(&s)
 }
 
 // ResolveTheme determines the theme to use based on the given name.
@@ -146,106 +133,3 @@ func loadCustomTheme(name string) (Theme, error) {
 	return Theme{}, os.ErrNotExist
 }
 
-// applyTheme updates all package-level color variables and rebuilds styles.
-func applyTheme(t Theme) {
-	// Update color tokens.
-	ColorPrimary = lipgloss.Color(t.Primary)
-	ColorSecondary = lipgloss.Color(t.Secondary)
-	ColorSuccess = lipgloss.Color(t.Success)
-	ColorWarning = lipgloss.Color(t.Warning)
-	ColorError = lipgloss.Color(t.Error)
-	ColorMuted = lipgloss.Color(t.Muted)
-	ColorText = lipgloss.Color(t.Text)
-	ColorBg = lipgloss.Color(t.Background)
-	ColorBorder = lipgloss.Color(t.Border)
-	ColorThinking = lipgloss.Color(t.Thinking)
-	ColorToolName = lipgloss.Color(t.ToolName)
-	ColorToolResult = lipgloss.Color(t.ToolResult)
-
-	headerBg := lipgloss.Color(t.HeaderBg)
-
-	// Rebuild component styles.
-	HeaderStyle = lipgloss.NewStyle().
-		Bold(true).
-		Foreground(ColorText).
-		Background(headerBg).
-		Padding(0, 1)
-
-	FooterStyle = lipgloss.NewStyle().
-		Foreground(ColorMuted).
-		Background(headerBg).
-		Padding(0, 1)
-
-	EditorStyle = lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(ColorBorder).
-		Padding(0, 0)
-
-	EditorActiveStyle = lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(ColorPrimary).
-		Padding(0, 0)
-
-	EditorThinkingStyle = lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(ColorThinking).
-		Padding(0, 0)
-
-	UserRoleStyle = lipgloss.NewStyle().
-		Bold(true).
-		Foreground(ColorSecondary)
-
-	AssistantRoleStyle = lipgloss.NewStyle().
-		Bold(true).
-		Foreground(ColorPrimary)
-
-	UserMsgStyle = lipgloss.NewStyle().
-		Foreground(ColorText)
-
-	AssistantMsgStyle = lipgloss.NewStyle().
-		Foreground(ColorText)
-
-	ThinkingStyle = lipgloss.NewStyle().
-		Foreground(ColorThinking).
-		Italic(true)
-
-	ThinkingLabelStyle = lipgloss.NewStyle().
-		Foreground(ColorThinking).
-		Bold(true)
-
-	ToolCallStyle = lipgloss.NewStyle().
-		Foreground(ColorToolName).
-		Bold(true)
-
-	ToolArgsStyle = lipgloss.NewStyle().
-		Foreground(ColorMuted)
-
-	ToolResultStyle = lipgloss.NewStyle().
-		Foreground(ColorToolResult).
-		Padding(0, 2)
-
-	ToolErrorStyle = lipgloss.NewStyle().
-		Foreground(ColorError).
-		Padding(0, 2)
-
-	PluginNameStyle = lipgloss.NewStyle().
-		Foreground(ColorSuccess).
-		Bold(true)
-
-	PluginLogWarnStyle = lipgloss.NewStyle().
-		Foreground(ColorWarning)
-
-	SpinnerStyle = lipgloss.NewStyle().
-		Foreground(ColorPrimary)
-
-	MutedStyle = lipgloss.NewStyle().
-		Foreground(ColorMuted)
-
-	ErrorMsgStyle = lipgloss.NewStyle().
-		Foreground(ColorError).
-		Bold(true)
-
-	SystemMsgStyle = lipgloss.NewStyle().
-		Foreground(ColorMuted).
-		Italic(true)
-}

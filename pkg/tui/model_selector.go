@@ -286,12 +286,13 @@ func (ms *ModelSelector) View() string {
 	}
 	innerWidth := boxWidth - 4 // padding
 
+	s := Styles()
 	var sb strings.Builder
 
 	// Title.
 	title := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(ColorPrimary).
+		Foreground(s.ColorPrimary).
 		Render("Select Model")
 	sb.WriteString(title + "\n\n")
 
@@ -307,12 +308,12 @@ func (ms *ModelSelector) View() string {
 		if i == ms.providerIdx {
 			// Highlight current provider
 			providerTabs += lipgloss.NewStyle().
-				Foreground(ColorPrimary).
+				Foreground(s.ColorPrimary).
 				Bold(true).
 				Render("[" + displayName + "]")
 		} else {
 			providerTabs += lipgloss.NewStyle().
-				Foreground(ColorMuted).
+				Foreground(s.ColorMuted).
 				Render("[" + displayName + "]")
 		}
 
@@ -325,7 +326,7 @@ func (ms *ModelSelector) View() string {
 	// Filter prompt if active.
 	if ms.filter != "" {
 		filterLine := lipgloss.NewStyle().
-			Foreground(ColorSecondary).
+			Foreground(s.ColorSecondary).
 			Render("/ " + ms.filter)
 		sb.WriteString(filterLine + "\n\n")
 	}
@@ -335,27 +336,27 @@ func (ms *ModelSelector) View() string {
 		for i, idx := range ms.filtered {
 			opt := ms.models[idx]
 			label := opt.Label
-			detail := lipgloss.NewStyle().Foreground(ColorMuted).Render(
+			detail := lipgloss.NewStyle().Foreground(s.ColorMuted).Render(
 				fmt.Sprintf("  %s", opt.Model),
 			)
 
 			if i == ms.cursor {
-				pointer := lipgloss.NewStyle().Foreground(ColorPrimary).Bold(true).Render("> ")
-				name := lipgloss.NewStyle().Foreground(ColorText).Bold(true).Render(label)
+				pointer := lipgloss.NewStyle().Foreground(s.ColorPrimary).Bold(true).Render("> ")
+				name := lipgloss.NewStyle().Foreground(s.ColorText).Bold(true).Render(label)
 				sb.WriteString(pointer + name + "\n")
 				sb.WriteString("  " + detail + "\n")
 			} else {
-				name := lipgloss.NewStyle().Foreground(ColorText).Render("  " + label)
+				name := lipgloss.NewStyle().Foreground(s.ColorText).Render("  " + label)
 				sb.WriteString(name + "\n")
 			}
 		}
 	} else {
-		noMatch := lipgloss.NewStyle().Foreground(ColorMuted).Italic(true).Render("  No matching models")
+		noMatch := lipgloss.NewStyle().Foreground(s.ColorMuted).Italic(true).Render("  No matching models")
 		sb.WriteString(noMatch + "\n")
 	}
 
 	sb.WriteString("\n")
-	help := lipgloss.NewStyle().Foreground(ColorMuted).Render(
+	help := lipgloss.NewStyle().Foreground(s.ColorMuted).Render(
 		"↑/↓ models  ← → providers  tab next  1-9 jump  enter select  esc cancel  type filter",
 	)
 	sb.WriteString(help)
@@ -363,7 +364,7 @@ func (ms *ModelSelector) View() string {
 	// Wrap in a styled box.
 	box := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(ColorPrimary).
+		BorderForeground(s.ColorPrimary).
 		Padding(1, 2).
 		Width(innerWidth).
 		Render(sb.String())

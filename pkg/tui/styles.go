@@ -1,146 +1,207 @@
 package tui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"sync/atomic"
 
-// ---------------------------------------------------------------------------
-// Color palette — dark theme matching modern coding-agent aesthetics
-// ---------------------------------------------------------------------------
-
-var (
-	ColorPrimary    = lipgloss.Color("#7C3AED") // Purple
-	ColorSecondary  = lipgloss.Color("#06B6D4") // Cyan
-	ColorSuccess    = lipgloss.Color("#10B981") // Green
-	ColorWarning    = lipgloss.Color("#F59E0B") // Amber
-	ColorError      = lipgloss.Color("#EF4444") // Red
-	ColorMuted      = lipgloss.Color("#6B7280") // Gray
-	ColorText       = lipgloss.Color("#E5E7EB") // Light gray
-	ColorBg         = lipgloss.Color("#1F2937") // Dark background
-	ColorBorder     = lipgloss.Color("#374151") // Border
-	ColorThinking   = lipgloss.Color("#3B82F6") // Blue for thinking
-	ColorToolName   = lipgloss.Color("#F59E0B") // Amber for tool names
-	ColorToolResult = lipgloss.Color("#9CA3AF") // Gray for tool results
+	"github.com/charmbracelet/lipgloss"
 )
 
-// ---------------------------------------------------------------------------
-// Component styles
-// ---------------------------------------------------------------------------
+// styleSnapshot holds all color tokens and component styles as an immutable
+// snapshot. Readers obtain the current snapshot via Styles(); SetTheme builds
+// a new snapshot and swaps it in atomically, so View() goroutines never see a
+// partially-updated set of styles.
+type styleSnapshot struct {
+	theme Theme
 
-// Header / footer bars.
-var (
-	HeaderStyle = lipgloss.NewStyle().
+	// Color tokens.
+	ColorPrimary    lipgloss.Color
+	ColorSecondary  lipgloss.Color
+	ColorSuccess    lipgloss.Color
+	ColorWarning    lipgloss.Color
+	ColorError      lipgloss.Color
+	ColorMuted      lipgloss.Color
+	ColorText       lipgloss.Color
+	ColorBg         lipgloss.Color
+	ColorBorder     lipgloss.Color
+	ColorThinking   lipgloss.Color
+	ColorToolName   lipgloss.Color
+	ColorToolResult lipgloss.Color
+
+	// Header / footer bars.
+	HeaderStyle lipgloss.Style
+	FooterStyle lipgloss.Style
+
+	// Editor (textarea wrapper).
+	EditorStyle         lipgloss.Style
+	EditorActiveStyle   lipgloss.Style
+	EditorThinkingStyle lipgloss.Style
+	EditorSearchStyle   lipgloss.Style
+
+	// Role labels rendered before each message block.
+	UserRoleStyle      lipgloss.Style
+	AssistantRoleStyle lipgloss.Style
+
+	// Message content.
+	UserMsgStyle       lipgloss.Style
+	AssistantMsgStyle  lipgloss.Style
+	ThinkingStyle      lipgloss.Style
+	ThinkingLabelStyle lipgloss.Style
+
+	// Tool call / result styles.
+	ToolCallStyle   lipgloss.Style
+	ToolArgsStyle   lipgloss.Style
+	ToolResultStyle lipgloss.Style
+	ToolErrorStyle  lipgloss.Style
+
+	// Plugin message styles.
+	PluginNameStyle    lipgloss.Style
+	PluginLogWarnStyle lipgloss.Style
+
+	// Misc.
+	SpinnerStyle         lipgloss.Style
+	MutedStyle           lipgloss.Style
+	ErrorMsgStyle        lipgloss.Style
+	SystemMsgStyle       lipgloss.Style
+	NewContentBelowStyle lipgloss.Style
+}
+
+var currentStyles atomic.Pointer[styleSnapshot]
+
+func init() {
+	s := buildStyles(DarkTheme)
+	currentStyles.Store(&s)
+}
+
+// Styles returns the current immutable style snapshot.
+func Styles() *styleSnapshot {
+	return currentStyles.Load()
+}
+
+// buildStyles constructs a complete styleSnapshot from a Theme.
+func buildStyles(t Theme) styleSnapshot {
+	primary := lipgloss.Color(t.Primary)
+	secondary := lipgloss.Color(t.Secondary)
+	success := lipgloss.Color(t.Success)
+	warning := lipgloss.Color(t.Warning)
+	errColor := lipgloss.Color(t.Error)
+	muted := lipgloss.Color(t.Muted)
+	text := lipgloss.Color(t.Text)
+	bg := lipgloss.Color(t.Background)
+	border := lipgloss.Color(t.Border)
+	thinking := lipgloss.Color(t.Thinking)
+	toolName := lipgloss.Color(t.ToolName)
+	toolResult := lipgloss.Color(t.ToolResult)
+	headerBg := lipgloss.Color(t.HeaderBg)
+
+	return styleSnapshot{
+		theme: t,
+
+		ColorPrimary:    primary,
+		ColorSecondary:  secondary,
+		ColorSuccess:    success,
+		ColorWarning:    warning,
+		ColorError:      errColor,
+		ColorMuted:      muted,
+		ColorText:       text,
+		ColorBg:         bg,
+		ColorBorder:     border,
+		ColorThinking:   thinking,
+		ColorToolName:   toolName,
+		ColorToolResult: toolResult,
+
+		HeaderStyle: lipgloss.NewStyle().
 			Bold(true).
-			Foreground(ColorText).
-			Background(lipgloss.Color("#111827")).
-			Padding(0, 1)
+			Foreground(text).
+			Background(headerBg).
+			Padding(0, 1),
 
-	FooterStyle = lipgloss.NewStyle().
-			Foreground(ColorMuted).
-			Background(lipgloss.Color("#111827")).
-			Padding(0, 1)
-)
+		FooterStyle: lipgloss.NewStyle().
+			Foreground(muted).
+			Background(headerBg).
+			Padding(0, 1),
 
-// Editor (textarea wrapper).
-var (
-	EditorStyle = lipgloss.NewStyle().
+		EditorStyle: lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(ColorBorder).
-			Padding(0, 0)
+			BorderForeground(border).
+			Padding(0, 0),
 
-	EditorActiveStyle = lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(ColorPrimary).
-				Padding(0, 0)
+		EditorActiveStyle: lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(primary).
+			Padding(0, 0),
 
-	EditorThinkingStyle = lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(ColorThinking).
-				Padding(0, 0)
+		EditorThinkingStyle: lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(thinking).
+			Padding(0, 0),
 
-	EditorSearchStyle = lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(ColorWarning).
-				Padding(0, 0)
-)
+		EditorSearchStyle: lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(warning).
+			Padding(0, 0),
 
-// ---------------------------------------------------------------------------
-// Message styles
-// ---------------------------------------------------------------------------
-
-// Role labels rendered before each message block.
-var (
-	UserRoleStyle = lipgloss.NewStyle().
+		UserRoleStyle: lipgloss.NewStyle().
 			Bold(true).
-			Foreground(ColorSecondary)
+			Foreground(secondary),
 
-	AssistantRoleStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(ColorPrimary)
-)
+		AssistantRoleStyle: lipgloss.NewStyle().
+			Bold(true).
+			Foreground(primary),
 
-// Message content.
-var (
-	UserMsgStyle = lipgloss.NewStyle().
-			Foreground(ColorText)
+		UserMsgStyle: lipgloss.NewStyle().
+			Foreground(text),
 
-	AssistantMsgStyle = lipgloss.NewStyle().
-				Foreground(ColorText)
+		AssistantMsgStyle: lipgloss.NewStyle().
+			Foreground(text),
 
-	ThinkingStyle = lipgloss.NewStyle().
-			Foreground(ColorThinking).
-			Italic(true)
+		ThinkingStyle: lipgloss.NewStyle().
+			Foreground(thinking).
+			Italic(true),
 
-	ThinkingLabelStyle = lipgloss.NewStyle().
-				Foreground(ColorThinking).
-				Bold(true)
-)
+		ThinkingLabelStyle: lipgloss.NewStyle().
+			Foreground(thinking).
+			Bold(true),
 
-// Tool call / result styles.
-var (
-	ToolCallStyle = lipgloss.NewStyle().
-			Foreground(ColorToolName).
-			Bold(true)
+		ToolCallStyle: lipgloss.NewStyle().
+			Foreground(toolName).
+			Bold(true),
 
-	ToolArgsStyle = lipgloss.NewStyle().
-			Foreground(ColorMuted)
+		ToolArgsStyle: lipgloss.NewStyle().
+			Foreground(muted),
 
-	ToolResultStyle = lipgloss.NewStyle().
-			Foreground(ColorToolResult).
-			Padding(0, 2)
+		ToolResultStyle: lipgloss.NewStyle().
+			Foreground(toolResult).
+			Padding(0, 2),
 
-	ToolErrorStyle = lipgloss.NewStyle().
-			Foreground(ColorError).
-			Padding(0, 2)
-)
+		ToolErrorStyle: lipgloss.NewStyle().
+			Foreground(errColor).
+			Padding(0, 2),
 
-// Plugin message styles.
-var (
-	PluginNameStyle = lipgloss.NewStyle().
-			Foreground(ColorSuccess).
-			Bold(true)
+		PluginNameStyle: lipgloss.NewStyle().
+			Foreground(success).
+			Bold(true),
 
-	PluginLogWarnStyle = lipgloss.NewStyle().
-				Foreground(ColorWarning)
-)
+		PluginLogWarnStyle: lipgloss.NewStyle().
+			Foreground(warning),
 
-// Misc.
-var (
-	SpinnerStyle = lipgloss.NewStyle().
-			Foreground(ColorPrimary)
+		SpinnerStyle: lipgloss.NewStyle().
+			Foreground(primary),
 
-	MutedStyle = lipgloss.NewStyle().
-			Foreground(ColorMuted)
+		MutedStyle: lipgloss.NewStyle().
+			Foreground(muted),
 
-	ErrorMsgStyle = lipgloss.NewStyle().
-			Foreground(ColorError).
-			Bold(true)
+		ErrorMsgStyle: lipgloss.NewStyle().
+			Foreground(errColor).
+			Bold(true),
 
-	SystemMsgStyle = lipgloss.NewStyle().
-			Foreground(ColorMuted).
-			Italic(true)
+		SystemMsgStyle: lipgloss.NewStyle().
+			Foreground(muted).
+			Italic(true),
 
-	NewContentBelowStyle = lipgloss.NewStyle().
-				Foreground(ColorText).
-				Background(lipgloss.Color("#374151")).
-				Bold(true).
-				Padding(0, 1)
-)
+		NewContentBelowStyle: lipgloss.NewStyle().
+			Foreground(text).
+			Background(lipgloss.Color("#374151")).
+			Bold(true).
+			Padding(0, 1),
+	}
+}

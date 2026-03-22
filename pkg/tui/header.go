@@ -48,22 +48,24 @@ func (h *Header) Height() int { return 1 }
 
 // View renders the header bar.
 func (h *Header) View() string {
+	s := Styles()
+
 	// App name.
 	appName := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(ColorPrimary).
+		Foreground(s.ColorPrimary).
 		Render("gi")
 
 	// Model badge.
 	modelBadge := lipgloss.NewStyle().
-		Foreground(ColorSecondary).
+		Foreground(s.ColorSecondary).
 		Render(h.model)
 
 	// Thinking indicator (only when not off).
 	var thinkBadge string
 	if h.thinkingLevel != ai.ThinkingOff && h.thinkingLevel != "" {
 		thinkBadge = lipgloss.NewStyle().
-			Foreground(ColorThinking).
+			Foreground(s.ColorThinking).
 			Render("thinking: " + string(h.thinkingLevel))
 	}
 
@@ -71,7 +73,7 @@ func (h *Header) View() string {
 	var sessionBadge string
 	if h.sessionName != "" {
 		sessionBadge = lipgloss.NewStyle().
-			Foreground(ColorMuted).
+			Foreground(s.ColorMuted).
 			Italic(true).
 			Render(h.sessionName)
 	}
@@ -87,6 +89,6 @@ func (h *Header) View() string {
 	left := strings.Join(parts, "  ")
 
 	// Pad to full width.
-	line := HeaderStyle.Width(h.width).Render(left)
+	line := s.HeaderStyle.Width(h.width).Render(left)
 	return line
 }
