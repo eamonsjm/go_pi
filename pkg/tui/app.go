@@ -120,8 +120,8 @@ func NewApp() *App {
 		keybindings:   kb,
 	}
 
-	// Register the /model command.
-	modelCmd := RegisterModelCommand()
+	// Register the /model command, reusing the selector's auth store.
+	modelCmd := RegisterModelCommand(app.modelSelector.authStore)
 	reg.Register(&modelCmd)
 
 	return app

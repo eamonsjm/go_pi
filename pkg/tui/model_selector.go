@@ -487,8 +487,10 @@ func fuzzyMatchModels(query string) []ModelOption {
 // ---------------------------------------------------------------------------
 
 // RegisterModelCommand returns a SlashCommand for /model that can be registered
-// with the command infrastructure.
-func RegisterModelCommand() SlashCommand {
+// with the command infrastructure. It accepts a pre-loaded auth.Store so that
+// model switches reuse the existing credentials instead of reading from disk
+// on every invocation. If store is nil, auth checks are skipped gracefully.
+func RegisterModelCommand(store *auth.Store) SlashCommand {
 	return SlashCommand{
 		Name:        "model",
 		Description: "Switch the AI model. Usage: /model [model-name]",
@@ -502,7 +504,7 @@ func RegisterModelCommand() SlashCommand {
 			// 1. Exact match on model ID (case-insensitive).
 			for _, opt := range defaultModels {
 				if strings.EqualFold(opt.Model, args) {
-					return modelSwitchWithAuthCheck(opt)
+					return modelSwitchWithAuthCheck(store, opt)
 				}
 			}
 
@@ -523,7 +525,7 @@ func RegisterModelCommand() SlashCommand {
 
 			case 1:
 				// Single fuzzy match — switch directly (with auth check).
-				return modelSwitchWithAuthCheck(matches[0])
+				return modelSwitchWithAuthCheck(store, matches[0])
 
 			default:
 				// Multiple matches — show selector pre-filtered.
@@ -537,18 +539,15 @@ func RegisterModelCommand() SlashCommand {
 // modelSwitchWithAuthCheck returns a tea.Cmd that verifies the user is
 // authenticated to the model's provider before emitting modelSelectedMsg.
 // If not authenticated, it returns an error prompting the user to log in.
-func modelSwitchWithAuthCheck(opt ModelOption) tea.Cmd {
+// It reuses the provided auth.Store rather than creating a new one each time.
+func modelSwitchWithAuthCheck(store *auth.Store, opt ModelOption) tea.Cmd {
 	return func() tea.Msg {
-		authStore, err := auth.NewStore("")
-		if err != nil {
+		if store == nil {
 			// Can't check auth — proceed anyway.
 			return modelSelectedMsg{provider: opt.Provider, model: opt.Model}
 		}
-		if err := authStore.Load(); err != nil {
-			return modelSelectedMsg{provider: opt.Provider, model: opt.Model}
-		}
 
-		if authStore.Get(opt.Provider) == nil {
+		if store.Get(opt.Provider) == nil {
 			return CommandResultMsg{
 				Text: fmt.Sprintf(
 					"Not authenticated to %s. Run /login %s first, then retry /model %s",

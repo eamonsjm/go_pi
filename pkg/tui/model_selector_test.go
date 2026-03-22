@@ -296,7 +296,7 @@ func TestModelSelector_View_Visible(t *testing.T) {
 }
 
 func TestRegisterModelCommand_NoArgs(t *testing.T) {
-	cmd := RegisterModelCommand()
+	cmd := RegisterModelCommand(nil)
 	if cmd.Name != "model" {
 		t.Errorf("expected name 'model', got %q", cmd.Name)
 	}
@@ -312,7 +312,7 @@ func TestRegisterModelCommand_NoArgs(t *testing.T) {
 }
 
 func TestRegisterModelCommand_WithKnownModel(t *testing.T) {
-	cmd := RegisterModelCommand()
+	cmd := RegisterModelCommand(nil)
 	result := cmd.Execute("claude-sonnet-4-20250514")
 	if result == nil {
 		t.Fatal("expected command to return a tea.Cmd")
@@ -340,7 +340,7 @@ func TestRegisterModelCommand_WithKnownModel(t *testing.T) {
 }
 
 func TestRegisterModelCommand_WithUnknownModel(t *testing.T) {
-	cmd := RegisterModelCommand()
+	cmd := RegisterModelCommand(nil)
 	result := cmd.Execute("xyznonexistent999")
 	if result == nil {
 		t.Fatal("expected command to return a tea.Cmd")
@@ -362,7 +362,7 @@ func TestRegisterModelCommand_WithUnknownModel(t *testing.T) {
 }
 
 func TestRegisterModelCommand_FuzzyMatch_SingleResult(t *testing.T) {
-	cmd := RegisterModelCommand()
+	cmd := RegisterModelCommand(nil)
 	// "haiku" should fuzzy-match exactly one model: claude-haiku-4-5-20251001
 	result := cmd.Execute("haiku")
 	if result == nil {
@@ -393,7 +393,7 @@ func TestRegisterModelCommand_FuzzyMatch_SingleResult(t *testing.T) {
 }
 
 func TestRegisterModelCommand_FuzzyMatch_MultipleResults(t *testing.T) {
-	cmd := RegisterModelCommand()
+	cmd := RegisterModelCommand(nil)
 	// "opus" matches multiple models (Opus 4.6, Opus 4, OpenRouter Opus) → show selector
 	result := cmd.Execute("opus")
 	if result == nil {
@@ -410,7 +410,7 @@ func TestRegisterModelCommand_FuzzyMatch_MultipleResults(t *testing.T) {
 }
 
 func TestRegisterModelCommand_FuzzyMatch_GPT(t *testing.T) {
-	cmd := RegisterModelCommand()
+	cmd := RegisterModelCommand(nil)
 	// "gpt" should match multiple GPT variants → show selector
 	result := cmd.Execute("gpt")
 	if result == nil {
@@ -423,7 +423,7 @@ func TestRegisterModelCommand_FuzzyMatch_GPT(t *testing.T) {
 }
 
 func TestRegisterModelCommand_FuzzyMatch_ByProvider(t *testing.T) {
-	cmd := RegisterModelCommand()
+	cmd := RegisterModelCommand(nil)
 	// "gemini" matches provider and model names → multiple matches → selector
 	result := cmd.Execute("gemini")
 	if result == nil {
@@ -556,7 +556,7 @@ func TestModelSelector_RapidShowHide(t *testing.T) {
 }
 
 func TestRegisterModelCommand_WhitespaceOnly(t *testing.T) {
-	cmd := RegisterModelCommand()
+	cmd := RegisterModelCommand(nil)
 	result := cmd.Execute("   ")
 	if result == nil {
 		t.Fatal("expected command to return a tea.Cmd")
@@ -701,7 +701,7 @@ func TestResolveModelArg_EmptyString(t *testing.T) {
 }
 
 func TestRegisterModelCommand_CaseInsensitiveMatch(t *testing.T) {
-	cmd := RegisterModelCommand()
+	cmd := RegisterModelCommand(nil)
 	// EqualFold should match regardless of case.
 	result := cmd.Execute("CLAUDE-SONNET-4-20250514")
 	msg := result()
