@@ -37,6 +37,14 @@ import (
 	"github.com/ejm/go_pi/pkg/tools"
 )
 
+// ErrNoProvider is returned by [NewSession] when neither [WithAPIKey] nor
+// [WithProvider] has been specified.
+var ErrNoProvider = errors.New("sdk: no API key or provider configured")
+
+// ErrUnknownProvider is returned by [NewSession] when the provider name
+// passed to [WithAPIKey] is not recognised.
+var ErrUnknownProvider = errors.New("sdk: unknown provider")
+
 // Session is the primary SDK type. It wraps an agent loop, tool registry,
 // and session manager into a single, easy-to-use interface for programmatic
 // agent execution.
@@ -405,7 +413,7 @@ func resolveProvider(ctx context.Context, cfg *SessionConfig) (ai.Provider, erro
 	}
 
 	if cfg.APIKey == "" {
-		return nil, fmt.Errorf("no API key or provider configured; use WithAPIKey or WithProvider")
+		return nil, ErrNoProvider
 	}
 
 	// Set default model if not specified.
@@ -446,6 +454,6 @@ func resolveProvider(ctx context.Context, cfg *SessionConfig) (ai.Provider, erro
 	case "ollama":
 		return ai.NewOllamaProvider(cfg.APIKey)
 	default:
-		return nil, fmt.Errorf("unknown provider: %q", cfg.Provider)
+		return nil, fmt.Errorf("%w: %q", ErrUnknownProvider, cfg.Provider)
 	}
 }

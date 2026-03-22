@@ -155,6 +155,22 @@ func TestNewSessionNoProvider(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when no provider configured")
 	}
+	if !errors.Is(err, ErrNoProvider) {
+		t.Errorf("expected ErrNoProvider, got: %v", err)
+	}
+}
+
+func TestNewSessionUnknownProvider(t *testing.T) {
+	_, err := NewSession(context.Background(),
+		WithAPIKey("totally-fake-provider", "sk-test"),
+		WithSessionDir(t.TempDir()),
+	)
+	if err == nil {
+		t.Fatal("expected error for unknown provider")
+	}
+	if !errors.Is(err, ErrUnknownProvider) {
+		t.Errorf("expected ErrUnknownProvider, got: %v", err)
+	}
 }
 
 func TestSessionResume(t *testing.T) {
