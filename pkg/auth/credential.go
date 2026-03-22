@@ -74,8 +74,10 @@ func resolveKeyValue(val string) (string, error) {
 		return resolveCommand(val[1:])
 	}
 
-	// Env var heuristic: all uppercase letters, digits, and underscores, at least 2 chars.
-	envVar := len(val) >= 2
+	// Env var heuristic: all uppercase letters, digits, and underscores, at least 4 chars.
+	// Minimum of 4 prevents short uppercase literals (e.g. "SK", "OK") from accidentally
+	// resolving as environment variables.
+	envVar := len(val) >= 4
 	for _, r := range val {
 		if r != '_' && (r < 'A' || r > 'Z') && (r < '0' || r > '9') {
 			envVar = false

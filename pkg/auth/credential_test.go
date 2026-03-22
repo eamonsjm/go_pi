@@ -132,7 +132,7 @@ func TestResolveKey_OAuth(t *testing.T) {
 }
 
 func TestResolveKeyValue_EnvVarHeuristic(t *testing.T) {
-	// Strings that look like env vars (uppercase + digits + underscores, len >= 2)
+	// Strings that look like env vars (uppercase + digits + underscores, len >= 4)
 	// are checked against os.Getenv before falling through to literal.
 	tests := []struct {
 		input   string
@@ -140,8 +140,11 @@ func TestResolveKeyValue_EnvVarHeuristic(t *testing.T) {
 	}{
 		{"ANTHROPIC_API_KEY", true},
 		{"MY_KEY", true},
-		{"AB", true},
 		{"A1B2", true},
+		{"KEYS", true},        // exactly 4 chars
+		{"AB", false},         // too short (< 4)
+		{"SK", false},         // too short, could be mistaken for env var
+		{"KEY", false},        // too short (3 chars)
 		{"A", false},          // too short
 		{"", false},           // empty
 		{"my_key", false},     // lowercase
