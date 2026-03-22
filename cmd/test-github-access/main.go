@@ -60,7 +60,7 @@ func run() error {
 	}
 
 	fmt.Println("✓ Step 1: Successfully created JWT token from GitHub App private key")
-	fmt.Printf("  Token starts with: %s...\n", tokenStr[:50])
+	fmt.Printf("  Token length: %d chars\n", len(tokenStr))
 
 	// Step 2: Try to fetch workflow runs (this will fail without proper app ID, but tests API access)
 	fmt.Println("\n✓ Step 2: Testing GitHub API access...")
