@@ -182,6 +182,7 @@ func splitFrontmatter(data []byte) (frontmatter []byte, body string, err error) 
 // Registry holds skills indexed by name. Skills registered later with the same
 // name overwrite earlier ones, enabling the override chain: built-in < user < project.
 type Registry struct {
+	mu     sync.RWMutex
 	skills map[string]*Skill
 }
 
@@ -195,33 +196,41 @@ func NewRegistry() *Registry {
 // Register adds a skill to the registry. If a skill with the same name
 // already exists, it is replaced (last-write-wins for override semantics).
 func (r *Registry) Register(s *Skill) {
+	r.mu.Lock()
 	r.skills[s.Name] = s
+	r.mu.Unlock()
 }
 
 // Get returns the skill with the given name, or false if not found.
 func (r *Registry) Get(name string) (*Skill, bool) {
+	r.mu.RLock()
 	s, ok := r.skills[name]
+	r.mu.RUnlock()
 	return s, ok
 }
 
 // Names returns all registered skill names sorted alphabetically.
 func (r *Registry) Names() []string {
+	r.mu.RLock()
 	names := make([]string, 0, len(r.skills))
 	for name := range r.skills {
 		names = append(names, name)
 	}
+	r.mu.RUnlock()
 	sort.Strings(names)
 	return names
 }
 
 // UserInvocable returns all skills with UserInvocable=true, sorted by name.
 func (r *Registry) UserInvocable() []*Skill {
-	var result []*Skill
+	r.mu.RLock()
+	result := make([]*Skill, 0, len(r.skills))
 	for _, s := range r.skills {
 		if s.UserInvocable {
 			result = append(result, s)
 		}
 	}
+	r.mu.RUnlock()
 	sort.Slice(result, func(i, j int) bool {
 		return result[i].Name < result[j].Name
 	})
@@ -230,10 +239,12 @@ func (r *Registry) UserInvocable() []*Skill {
 
 // All returns all registered skills sorted by name.
 func (r *Registry) All() []*Skill {
+	r.mu.RLock()
 	result := make([]*Skill, 0, len(r.skills))
 	for _, s := range r.skills {
 		result = append(result, s)
 	}
+	r.mu.RUnlock()
 	sort.Slice(result, func(i, j int) bool {
 		return result[i].Name < result[j].Name
 	})
@@ -242,5 +253,8 @@ func (r *Registry) All() []*Skill {
 
 // Len returns the number of registered skills.
 func (r *Registry) Len() int {
-	return len(r.skills)
+	r.mu.RLock()
+	n := len(r.skills)
+	r.mu.RUnlock()
+	return n
 }

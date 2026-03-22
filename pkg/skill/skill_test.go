@@ -3,8 +3,10 @@ package skill
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"testing/fstest"
 )
@@ -329,6 +331,41 @@ func TestLoadBody_NoSource(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for skill with no source, got nil")
 	}
+}
+
+func TestRegistry_ConcurrentAccess(t *testing.T) {
+	r := NewRegistry()
+	// Pre-populate so readers have data.
+	for i := 0; i < 10; i++ {
+		r.Register(&Skill{Name: fmt.Sprintf("skill-%d", i), UserInvocable: i%2 == 0})
+	}
+
+	var wg sync.WaitGroup
+	// Concurrent writers.
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			for j := 0; j < 100; j++ {
+				r.Register(&Skill{Name: fmt.Sprintf("skill-%d", n), Description: fmt.Sprintf("v%d", j)})
+			}
+		}(i)
+	}
+	// Concurrent readers.
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			for j := 0; j < 100; j++ {
+				r.Get(fmt.Sprintf("skill-%d", n))
+				r.Names()
+				r.All()
+				r.UserInvocable()
+				r.Len()
+			}
+		}(i)
+	}
+	wg.Wait()
 }
 
 func TestSplitFrontmatter_LeadingWhitespace(t *testing.T) {
