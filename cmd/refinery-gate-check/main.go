@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"strings"
@@ -14,24 +15,30 @@ import (
 )
 
 func main() {
-	os.Exit(run())
+	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
 
-func run() int {
-	owner := flag.String("owner", "eamonsjm", "GitHub repository owner")
-	repo := flag.String("repo", "go_pi", "GitHub repository name")
-	token := flag.String("token", "", "GitHub API token (or GITHUB_TOKEN env var)")
-	branch := flag.String("branch", "main", "Git branch to check")
-	workflowsStr := flag.String("workflows", "Build,Lint,Tests", "Comma-separated workflow names to check")
-	timeoutSec := flag.Int("timeout", 30, "API timeout in seconds")
-	verbose := flag.Bool("verbose", false, "Verbose output")
-	flag.Parse()
+func run(args []string, stdout, stderr io.Writer, opts ...refinery_gate.GateOption) int {
+	fs := flag.NewFlagSet("refinery-gate-check", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+
+	owner := fs.String("owner", "eamonsjm", "GitHub repository owner")
+	repo := fs.String("repo", "go_pi", "GitHub repository name")
+	token := fs.String("token", "", "GitHub API token (or GITHUB_TOKEN env var)")
+	branch := fs.String("branch", "main", "Git branch to check")
+	workflowsStr := fs.String("workflows", "Build,Lint,Tests", "Comma-separated workflow names to check")
+	timeoutSec := fs.Int("timeout", 30, "API timeout in seconds")
+	verbose := fs.Bool("verbose", false, "Verbose output")
+
+	if err := fs.Parse(args); err != nil {
+		return 1
+	}
 
 	// Get token from environment if not provided
 	if *token == "" {
 		*token = os.Getenv("GITHUB_TOKEN")
 		if *token == "" {
-			fmt.Fprintf(os.Stderr, "ERROR: GitHub token required (--token or GITHUB_TOKEN env var)\n")
+			fmt.Fprintf(stderr, "ERROR: GitHub token required (--token or GITHUB_TOKEN env var)\n")
 			return 1
 		}
 	}
@@ -51,7 +58,7 @@ func run() int {
 	defer stop()
 
 	// Create gate checker and run CI check
-	checker := refinery_gate.NewGateChecker(*owner, *repo, *token, *branch, workflows)
+	checker := refinery_gate.NewGateChecker(*owner, *repo, *token, *branch, workflows, opts...)
 	status, err := checker.CheckCI(ctx)
 
 	if err != nil {
@@ -61,32 +68,32 @@ func run() int {
 			"error":  err.Error(),
 		}
 		if *verbose {
-			fmt.Fprintf(os.Stderr, "Error checking CI: %v\n", err)
+			fmt.Fprintf(stderr, "Error checking CI: %v\n", err)
 		}
 		jsonOut, _ := json.MarshalIndent(output, "", "  ")
-		fmt.Println(string(jsonOut))
+		fmt.Fprintln(stdout, string(jsonOut))
 		return 1
 	}
 
 	// Output gate status as JSON
 	jsonOut, err := json.MarshalIndent(status, "", "  ")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "ERROR: Failed to marshal output: %v\n", err)
+		fmt.Fprintf(stderr, "ERROR: Failed to marshal output: %v\n", err)
 		return 1
 	}
 
-	fmt.Println(string(jsonOut))
+	fmt.Fprintln(stdout, string(jsonOut))
 
 	// Exit with appropriate status
 	if !status.Passed {
 		if *verbose {
-			fmt.Fprintf(os.Stderr, "Gate check FAILED: %s\n", status.Reason)
+			fmt.Fprintf(stderr, "Gate check FAILED: %s\n", status.Reason)
 		}
 		return 1
 	}
 
 	if *verbose {
-		fmt.Fprintf(os.Stderr, "Gate check PASSED: %s\n", status.Reason)
+		fmt.Fprintf(stderr, "Gate check PASSED: %s\n", status.Reason)
 	}
 	return 0
 }

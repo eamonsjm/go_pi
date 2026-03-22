@@ -38,9 +38,19 @@ type GateChecker struct {
 	apiURL    string   // optional override for testing
 }
 
+// GateOption configures a GateChecker.
+type GateOption func(*GateChecker)
+
+// WithAPIURL overrides the GitHub API endpoint (useful for testing).
+func WithAPIURL(url string) GateOption {
+	return func(gc *GateChecker) {
+		gc.apiURL = url
+	}
+}
+
 // NewGateChecker creates a new CI gate checker
-func NewGateChecker(owner, repo, token, branch string, workflows []string) *GateChecker {
-	return &GateChecker{
+func NewGateChecker(owner, repo, token, branch string, workflows []string, opts ...GateOption) *GateChecker {
+	gc := &GateChecker{
 		client:    &http.Client{Timeout: 30 * time.Second},
 		owner:     owner,
 		repo:      repo,
@@ -48,6 +58,10 @@ func NewGateChecker(owner, repo, token, branch string, workflows []string) *Gate
 		branch:    branch,
 		workflows: workflows,
 	}
+	for _, opt := range opts {
+		opt(gc)
+	}
+	return gc
 }
 
 // CheckCI verifies that all required workflows have passed
