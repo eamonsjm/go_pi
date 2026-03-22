@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -207,7 +208,9 @@ func (m *Manager) ListSessions() []SessionInfo {
 			si.Entries = count
 			normalizeParentIDs(allEntries)
 			si.Branches = len(findLeafEntries(allEntries))
-			_ = f.Close()
+			if err := f.Close(); err != nil {
+				log.Printf("session: close %s: %v", path, err)
+			}
 		}
 		sessions = append(sessions, si)
 	}
@@ -815,7 +818,9 @@ func (m *Manager) CollectUserPrompts(maxPrompts int) []string {
 			seen[text] = true
 			prompts = append(prompts, promptEntry{text: text, ts: e.Timestamp})
 		}
-		_ = f.Close()
+		if err := f.Close(); err != nil {
+			log.Printf("session: close %s: %v", path, err)
+		}
 	}
 
 	// Sort most-recent-first.
