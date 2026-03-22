@@ -73,6 +73,8 @@ type chatBlock struct {
 // ---------------------------------------------------------------------------
 
 // ChatView renders the conversation history inside a scrollable viewport.
+//
+// A zero-value ChatView is not usable. Use [NewChatView] to construct one.
 type ChatView struct {
 	viewport viewport.Model
 	blocks   []chatBlock

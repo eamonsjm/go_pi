@@ -93,6 +93,8 @@ func getDefaultModels() []ModelOption {
 // ---------------------------------------------------------------------------
 
 // ModelSelector is an overlay that lets the user pick from a list of models.
+//
+// A zero-value ModelSelector is not usable. Use [NewModelSelector] to construct one.
 type ModelSelector struct {
 	models       []ModelOption
 	providers    []string           // unique providers in display order

@@ -54,6 +54,9 @@ type Binding struct {
 }
 
 // KeybindingConfig holds the resolved keybinding map.
+//
+// A zero-value KeybindingConfig is not usable (nil maps).
+// Use [LoadKeybindings] to construct one.
 type KeybindingConfig struct {
 	actionToKey map[Action]string
 	keyToAction map[string]Action

@@ -15,6 +15,9 @@ type SlashCommand struct {
 }
 
 // CommandRegistry holds all registered slash commands and their aliases.
+//
+// A zero-value CommandRegistry is not usable (nil maps).
+// Use [NewCommandRegistry] to construct one.
 type CommandRegistry struct {
 	commands map[string]*SlashCommand
 	aliases  map[string]string // alias -> target command name
