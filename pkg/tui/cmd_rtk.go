@@ -256,6 +256,9 @@ func rtkEnableCategory(category string, cfg *config.Config) tea.Cmd {
 		return rtkError(fmt.Sprintf("invalid category %q", category))
 	}
 
+	if cfg.RTK.EnabledCategories == nil {
+		cfg.RTK.EnabledCategories = make(map[string]bool)
+	}
 	cfg.RTK.EnabledCategories[category] = true
 	if err := cfg.Save(); err != nil {
 		return rtkError(fmt.Sprintf("enabled %s but failed to save: %v", category, err))
@@ -276,6 +279,9 @@ func rtkDisableCategory(category string, cfg *config.Config) tea.Cmd {
 		return rtkError(fmt.Sprintf("invalid category %q", category))
 	}
 
+	if cfg.RTK.EnabledCategories == nil {
+		cfg.RTK.EnabledCategories = make(map[string]bool)
+	}
 	cfg.RTK.EnabledCategories[category] = false
 	if err := cfg.Save(); err != nil {
 		return rtkError(fmt.Sprintf("disabled %s but failed to save: %v", category, err))
@@ -306,6 +312,9 @@ func rtkSetCompressionLevel(compressor, level string, cfg *config.Config) tea.Cm
 		return rtkError(fmt.Sprintf("invalid compressor %q", compressor))
 	}
 
+	if cfg.RTK.CompressionLevels == nil {
+		cfg.RTK.CompressionLevels = make(map[string]string)
+	}
 	cfg.RTK.CompressionLevels[compressor] = level
 	if err := cfg.Save(); err != nil {
 		return rtkError(fmt.Sprintf("set %s to %s but failed to save: %v", compressor, level, err))
