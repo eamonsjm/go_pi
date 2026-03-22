@@ -234,8 +234,7 @@ func run() int {
 			return 1
 		}
 		agentLoop := makeAgentLoop(provider, registry, cfg, skillRegistry)
-		rpc.RunJSONStream(agentLoop, initialPrompt)
-		return 0
+		return rpc.RunJSONStream(agentLoop, initialPrompt)
 	}
 
 	// JSON-RPC 2.0 mode
