@@ -123,7 +123,7 @@ func (t *GrepTool) Execute(ctx context.Context, params map[string]any) (string, 
 			}
 
 			// Skip binary files.
-			if isBinaryFile(path) {
+			if isBinaryFile(ctx, path) {
 				return nil
 			}
 
@@ -131,7 +131,7 @@ func (t *GrepTool) Execute(ctx context.Context, params map[string]any) (string, 
 				return filepath.SkipAll
 			}
 
-			fileResults, n := searchFile(path, re, contextLines, maxGrepMatches-totalMatches)
+			fileResults, n := searchFile(ctx, path, re, contextLines, maxGrepMatches-totalMatches)
 			if len(fileResults) > 0 {
 				results = append(results, fileResults...)
 				totalMatches += n
@@ -140,10 +140,10 @@ func (t *GrepTool) Execute(ctx context.Context, params map[string]any) (string, 
 			return nil
 		})
 	} else {
-		if isBinaryFile(absPath) {
+		if isBinaryFile(ctx, absPath) {
 			return "Binary file, skipping.", nil
 		}
-		fileResults, n := searchFile(absPath, re, contextLines, maxGrepMatches)
+		fileResults, n := searchFile(ctx, absPath, re, contextLines, maxGrepMatches)
 		results = fileResults
 		totalMatches = n
 	}
@@ -180,7 +180,11 @@ type grepResult struct {
 }
 
 // searchFile searches a single file for regex matches.
-func searchFile(path string, re *regexp.Regexp, contextLines, maxMatches int) ([]grepResult, int) {
+func searchFile(ctx context.Context, path string, re *regexp.Regexp, contextLines, maxMatches int) ([]grepResult, int) {
+	if err := ctx.Err(); err != nil {
+		return nil, 0
+	}
+
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, 0
@@ -194,6 +198,9 @@ func searchFile(path string, re *regexp.Regexp, contextLines, maxMatches int) ([
 	scanner.Buffer(make([]byte, 256*1024), 1024*1024) // up to 1MB lines
 	lineNum := 0
 	for scanner.Scan() {
+		if ctx.Err() != nil {
+			return nil, 0
+		}
 		lineNum++
 		line := scanner.Text()
 		allLines = append(allLines, line)
