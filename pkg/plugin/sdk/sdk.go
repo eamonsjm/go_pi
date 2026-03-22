@@ -294,7 +294,7 @@ func (p *Plugin) handleToolCall(msg hostMessage) {
 				Params: msg.Params,
 				Config: p.config,
 			}
-			result, err := t.handler(ctx)
+			result, err := p.safeCallTool(t.handler, ctx)
 			if err != nil {
 				p.send(pluginMessage{
 					Type:    "tool_result",
@@ -328,7 +328,7 @@ func (p *Plugin) handleCommand(msg hostMessage) {
 				Args:   msg.Args,
 				Config: p.config,
 			}
-			result, err := c.handler(ctx)
+			result, err := p.safeCallCommand(c.handler, ctx)
 			if err != nil {
 				p.send(pluginMessage{
 					Type:    "command_result",
@@ -358,6 +358,30 @@ func (p *Plugin) handleEvent(msg hostMessage) {
 	for _, h := range p.eventHandlers {
 		h(*msg.Event)
 	}
+}
+
+// safeCallTool calls a ToolHandler with panic recovery so a panicking handler
+// returns an error instead of crashing the plugin process.
+func (p *Plugin) safeCallTool(handler ToolHandler, ctx ToolContext) (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			result = ""
+			err = fmt.Errorf("tool handler panicked: %v", r)
+		}
+	}()
+	return handler(ctx)
+}
+
+// safeCallCommand calls a CommandHandler with panic recovery so a panicking
+// handler returns an error instead of crashing the plugin process.
+func (p *Plugin) safeCallCommand(handler CommandHandler, ctx CommandContext) (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			result = ""
+			err = fmt.Errorf("command handler panicked: %v", r)
+		}
+	}()
+	return handler(ctx)
 }
 
 func (p *Plugin) send(msg pluginMessage) {

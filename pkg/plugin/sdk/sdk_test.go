@@ -369,6 +369,69 @@ func TestPropSafeOnMissingProperties(t *testing.T) {
 	}
 }
 
+func TestToolCallPanicRecovery(t *testing.T) {
+	p := NewPlugin("test").
+		Tool("boom", "Panics", nil, func(ctx ToolContext) (string, error) {
+			panic("kaboom")
+		})
+
+	send, recv, done := pipePlugin(t, p)
+
+	send(hostMessage{Type: "initialize", Config: &Config{}})
+	recv() // capabilities
+
+	send(hostMessage{Type: "tool_call", ID: "call_panic", Name: "boom"})
+
+	result := recv()
+	if result.Type != "tool_result" {
+		t.Fatalf("expected tool_result, got %s", result.Type)
+	}
+	if !result.IsError {
+		t.Error("expected is_error=true for panicking tool")
+	}
+	if !strings.Contains(result.Content, "panicked") {
+		t.Errorf("expected panic message in content, got %s", result.Content)
+	}
+	if !strings.Contains(result.Content, "kaboom") {
+		t.Errorf("expected 'kaboom' in content, got %s", result.Content)
+	}
+
+	// Plugin should still be alive — send another tool call to verify.
+	send(hostMessage{Type: "shutdown"})
+	<-done
+}
+
+func TestCommandPanicRecovery(t *testing.T) {
+	p := NewPlugin("test").
+		Command("explode", "Panics", func(ctx CommandContext) (string, error) {
+			panic("bang")
+		})
+
+	send, recv, done := pipePlugin(t, p)
+
+	send(hostMessage{Type: "initialize", Config: &Config{}})
+	recv() // capabilities
+
+	send(hostMessage{Type: "command", Name: "explode", Args: ""})
+
+	result := recv()
+	if result.Type != "command_result" {
+		t.Fatalf("expected command_result, got %s", result.Type)
+	}
+	if !result.IsError {
+		t.Error("expected is_error=true for panicking command")
+	}
+	if !strings.Contains(result.Text, "panicked") {
+		t.Errorf("expected panic message in text, got %s", result.Text)
+	}
+	if !strings.Contains(result.Text, "bang") {
+		t.Errorf("expected 'bang' in text, got %s", result.Text)
+	}
+
+	send(hostMessage{Type: "shutdown"})
+	<-done
+}
+
 func TestSchemaHelper(t *testing.T) {
 	s := Schema(
 		Prop("text", "string", "The input text"),
