@@ -3,6 +3,7 @@ package auth
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -57,6 +58,7 @@ func (a *AnthropicOAuth) Name() string { return "Anthropic (Claude)" }
 type AuthSession struct {
 	AuthorizeURL string
 	PKCE         *PKCEChallenge
+	State        string // Random state parameter for CSRF protection (distinct from PKCE verifier).
 	RedirectURI  string
 }
 
@@ -100,6 +102,16 @@ func (a *AnthropicOAuth) StartAuthFlow() (*AuthSession, error) {
 		redirectURI = defaultAnthropicRedirectURI
 	}
 
+	// Generate a separate random state parameter for CSRF protection.
+	// The PKCE verifier must NOT be used as the state — doing so exposes
+	// the verifier in the authorization URL (browser history, referrer
+	// headers, server logs), defeating PKCE's security guarantees.
+	stateBuf := make([]byte, 32)
+	if _, err := rand.Read(stateBuf); err != nil {
+		return nil, fmt.Errorf("generate OAuth state: %w", err)
+	}
+	oauthState := base64URLEncode(stateBuf)
+
 	// Build query string manually to preserve parameter order matching
 	// Anthropic's expected format. url.Values.Encode() sorts alphabetically,
 	// but Anthropic's OAuth server expects the order from the reference
@@ -112,11 +124,12 @@ func (a *AnthropicOAuth) StartAuthFlow() (*AuthSession, error) {
 		"&scope=" + url.QueryEscape(a.Scope) +
 		"&code_challenge=" + url.QueryEscape(pkce.Challenge) +
 		"&code_challenge_method=S256" +
-		"&state=" + url.QueryEscape(pkce.Verifier)
+		"&state=" + url.QueryEscape(oauthState)
 
 	return &AuthSession{
 		AuthorizeURL: authorizeURL,
 		PKCE:         pkce,
+		State:        oauthState,
 		RedirectURI:  redirectURI,
 	}, nil
 }
@@ -126,7 +139,7 @@ func (a *AnthropicOAuth) StartAuthFlow() (*AuthSession, error) {
 // if so, the state is extracted and used in the token exchange request.
 func (a *AnthropicOAuth) ExchangeCode(ctx context.Context, session *AuthSession, rawCode string) (*Credential, error) {
 	code := rawCode
-	state := session.PKCE.Verifier
+	state := session.State
 	if parts := strings.SplitN(rawCode, "#", 2); len(parts) == 2 {
 		code = parts[0]
 		state = parts[1]
