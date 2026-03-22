@@ -139,7 +139,7 @@ func (m *Manager) startAndRegisterWithManifest(name, execPath string, manifest *
 
 	proc, err := startPlugin(name, execPath)
 	if err != nil {
-		return err
+		return fmt.Errorf("starting plugin %s: %w", name, err)
 	}
 
 	if manifest != nil {
@@ -191,7 +191,7 @@ func (m *Manager) initializePlugin(p *PluginProcess, cfg PluginConfig) (retErr e
 		if stopErr := p.Stop(); stopErr != nil {
 			log.Printf("plugin %s: cleanup: failed to stop after init failure: %v", p.name, stopErr)
 		}
-		return err
+		return fmt.Errorf("plugin %s: %w", p.name, err)
 	}
 
 	// Ensure the process is stopped if anything after Initialize() fails.
