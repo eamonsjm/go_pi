@@ -328,6 +328,9 @@ steerDrained:
 func (a *AgentLoop) doTurn(ctx context.Context) (*ai.Message, error) {
 	a.emit(ctx, AgentEvent{Type: EventTurnStart})
 
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	a.mu.Lock()
 	req := ai.StreamRequest{
 		Model:         a.model,
@@ -435,6 +438,9 @@ func (a *AgentLoop) doTurn(ctx context.Context) (*ai.Message, error) {
 			}
 
 		case ai.EventError:
+			cancel()
+			for range stream {
+			}
 			return nil, fmt.Errorf("stream error: %w", event.Error)
 		}
 	}
