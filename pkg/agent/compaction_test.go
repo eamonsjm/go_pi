@@ -575,9 +575,9 @@ func TestCompactProviderStartError(t *testing.T) {
 	}
 }
 
-func TestCompactThinkingBlocksExcludedFromTranscript(t *testing.T) {
-	// Thinking blocks have no text (GetText returns ""), and no tool_use/tool_result
-	// type, so they should not appear in the transcript. Verify no crash.
+func TestCompactThinkingBlocksIncludedInTranscript(t *testing.T) {
+	// Thinking blocks should appear in the transcript so the compaction
+	// summary preserves the reasoning that led to decisions.
 	var capturedPrompt string
 	provider := &mockProvider{
 		streamFn: func(_ context.Context, req ai.StreamRequest) (<-chan ai.StreamEvent, error) {
@@ -610,10 +610,9 @@ func TestCompactThinkingBlocksExcludedFromTranscript(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// The thinking content should NOT appear in the transcript (it's not
-	// handled by the text/tool_use/tool_result switch).
-	if strings.Contains(capturedPrompt, "internal reasoning") {
-		t.Error("thinking content should not appear in compaction transcript")
+	// The thinking content should appear in the transcript.
+	if !strings.Contains(capturedPrompt, "[thinking]: internal reasoning") {
+		t.Error("transcript missing thinking content")
 	}
 	// The text content should appear.
 	if !strings.Contains(capturedPrompt, "[assistant]: here's my answer") {

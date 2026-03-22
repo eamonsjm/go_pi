@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -284,8 +285,20 @@ func buildTranscript(msgs []ai.Message) string {
 		}
 		for _, c := range msg.Content {
 			switch c.Type {
+			case ai.ContentTypeThinking:
+				if c.Thinking != "" {
+					fmt.Fprintf(&b, "[thinking]: %s\n\n", c.Thinking)
+				}
 			case ai.ContentTypeToolUse:
-				fmt.Fprintf(&b, "[tool_call]: %s\n", c.ToolName)
+				if c.Input != nil {
+					if inputJSON, err := json.Marshal(c.Input); err == nil {
+						fmt.Fprintf(&b, "[tool_call]: %s %s\n", c.ToolName, inputJSON)
+					} else {
+						fmt.Fprintf(&b, "[tool_call]: %s\n", c.ToolName)
+					}
+				} else {
+					fmt.Fprintf(&b, "[tool_call]: %s\n", c.ToolName)
+				}
 			case ai.ContentTypeToolResult:
 				result := c.Content
 				if len(result) > 500 {
