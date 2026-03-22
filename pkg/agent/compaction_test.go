@@ -711,6 +711,62 @@ func TestMaybeAutoCompactNotTriggeredNoUsageData(t *testing.T) {
 	}
 }
 
+func TestMaybeAutoCompactSkippedTooFewMessages(t *testing.T) {
+	// A single large tool result can exceed the token threshold, but
+	// compaction on fewer than minAutoCompactMessages messages wastes
+	// an LLM call without meaningful reduction.
+	var compactionCalled bool
+	provider := &mockProvider{
+		streamFn: func(_ context.Context, _ ai.StreamRequest) (<-chan ai.StreamEvent, error) {
+			compactionCalled = true
+			ch := make(chan ai.StreamEvent, 10)
+			go func() {
+				defer close(ch)
+				ch <- ai.StreamEvent{Type: ai.EventTextDelta, Delta: "should not happen"}
+			}()
+			return ch, nil
+		},
+	}
+
+	// Create a conversation with fewer than minAutoCompactMessages messages
+	// where one tool result is enormous.
+	hugeTool := strings.Repeat("x", 800000) // ~200k tokens at 4 chars/token
+	msgs := []ai.Message{
+		ai.NewTextMessage(ai.RoleUser, "read that file"),
+		{
+			Role: ai.RoleAssistant,
+			Content: []ai.ContentBlock{
+				{Type: ai.ContentTypeToolUse, ToolUseID: "tc-1", ToolName: "read_file"},
+			},
+		},
+		{
+			Role: ai.RoleUser,
+			Content: []ai.ContentBlock{
+				{Type: ai.ContentTypeToolResult, ToolResultID: "tc-1", Content: hugeTool},
+			},
+		},
+	}
+
+	reg := tools.NewRegistry()
+	a := NewAgentLoop(provider, reg,
+		WithContextWindow(200000),
+		WithReserveTokens(16384),
+		WithMessages(msgs),
+	)
+
+	// Simulate token count exceeding threshold.
+	a.lastInputTokens = 190000
+
+	err := a.maybeAutoCompact(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if compactionCalled {
+		t.Error("compaction should NOT be called with too few messages")
+	}
+}
+
 func TestAutoCompactTriggeredAboveThreshold(t *testing.T) {
 	var compactionCalled bool
 	provider := &mockProvider{
@@ -982,7 +1038,8 @@ func TestAutoCompactWithStreamError(t *testing.T) {
 		WithMessages([]ai.Message{
 			ai.NewTextMessage(ai.RoleUser, "old msg"),
 			ai.NewTextMessage(ai.RoleAssistant, "old resp"),
-			ai.NewTextMessage(ai.RoleUser, "recent"),
+			ai.NewTextMessage(ai.RoleUser, "another msg"),
+			ai.NewTextMessage(ai.RoleAssistant, "recent"),
 		}),
 	)
 	a.lastInputTokens = 950
@@ -1038,6 +1095,8 @@ func TestAutoCompactIntegrationWithRunLoop(t *testing.T) {
 		WithKeepRecentTokens(50),
 		WithMessages([]ai.Message{
 			ai.NewTextMessage(ai.RoleUser, strings.Repeat("old context ", 100)),
+			ai.NewTextMessage(ai.RoleAssistant, "old response"),
+			ai.NewTextMessage(ai.RoleUser, "more old context"),
 		}),
 	)
 

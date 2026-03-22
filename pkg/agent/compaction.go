@@ -16,6 +16,12 @@ var (
 	errNoMessages     = errors.New("no messages to compact")
 )
 
+// minAutoCompactMessages is the minimum number of messages required before
+// auto-compaction will trigger. A single massive tool result (or very few
+// messages) can exceed the token threshold, but an LLM summarization call
+// can't meaningfully compress so little context — it wastes tokens.
+const minAutoCompactMessages = 4
+
 // runCompaction streams a one-shot compaction request and returns the summary text.
 // The caller constructs the prompt; this method handles the stream setup and
 // text accumulation.
@@ -110,6 +116,7 @@ func (a *AgentLoop) maybeAutoCompact(ctx context.Context) error {
 	contextWindow := a.contextWindow
 	reserveTokens := a.reserveTokens
 	lastInput := a.lastInputTokens
+	msgCount := len(a.messages)
 	a.mu.Unlock()
 
 	// Auto-compaction disabled or no usage data yet.
@@ -119,6 +126,14 @@ func (a *AgentLoop) maybeAutoCompact(ctx context.Context) error {
 
 	threshold := contextWindow - reserveTokens
 	if lastInput < threshold {
+		return nil
+	}
+
+	// Don't trigger compaction when there are too few messages. A single
+	// large tool result can exceed the token threshold, but summarizing
+	// very few messages wastes an LLM call without meaningful reduction.
+	if msgCount < minAutoCompactMessages {
+		log.Printf("agent: auto-compaction skipped (messages=%d, min=%d)", msgCount, minAutoCompactMessages)
 		return nil
 	}
 
