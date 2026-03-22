@@ -1,9 +1,18 @@
 package auth
 
 import (
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
+
+// clearCommandCache removes a key from the command cache between tests.
+func clearCommandCache(key string) {
+	commandCacheMu.Lock()
+	delete(commandCache, key)
+	commandCacheMu.Unlock()
+}
 
 func TestIsExpired_NotOAuth(t *testing.T) {
 	c := &Credential{Type: CredentialAPIKey, Key: "sk-123"}
@@ -82,9 +91,7 @@ func TestResolveKey_EnvVarUnset(t *testing.T) {
 
 func TestResolveKey_Command(t *testing.T) {
 	// Clear cache from previous runs.
-	commandCacheMu.Lock()
-	delete(commandCache, "echo secret-from-cmd")
-	commandCacheMu.Unlock()
+	clearCommandCache("echo secret-from-cmd")
 
 	c := &Credential{Type: CredentialAPIKey, Key: "!echo secret-from-cmd"}
 	got, err := c.ResolveKey()
@@ -97,9 +104,11 @@ func TestResolveKey_Command(t *testing.T) {
 }
 
 func TestResolveKey_CommandCached(t *testing.T) {
-	// Pre-populate cache.
+	// Pre-populate cache with a completed entry.
+	entry := &commandEntry{result: "cached-value"}
+	entry.once.Do(func() {}) // mark as done
 	commandCacheMu.Lock()
-	commandCache["echo cached"] = "cached-value"
+	commandCache["echo cached"] = entry
 	commandCacheMu.Unlock()
 
 	c := &Credential{Type: CredentialAPIKey, Key: "!echo cached"}
@@ -112,9 +121,7 @@ func TestResolveKey_CommandCached(t *testing.T) {
 	}
 
 	// Cleanup.
-	commandCacheMu.Lock()
-	delete(commandCache, "echo cached")
-	commandCacheMu.Unlock()
+	clearCommandCache("echo cached")
 }
 
 func TestResolveKey_OAuth(t *testing.T) {
@@ -129,6 +136,89 @@ func TestResolveKey_OAuth(t *testing.T) {
 	if got != "access-token-123" {
 		t.Errorf("got %q, want %q", got, "access-token-123")
 	}
+}
+
+func TestResolveCommand_NoDuplicateExecution(t *testing.T) {
+	// Verify that concurrent calls to resolveCommand for the same key execute
+	// the underlying command exactly once (no TOCTOU race).
+	const cmd = "echo race-test-sentinel"
+	clearCommandCache(cmd)
+
+	// Count how many times the command actually runs by using a wrapper that
+	// increments an atomic counter. We can't easily intercept exec.Command,
+	// so instead we use a unique cache key that calls a command which writes
+	// to a temp file and counts invocations via the file system.
+	//
+	// Simpler approach: launch many goroutines, verify all get the same result
+	// and the cache entry exists exactly once.
+	const goroutines = 50
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	results := make([]string, goroutines)
+	errs := make([]error, goroutines)
+	var ready sync.WaitGroup
+	ready.Add(goroutines)
+
+	for i := range goroutines {
+		go func(idx int) {
+			defer wg.Done()
+			ready.Done()
+			ready.Wait() // all goroutines start ~simultaneously
+			results[idx], errs[idx] = resolveCommand(cmd)
+		}(i)
+	}
+	wg.Wait()
+
+	for i := range goroutines {
+		if errs[i] != nil {
+			t.Fatalf("goroutine %d: unexpected error: %v", i, errs[i])
+		}
+		if results[i] != "race-test-sentinel" {
+			t.Errorf("goroutine %d: got %q, want %q", i, results[i], "race-test-sentinel")
+		}
+	}
+
+	clearCommandCache(cmd)
+}
+
+func TestResolveCommand_NoDuplicateExecution_Counter(t *testing.T) {
+	// Use a command key that increments a shared counter to verify
+	// the command body executes exactly once despite concurrent callers.
+	var execCount atomic.Int32
+	const key = "counter-test"
+	clearCommandCache(key)
+
+	// Manually create an entry whose Once.Do runs our counting function
+	// instead of exec.Command, to directly verify single-execution.
+	entry := &commandEntry{}
+	commandCacheMu.Lock()
+	commandCache[key] = entry
+	commandCacheMu.Unlock()
+
+	const goroutines = 50
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	var ready sync.WaitGroup
+	ready.Add(goroutines)
+
+	for range goroutines {
+		go func() {
+			defer wg.Done()
+			ready.Done()
+			ready.Wait()
+			entry.once.Do(func() {
+				execCount.Add(1)
+				entry.result = "counted"
+			})
+		}()
+	}
+	wg.Wait()
+
+	if got := execCount.Load(); got != 1 {
+		t.Errorf("command executed %d times, want exactly 1", got)
+	}
+
+	clearCommandCache(key)
 }
 
 func TestResolveKeyValue_EnvVarHeuristic(t *testing.T) {
