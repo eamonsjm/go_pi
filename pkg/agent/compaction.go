@@ -33,6 +33,9 @@ func (a *AgentLoop) runCompaction(ctx context.Context, prompt string) (string, e
 	maxTokens := a.maxTokens
 	a.mu.Unlock()
 
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	req := ai.StreamRequest{
 		Model:        model,
 		SystemPrompt: systemPrompt,
@@ -51,6 +54,9 @@ func (a *AgentLoop) runCompaction(ctx context.Context, prompt string) (string, e
 		case ai.EventTextDelta:
 			summary.WriteString(event.Delta)
 		case ai.EventError:
+			cancel()
+			for range stream {
+			}
 			return "", fmt.Errorf("compaction stream error: %w", event.Error)
 		}
 	}
