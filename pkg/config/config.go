@@ -80,16 +80,51 @@ func DefaultConfig() (*Config, error) {
 }
 
 
+// LoadConfigOption customises LoadConfig behaviour.
+type LoadConfigOption func(*loadConfigOptions)
+
+type loadConfigOptions struct {
+	configDir      string // override global config directory
+	localConfigPath string // override project-local config path
+}
+
+// WithConfigDir overrides the global configuration directory
+// (default: ~/.gi). The global settings.json is read from this directory.
+func WithConfigDir(dir string) LoadConfigOption {
+	return func(o *loadConfigOptions) { o.configDir = dir }
+}
+
+// WithLocalConfigPath overrides the project-local configuration file path
+// (default: .gi/settings.json relative to cwd).
+func WithLocalConfigPath(path string) LoadConfigOption {
+	return func(o *loadConfigOptions) { o.localConfigPath = path }
+}
+
 // LoadConfig loads configuration by merging (in order):
 //  1. Built-in defaults
 //  2. Global settings from ~/.gi/settings.json
 //  3. Project-local settings from .gi/settings.json (cwd)
 //
 // Later sources override earlier ones. Missing files are silently ignored.
-func LoadConfig() (*Config, error) {
+// Pass LoadConfigOption values to customise config directory or local path.
+func LoadConfig(opts ...LoadConfigOption) (*Config, error) {
+	var o loadConfigOptions
+	for _, fn := range opts {
+		fn(&o)
+	}
+
 	cfg, err := DefaultConfig()
 	if err != nil {
 		return nil, fmt.Errorf("default config: %w", err)
+	}
+
+	// Apply config dir override before resolving paths.
+	if o.configDir != "" {
+		cfg.ConfigDir = o.configDir
+		cfg.SessionDir = filepath.Join(o.configDir, "sessions")
+		if cfg.RTK != nil {
+			cfg.RTK.ExportPath = filepath.Join(o.configDir, "metrics.json")
+		}
 	}
 
 	// Global config.
@@ -100,6 +135,9 @@ func LoadConfig() (*Config, error) {
 
 	// Project-local config.
 	localPath := filepath.Join(".gi", "settings.json")
+	if o.localConfigPath != "" {
+		localPath = o.localConfigPath
+	}
 	if err := mergeFromFile(cfg, localPath); err != nil {
 		return nil, fmt.Errorf("local config: %w", err)
 	}

@@ -55,6 +55,80 @@ func TestLoadConfigNoFiles(t *testing.T) {
 	}
 }
 
+func TestLoadConfigWithConfigDir(t *testing.T) {
+	dir := t.TempDir()
+
+	// Write a global settings file in the custom dir.
+	data := []byte(`{"default_model": "custom-from-dir"}`)
+	if err := os.WriteFile(filepath.Join(dir, "settings.json"), data, 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	cfg, err := LoadConfig(WithConfigDir(dir))
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+
+	if cfg.ConfigDir != dir {
+		t.Errorf("expected ConfigDir %q, got %q", dir, cfg.ConfigDir)
+	}
+	if cfg.DefaultModel != "custom-from-dir" {
+		t.Errorf("expected DefaultModel 'custom-from-dir', got %q", cfg.DefaultModel)
+	}
+	if cfg.SessionDir != filepath.Join(dir, "sessions") {
+		t.Errorf("expected SessionDir under custom dir, got %q", cfg.SessionDir)
+	}
+}
+
+func TestLoadConfigWithLocalConfigPath(t *testing.T) {
+	dir := t.TempDir()
+	localFile := filepath.Join(dir, "local.json")
+
+	data := []byte(`{"thinking_level": "high"}`)
+	if err := os.WriteFile(localFile, data, 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	cfg, err := LoadConfig(WithLocalConfigPath(localFile))
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+
+	if cfg.ThinkingLevel != "high" {
+		t.Errorf("expected ThinkingLevel 'high', got %q", cfg.ThinkingLevel)
+	}
+}
+
+func TestLoadConfigWithBothOptions(t *testing.T) {
+	globalDir := t.TempDir()
+	localDir := t.TempDir()
+
+	globalData := []byte(`{"default_model": "global-model", "max_tokens": 1024}`)
+	if err := os.WriteFile(filepath.Join(globalDir, "settings.json"), globalData, 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	localData := []byte(`{"default_model": "local-model"}`)
+	localFile := filepath.Join(localDir, "local.json")
+	if err := os.WriteFile(localFile, localData, 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	cfg, err := LoadConfig(WithConfigDir(globalDir), WithLocalConfigPath(localFile))
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+
+	// Local should override global.
+	if cfg.DefaultModel != "local-model" {
+		t.Errorf("expected local override 'local-model', got %q", cfg.DefaultModel)
+	}
+	// Global-only value should survive.
+	if cfg.MaxTokens != 1024 {
+		t.Errorf("expected MaxTokens 1024, got %d", cfg.MaxTokens)
+	}
+}
+
 func TestMergeFromFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "settings.json")
