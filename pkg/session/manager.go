@@ -26,6 +26,15 @@ func truncatePreview(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s
 	}
+	// For very small limits there is no room for the "..." suffix;
+	// just hard-truncate on a valid UTF-8 boundary.
+	if maxLen < 4 {
+		truncLen := maxLen
+		for truncLen > 0 && !utf8.RuneStart(s[truncLen]) {
+			truncLen--
+		}
+		return s[:truncLen]
+	}
 	// Back up from the target cut point to avoid splitting a multi-byte rune.
 	truncLen := maxLen - 3 // leave room for "..."
 	for truncLen > 0 && !utf8.RuneStart(s[truncLen]) {
