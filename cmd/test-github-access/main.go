@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
@@ -9,6 +10,8 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -64,8 +67,10 @@ func run() error {
 	client := &http.Client{Timeout: 30 * time.Second}
 
 	// Try to fetch workflow runs for this repo
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/actions/runs", *owner, *repo)
-	req, err := http.NewRequest("GET", apiURL, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create HTTP request: %w", err)
 	}
