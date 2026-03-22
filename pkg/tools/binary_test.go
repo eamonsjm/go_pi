@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -32,7 +33,7 @@ func TestIsBinaryFile(t *testing.T) {
 	dir := t.TempDir()
 
 	t.Run("nonexistent file", func(t *testing.T) {
-		if got := isBinaryFile(filepath.Join(dir, "nope")); got {
+		if got := isBinaryFile(context.Background(), filepath.Join(dir, "nope")); got {
 			t.Error("isBinaryFile() = true for nonexistent file, want false")
 		}
 	})
@@ -42,7 +43,7 @@ func TestIsBinaryFile(t *testing.T) {
 		if err := os.WriteFile(p, nil, 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if got := isBinaryFile(p); got {
+		if got := isBinaryFile(context.Background(), p); got {
 			t.Error("isBinaryFile() = true for empty file, want false")
 		}
 	})
@@ -52,7 +53,7 @@ func TestIsBinaryFile(t *testing.T) {
 		if err := os.WriteFile(p, []byte("hello world\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if got := isBinaryFile(p); got {
+		if got := isBinaryFile(context.Background(), p); got {
 			t.Error("isBinaryFile() = true for text file, want false")
 		}
 	})
@@ -62,7 +63,7 @@ func TestIsBinaryFile(t *testing.T) {
 		if err := os.WriteFile(p, make([]byte, 200), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if got := isBinaryFile(p); !got {
+		if got := isBinaryFile(context.Background(), p); !got {
 			t.Error("isBinaryFile() = false for binary file, want true")
 		}
 	})

@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"io"
 	"os"
 	"unicode/utf8"
@@ -42,7 +43,11 @@ func isBinary(data []byte) bool {
 }
 
 // isBinaryFile checks if a file appears to be binary by reading its first bytes.
-func isBinaryFile(path string) bool {
+func isBinaryFile(ctx context.Context, path string) bool {
+	if err := ctx.Err(); err != nil {
+		return false
+	}
+
 	f, err := os.Open(path)
 	if err != nil {
 		return false
