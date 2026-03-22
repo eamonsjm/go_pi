@@ -1,7 +1,6 @@
 package ai
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -414,8 +413,8 @@ func (p *GeminiProvider) readSSEStream(ctx context.Context, body io.ReadCloser, 
 	}()
 	defer func() { _ = body.Close() }()
 
-	scanner := bufio.NewScanner(body)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	scanner, returnBuf := newSSEScanner(body)
+	defer returnBuf()
 
 	var (
 		started bool
