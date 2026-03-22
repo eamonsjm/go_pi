@@ -847,3 +847,53 @@ func TestGeminiBuildRequestBody_ToolCallInputConversionError(t *testing.T) {
 		t.Errorf("expected error to mention tool name, got: %v", err)
 	}
 }
+
+func TestGeminiStream_ContextCancellation(t *testing.T) {
+	ready := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		flusher := w.(http.Flusher)
+		fmt.Fprint(w, "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"Hello\"}],\"role\":\"model\"},\"index\":0}]}\n\n")
+		flusher.Flush()
+		close(ready)
+		<-r.Context().Done()
+	}))
+	defer srv.Close()
+
+	p := &GeminiProvider{
+		apiKey:     "test-key",
+		httpClient: srv.Client(),
+		baseURL:    srv.URL,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ch, err := p.Stream(ctx, StreamRequest{
+		Model:    "gemini-2.0-flash",
+		Messages: []Message{NewTextMessage(RoleUser, "hi")},
+	})
+	if err != nil {
+		t.Fatalf("Stream failed: %v", err)
+	}
+
+	<-ready
+
+	evt := <-ch
+	if evt.Type != EventMessageStart {
+		t.Fatalf("expected message_start, got %v", evt.Type)
+	}
+
+	cancel()
+
+	var gotError bool
+	for e := range ch {
+		if e.Type == EventError {
+			gotError = true
+		}
+	}
+	if !gotError {
+		t.Error("expected error event from context cancellation")
+	}
+}

@@ -318,3 +318,52 @@ func TestOllamaMapMessages_ToolResult(t *testing.T) {
 		t.Errorf("expected content, got %q", result[0].Content)
 	}
 }
+
+func TestOllamaStream_ContextCancellation(t *testing.T) {
+	ready := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		w.WriteHeader(http.StatusOK)
+		flusher := w.(http.Flusher)
+		fmt.Fprintln(w, `{"model":"llama3.2","created_at":"2024-01-01T00:00:00Z","message":{"role":"assistant","content":"Hello"},"done":false}`)
+		flusher.Flush()
+		close(ready)
+		<-r.Context().Done()
+	}))
+	defer srv.Close()
+
+	p := &OllamaProvider{
+		baseURL:    srv.URL,
+		httpClient: srv.Client(),
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ch, err := p.Stream(ctx, StreamRequest{
+		Model:    "llama3.2",
+		Messages: []Message{NewTextMessage(RoleUser, "hi")},
+	})
+	if err != nil {
+		t.Fatalf("Stream failed: %v", err)
+	}
+
+	<-ready
+
+	evt := <-ch
+	if evt.Type != EventMessageStart {
+		t.Fatalf("expected message_start, got %v", evt.Type)
+	}
+
+	cancel()
+
+	var gotError bool
+	for e := range ch {
+		if e.Type == EventError {
+			gotError = true
+		}
+	}
+	if !gotError {
+		t.Error("expected error event from context cancellation")
+	}
+}
