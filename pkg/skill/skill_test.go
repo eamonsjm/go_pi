@@ -2,6 +2,7 @@ package skill
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -112,6 +113,9 @@ func TestParseSkill_MissingName(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for missing name, got nil")
 	}
+	if !errors.Is(err, ErrMissingName) {
+		t.Errorf("error should wrap ErrMissingName, got: %v", err)
+	}
 }
 
 func TestParseSkill_NoFrontmatter(t *testing.T) {
@@ -119,12 +123,18 @@ func TestParseSkill_NoFrontmatter(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for no frontmatter, got nil")
 	}
+	if !errors.Is(err, ErrInvalidFrontmatter) {
+		t.Errorf("error should wrap ErrInvalidFrontmatter, got: %v", err)
+	}
 }
 
 func TestParseSkill_NoClosingDelimiter(t *testing.T) {
 	_, err := ParseSkill([]byte(noClosingDelimMD))
 	if err == nil {
 		t.Fatal("expected error for no closing delimiter, got nil")
+	}
+	if !errors.Is(err, ErrInvalidFrontmatter) {
+		t.Errorf("error should wrap ErrInvalidFrontmatter, got: %v", err)
 	}
 }
 

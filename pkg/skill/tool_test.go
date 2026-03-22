@@ -2,6 +2,7 @@ package skill
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -49,8 +50,8 @@ func TestSkillTool_Execute_MissingSkill(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for missing skill parameter")
 	}
-	if !strings.Contains(err.Error(), "missing required parameter") {
-		t.Errorf("error = %v, want 'missing required parameter'", err)
+	if !errors.Is(err, ErrMissingSkillParam) {
+		t.Errorf("error should be ErrMissingSkillParam, got: %v", err)
 	}
 }
 
@@ -60,8 +61,11 @@ func TestSkillTool_Execute_UnknownSkill(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for unknown skill")
 	}
-	if !strings.Contains(err.Error(), "unknown skill") {
-		t.Errorf("error = %v, want 'unknown skill'", err)
+	if !errors.Is(err, ErrUnknownSkill) {
+		t.Errorf("error should be ErrUnknownSkill, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "nonexistent") {
+		t.Errorf("error should contain skill name, got: %v", err)
 	}
 }
 
