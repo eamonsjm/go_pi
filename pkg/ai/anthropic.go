@@ -477,7 +477,6 @@ type blockState struct {
 	blockType string
 	toolID    string
 	toolName  string
-	inputBuf  strings.Builder
 }
 
 func (p *AnthropicProvider) readSSEStream(ctx context.Context, body io.ReadCloser, ch chan<- StreamEvent) {
@@ -596,7 +595,6 @@ func (p *AnthropicProvider) readSSEStream(ctx context.Context, body io.ReadClose
 					return
 				}
 			case "input_json_delta":
-				bs.inputBuf.WriteString(d.Delta.PartialJSON)
 				if !trySend(ctx, ch, StreamEvent{
 					Type:         EventToolUseDelta,
 					ToolCallID:   bs.toolID,
