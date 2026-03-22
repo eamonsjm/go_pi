@@ -7,13 +7,6 @@ import (
 	"time"
 )
 
-// clearCommandCache removes a key from the command cache between tests.
-func clearCommandCache(key string) {
-	commandCacheMu.Lock()
-	delete(commandCache, key)
-	commandCacheMu.Unlock()
-}
-
 func TestIsExpired_NotOAuth(t *testing.T) {
 	c := &Credential{Type: CredentialAPIKey, Key: "sk-123"}
 	if c.IsExpired() {
@@ -52,9 +45,9 @@ func TestIsExpired_BufferZone(t *testing.T) {
 	}
 }
 
-func TestResolveKey_Literal(t *testing.T) {
-	c := &Credential{Type: CredentialAPIKey, Key: "sk-ant-live-123"}
-	got, err := c.ResolveKey()
+func TestKeyResolver_Literal(t *testing.T) {
+	kr := NewKeyResolver()
+	got, err := kr.ResolveKeyValue("sk-ant-live-123")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -63,10 +56,10 @@ func TestResolveKey_Literal(t *testing.T) {
 	}
 }
 
-func TestResolveKey_EnvVar(t *testing.T) {
+func TestKeyResolver_EnvVar(t *testing.T) {
 	t.Setenv("MY_SECRET_KEY", "resolved-from-env")
-	c := &Credential{Type: CredentialAPIKey, Key: "MY_SECRET_KEY"}
-	got, err := c.ResolveKey()
+	kr := NewKeyResolver()
+	got, err := kr.ResolveKeyValue("MY_SECRET_KEY")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -75,11 +68,11 @@ func TestResolveKey_EnvVar(t *testing.T) {
 	}
 }
 
-func TestResolveKey_EnvVarUnset(t *testing.T) {
+func TestKeyResolver_EnvVarUnset(t *testing.T) {
 	// Unset env var — should fall through to literal.
 	t.Setenv("UNSET_VAR_TEST", "")
-	c := &Credential{Type: CredentialAPIKey, Key: "UNSET_VAR_TEST"}
-	got, err := c.ResolveKey()
+	kr := NewKeyResolver()
+	got, err := kr.ResolveKeyValue("UNSET_VAR_TEST")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -89,12 +82,9 @@ func TestResolveKey_EnvVarUnset(t *testing.T) {
 	}
 }
 
-func TestResolveKey_Command(t *testing.T) {
-	// Clear cache from previous runs.
-	clearCommandCache("echo secret-from-cmd")
-
-	c := &Credential{Type: CredentialAPIKey, Key: "!echo secret-from-cmd"}
-	got, err := c.ResolveKey()
+func TestKeyResolver_Command(t *testing.T) {
+	kr := NewKeyResolver()
+	got, err := kr.ResolveKeyValue("!echo secret-from-cmd")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -103,54 +93,31 @@ func TestResolveKey_Command(t *testing.T) {
 	}
 }
 
-func TestResolveKey_CommandCached(t *testing.T) {
+func TestKeyResolver_CommandCached(t *testing.T) {
+	kr := NewKeyResolver()
+
 	// Pre-populate cache with a completed entry.
 	entry := &commandEntry{result: "cached-value"}
 	entry.once.Do(func() {}) // mark as done
-	commandCacheMu.Lock()
-	commandCache["echo cached"] = entry
-	commandCacheMu.Unlock()
+	kr.mu.Lock()
+	kr.cache["echo cached"] = entry
+	kr.mu.Unlock()
 
-	c := &Credential{Type: CredentialAPIKey, Key: "!echo cached"}
-	got, err := c.ResolveKey()
+	got, err := kr.ResolveKeyValue("!echo cached")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if got != "cached-value" {
 		t.Errorf("got %q, want %q", got, "cached-value")
 	}
-
-	// Cleanup.
-	clearCommandCache("echo cached")
 }
 
-func TestResolveKey_OAuth(t *testing.T) {
-	c := &Credential{
-		Type:        CredentialOAuth,
-		AccessToken: "access-token-123",
-	}
-	got, err := c.ResolveKey()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if got != "access-token-123" {
-		t.Errorf("got %q, want %q", got, "access-token-123")
-	}
-}
-
-func TestResolveCommand_NoDuplicateExecution(t *testing.T) {
+func TestKeyResolver_NoDuplicateExecution(t *testing.T) {
 	// Verify that concurrent calls to resolveCommand for the same key execute
 	// the underlying command exactly once (no TOCTOU race).
+	kr := NewKeyResolver()
 	const cmd = "echo race-test-sentinel"
-	clearCommandCache(cmd)
 
-	// Count how many times the command actually runs by using a wrapper that
-	// increments an atomic counter. We can't easily intercept exec.Command,
-	// so instead we use a unique cache key that calls a command which writes
-	// to a temp file and counts invocations via the file system.
-	//
-	// Simpler approach: launch many goroutines, verify all get the same result
-	// and the cache entry exists exactly once.
 	const goroutines = 50
 	var wg sync.WaitGroup
 	wg.Add(goroutines)
@@ -164,7 +131,7 @@ func TestResolveCommand_NoDuplicateExecution(t *testing.T) {
 			defer wg.Done()
 			ready.Done()
 			ready.Wait() // all goroutines start ~simultaneously
-			results[idx], errs[idx] = resolveCommand(cmd)
+			results[idx], errs[idx] = kr.resolveCommand(cmd)
 		}(i)
 	}
 	wg.Wait()
@@ -177,23 +144,21 @@ func TestResolveCommand_NoDuplicateExecution(t *testing.T) {
 			t.Errorf("goroutine %d: got %q, want %q", i, results[i], "race-test-sentinel")
 		}
 	}
-
-	clearCommandCache(cmd)
 }
 
-func TestResolveCommand_NoDuplicateExecution_Counter(t *testing.T) {
+func TestKeyResolver_NoDuplicateExecution_Counter(t *testing.T) {
 	// Use a command key that increments a shared counter to verify
 	// the command body executes exactly once despite concurrent callers.
 	var execCount atomic.Int32
+	kr := NewKeyResolver()
 	const key = "counter-test"
-	clearCommandCache(key)
 
 	// Manually create an entry whose Once.Do runs our counting function
 	// instead of exec.Command, to directly verify single-execution.
 	entry := &commandEntry{}
-	commandCacheMu.Lock()
-	commandCache[key] = entry
-	commandCacheMu.Unlock()
+	kr.mu.Lock()
+	kr.cache[key] = entry
+	kr.mu.Unlock()
 
 	const goroutines = 50
 	var wg sync.WaitGroup
@@ -217,13 +182,12 @@ func TestResolveCommand_NoDuplicateExecution_Counter(t *testing.T) {
 	if got := execCount.Load(); got != 1 {
 		t.Errorf("command executed %d times, want exactly 1", got)
 	}
-
-	clearCommandCache(key)
 }
 
-func TestResolveKeyValue_EnvVarHeuristic(t *testing.T) {
+func TestKeyResolver_EnvVarHeuristic(t *testing.T) {
 	// Strings that look like env vars (uppercase + digits + underscores, len >= 4)
 	// are checked against os.Getenv before falling through to literal.
+	kr := NewKeyResolver()
 	tests := []struct {
 		input   string
 		wantEnv bool // true = treated as env var candidate
@@ -245,17 +209,17 @@ func TestResolveKeyValue_EnvVarHeuristic(t *testing.T) {
 		if tt.wantEnv {
 			t.Setenv(tt.input, "from-env")
 		}
-		got, err := resolveKeyValue(tt.input)
+		got, err := kr.ResolveKeyValue(tt.input)
 		if err != nil {
-			t.Fatalf("resolveKeyValue(%q): unexpected error: %v", tt.input, err)
+			t.Fatalf("ResolveKeyValue(%q): unexpected error: %v", tt.input, err)
 		}
 		if tt.wantEnv {
 			if got != "from-env" {
-				t.Errorf("resolveKeyValue(%q) = %q, want %q (env var candidate)", tt.input, got, "from-env")
+				t.Errorf("ResolveKeyValue(%q) = %q, want %q (env var candidate)", tt.input, got, "from-env")
 			}
 		} else {
 			if got != tt.input {
-				t.Errorf("resolveKeyValue(%q) = %q, want %q (literal passthrough)", tt.input, got, tt.input)
+				t.Errorf("ResolveKeyValue(%q) = %q, want %q (literal passthrough)", tt.input, got, tt.input)
 			}
 		}
 	}

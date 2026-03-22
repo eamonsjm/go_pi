@@ -44,15 +44,6 @@ func (c *Credential) IsExpired() bool {
 //   - An env var name without prefix (resolved at runtime via os.Getenv)
 //   - A shell command prefixed with "!" (executed, stdout cached)
 
-// ResolveKey resolves the Key field to a usable API key string.
-// Env-var names and !commands are evaluated; literals pass through.
-func (c *Credential) ResolveKey() (string, error) {
-	if c.Type == CredentialOAuth {
-		return c.AccessToken, nil
-	}
-	return resolveKeyValue(c.Key)
-}
-
 // commandEntry holds the cached result of a single !command execution.
 // sync.Once ensures at most one goroutine executes the command; all others
 // block until the result is available.
@@ -62,25 +53,34 @@ type commandEntry struct {
 	err    error
 }
 
-// commandCache caches results of !command key values within a process.
-var (
-	commandCacheMu sync.Mutex
-	commandCache   = map[string]*commandEntry{}
-)
+// KeyResolver resolves API key values, caching !command results.
+// Use NewKeyResolver to create an instance; inject it via the Resolver
+// rather than relying on package-level global state.
+type KeyResolver struct {
+	mu    sync.Mutex
+	cache map[string]*commandEntry
+}
 
-// resolveKeyValue interprets a key value string:
+// NewKeyResolver creates a KeyResolver with an empty command cache.
+func NewKeyResolver() *KeyResolver {
+	return &KeyResolver{
+		cache: make(map[string]*commandEntry),
+	}
+}
+
+// ResolveKeyValue interprets a key value string:
 //
 //	"!cmd args"  → run shell command, cache result
 //	"ENV_NAME"   → os.Getenv if it looks like an env var (all-caps + underscores)
 //	otherwise    → literal
-func resolveKeyValue(val string) (string, error) {
+func (kr *KeyResolver) ResolveKeyValue(val string) (string, error) {
 	if val == "" {
 		return "", nil
 	}
 
 	// Shell command.
 	if strings.HasPrefix(val, "!") {
-		return resolveCommand(val[1:])
+		return kr.resolveCommand(val[1:])
 	}
 
 	// Env var heuristic: all uppercase letters, digits, and underscores, at least 4 chars.
@@ -104,26 +104,26 @@ func resolveKeyValue(val string) (string, error) {
 }
 
 // resolveCommand executes a shell command and returns its trimmed stdout.
-// Results are cached for the lifetime of the process.
+// Results are cached for the lifetime of the KeyResolver.
 //
 // Security boundary: cmd comes from the user's auth config file (~/.gi/auth.json),
 // which is written with 0600 permissions and verified on load (see Store.Load).
 // The config file IS the trust boundary — if an attacker can write to it, they
 // already have the user's credentials. The !command feature is intentional for
 // password-manager integration (e.g., "!pass show anthropic-key").
-func resolveCommand(cmd string) (string, error) {
+func (kr *KeyResolver) resolveCommand(cmd string) (string, error) {
 	cmd = strings.TrimSpace(cmd)
 	if cmd == "" {
 		return "", fmt.Errorf("empty key command")
 	}
 
-	commandCacheMu.Lock()
-	entry, ok := commandCache[cmd]
+	kr.mu.Lock()
+	entry, ok := kr.cache[cmd]
 	if !ok {
 		entry = &commandEntry{}
-		commandCache[cmd] = entry
+		kr.cache[cmd] = entry
 	}
-	commandCacheMu.Unlock()
+	kr.mu.Unlock()
 
 	entry.once.Do(func() {
 		out, err := exec.Command("sh", "-c", cmd).Output()

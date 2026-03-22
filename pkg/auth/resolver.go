@@ -18,17 +18,19 @@ import (
 //
 // Each step is tried in order; the first non-empty result wins.
 type Resolver struct {
-	store     *Store
-	providers map[string]OAuthProvider // registered OAuth providers
-	overrides map[string]string        // CLI flag overrides (provider → key)
+	store       *Store
+	providers   map[string]OAuthProvider // registered OAuth providers
+	overrides   map[string]string        // CLI flag overrides (provider → key)
+	keyResolver *KeyResolver             // resolves API key values (!commands, env vars)
 }
 
 // NewResolver creates a Resolver backed by the given credential store.
 func NewResolver(store *Store) *Resolver {
 	return &Resolver{
-		store:     store,
-		providers: make(map[string]OAuthProvider),
-		overrides: make(map[string]string),
+		store:       store,
+		providers:   make(map[string]OAuthProvider),
+		overrides:   make(map[string]string),
+		keyResolver: NewKeyResolver(),
 	}
 }
 
@@ -95,7 +97,7 @@ func (r *Resolver) Resolve(ctx context.Context, provider string) (string, error)
 func (r *Resolver) resolveCredential(ctx context.Context, provider string, cred *Credential) (string, error) {
 	switch cred.Type {
 	case CredentialAPIKey:
-		return cred.ResolveKey()
+		return r.keyResolver.ResolveKeyValue(cred.Key)
 
 	case CredentialOAuth:
 		return r.resolveOAuth(ctx, provider, cred)
