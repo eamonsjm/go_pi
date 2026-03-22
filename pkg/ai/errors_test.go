@@ -102,6 +102,11 @@ func TestAPIError_UserMessage(t *testing.T) {
 			contains: "auth: OAuth — try /login to re-authenticate",
 		},
 		{
+			name:     "opaque oauth error includes HTTP status",
+			err:      &APIError{StatusCode: 403, ErrorType: "Error", Message: "OAuth request failed (HTTP 403)", Provider: "anthropic", AuthMethod: "oauth"},
+			contains: "HTTP 403",
+		},
+		{
 			name:     "model access error oauth does not suggest login",
 			err:      &APIError{ErrorType: "invalid_request_error", StatusCode: 400, Message: "model: claude-3-opus-20240229 does not exist or you do not have access to it", Provider: "anthropic", AuthMethod: "oauth"},
 			contains: "Try a different model with /model",

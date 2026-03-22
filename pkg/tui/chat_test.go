@@ -522,6 +522,46 @@ func TestChatView_HandleEvent_AgentError(t *testing.T) {
 	}
 }
 
+func TestChatView_HandleEvent_AgentError_Deduplicate(t *testing.T) {
+	cv := NewChatView()
+
+	// First error should be added.
+	changed1 := cv.HandleEvent(agent.AgentEvent{
+		Type:  agent.EventAgentError,
+		Error: errors.New("something went wrong"),
+	})
+	if !changed1 {
+		t.Error("first error: expected changed=true")
+	}
+	if len(cv.blocks) != 1 {
+		t.Fatalf("expected 1 block, got %d", len(cv.blocks))
+	}
+
+	// Identical error should be deduplicated.
+	changed2 := cv.HandleEvent(agent.AgentEvent{
+		Type:  agent.EventAgentError,
+		Error: errors.New("something went wrong"),
+	})
+	if changed2 {
+		t.Error("duplicate error: expected changed=false")
+	}
+	if len(cv.blocks) != 1 {
+		t.Errorf("expected 1 block after dedup, got %d", len(cv.blocks))
+	}
+
+	// Different error should still be added.
+	changed3 := cv.HandleEvent(agent.AgentEvent{
+		Type:  agent.EventAgentError,
+		Error: errors.New("different error"),
+	})
+	if !changed3 {
+		t.Error("different error: expected changed=true")
+	}
+	if len(cv.blocks) != 2 {
+		t.Errorf("expected 2 blocks, got %d", len(cv.blocks))
+	}
+}
+
 func TestChatView_HandleEvent_AgentError_Nil(t *testing.T) {
 	cv := NewChatView()
 

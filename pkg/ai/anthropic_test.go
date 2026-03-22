@@ -1579,3 +1579,46 @@ func TestAnthropicAPIKeyStream_ErrorsShowAPIKey(t *testing.T) {
 		t.Errorf("UserMessage() = %q, want to contain 'API key invalid'", msg)
 	}
 }
+
+func TestParseHTTPError_OpaqueOAuthError(t *testing.T) {
+	// Anthropic sometimes returns {"error":"Error"} without error_description.
+	// parseHTTPError should produce an actionable message, not echo "Error".
+	body := []byte(`{"error":"Error"}`)
+	apiErr := parseHTTPError(403, http.Header{}, body, "oauth")
+
+	if apiErr.ErrorType != "Error" {
+		t.Errorf("ErrorType = %q, want %q", apiErr.ErrorType, "Error")
+	}
+	if !strings.Contains(apiErr.Message, "HTTP 403") {
+		t.Errorf("Message = %q, want to contain HTTP status", apiErr.Message)
+	}
+	if strings.Contains(apiErr.Message, `"Error"`) {
+		t.Errorf("Message = %q, should not just echo the opaque error code", apiErr.Message)
+	}
+}
+
+func TestParseHTTPError_StandardOAuthError(t *testing.T) {
+	// Standard OAuth error codes (snake_case) should use the code as-is.
+	body := []byte(`{"error":"invalid_grant","error_description":"token expired"}`)
+	apiErr := parseHTTPError(401, http.Header{}, body, "oauth")
+
+	if apiErr.ErrorType != "invalid_grant" {
+		t.Errorf("ErrorType = %q, want %q", apiErr.ErrorType, "invalid_grant")
+	}
+	if apiErr.Message != "token expired" {
+		t.Errorf("Message = %q, want %q", apiErr.Message, "token expired")
+	}
+}
+
+func TestParseHTTPError_OAuthNoDescriptionStandardCode(t *testing.T) {
+	// Standard OAuth error code without description should use the code as message.
+	body := []byte(`{"error":"invalid_client"}`)
+	apiErr := parseHTTPError(401, http.Header{}, body, "oauth")
+
+	if apiErr.ErrorType != "invalid_client" {
+		t.Errorf("ErrorType = %q, want %q", apiErr.ErrorType, "invalid_client")
+	}
+	if apiErr.Message != "invalid_client" {
+		t.Errorf("Message = %q, want %q", apiErr.Message, "invalid_client")
+	}
+}

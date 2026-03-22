@@ -318,6 +318,12 @@ func (c *ChatView) HandleEvent(ev agent.AgentEvent) bool {
 				msg = ev.Error.Error()
 			}
 		}
+		// Deduplicate: the same error can arrive via the events channel
+		// (EventAgentError emitted in run()) AND via AgentErrorMsg (Prompt()
+		// return value). Skip if the last block is already an identical error.
+		if n := len(c.blocks); n > 0 && c.blocks[n-1].kind == blockError && c.blocks[n-1].text == msg {
+			return false
+		}
 		c.blocks = append(c.blocks, chatBlock{
 			kind: blockError,
 			text: msg,

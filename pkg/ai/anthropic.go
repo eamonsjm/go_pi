@@ -189,6 +189,11 @@ func parseHTTPError(statusCode int, header http.Header, body []byte, authMethod 
 		apiErr.ErrorType = oauthErr.Error
 		if oauthErr.Description != "" {
 			apiErr.Message = oauthErr.Description
+		} else if isOpaqueOAuthError(oauthErr.Error) {
+			// Generic error like "Error" with no description — the raw code
+			// is not actionable. Provide a better message and log the body.
+			log.Printf("anthropic: opaque OAuth error (HTTP %d), raw body: %s", statusCode, body)
+			apiErr.Message = fmt.Sprintf("OAuth request failed (HTTP %d)", statusCode)
 		} else {
 			apiErr.Message = oauthErr.Error
 		}
@@ -202,6 +207,20 @@ func parseHTTPError(statusCode int, header http.Header, body []byte, authMethod 
 	}
 	apiErr.Message = raw
 	return apiErr
+}
+
+// isOpaqueOAuthError returns true if the OAuth error code is generic and not
+// a standard OAuth 2.0 error code. Standard codes are snake_case; a bare
+// capitalized word like "Error" indicates the server returned no useful info.
+func isOpaqueOAuthError(code string) bool {
+	// Standard OAuth error codes are always lower_snake_case.
+	// If the code contains an uppercase letter, it's non-standard/opaque.
+	for _, r := range code {
+		if r >= 'A' && r <= 'Z' {
+			return true
+		}
+	}
+	return false
 }
 
 // -- Request construction --
