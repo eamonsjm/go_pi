@@ -297,6 +297,8 @@ func mapToGeminiContent(m Message) (gemContent, error) {
 		gc.Role = "user" // Gemini doesn't have a system role in contents
 	}
 
+	gc.Parts = make([]gemPart, 0, len(m.Content))
+
 	for _, cb := range m.Content {
 		switch cb.Type {
 		case ContentTypeText:
