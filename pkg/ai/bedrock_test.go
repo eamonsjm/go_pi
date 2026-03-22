@@ -286,6 +286,21 @@ func TestMapToBedrockMessage_RichToolResultWithImage(t *testing.T) {
 	}
 }
 
+func TestMapToBedrockMessage_RichToolResultWithInvalidImage(t *testing.T) {
+	msg := NewRichToolResultMessage("tool-bad-img", []ContentBlock{
+		{Type: ContentTypeText, Text: "description"},
+		{Type: ContentTypeImage, MediaType: "image/png", ImageData: "not-valid-base64!@#$"},
+	}, false)
+
+	_, err := mapToBedrockMessage(msg)
+	if err == nil {
+		t.Fatal("expected error for invalid base64 image data, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to decode tool result image") {
+		t.Errorf("expected error about tool result image decode, got: %v", err)
+	}
+}
+
 func TestMapToBedrockMessage_Image(t *testing.T) {
 	imgData := base64.StdEncoding.EncodeToString([]byte("fake-image-data"))
 	msg := Message{

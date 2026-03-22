@@ -200,14 +200,15 @@ func mapToBedrockMessage(m Message) (types.Message, error) {
 						resultContent = append(resultContent, &types.ToolResultContentBlockMemberText{Value: sub.Text})
 					case ContentTypeImage:
 						imgBytes, imgErr := base64.StdEncoding.DecodeString(sub.ImageData)
-						if imgErr == nil {
-							resultContent = append(resultContent, &types.ToolResultContentBlockMemberImage{
-								Value: types.ImageBlock{
-									Format: mapMediaTypeToImageFormat(sub.MediaType),
-									Source: &types.ImageSourceMemberBytes{Value: imgBytes},
-								},
-							})
+						if imgErr != nil {
+							return types.Message{}, fmt.Errorf("bedrock: failed to decode tool result image: %w", imgErr)
 						}
+						resultContent = append(resultContent, &types.ToolResultContentBlockMemberImage{
+							Value: types.ImageBlock{
+								Format: mapMediaTypeToImageFormat(sub.MediaType),
+								Source: &types.ImageSourceMemberBytes{Value: imgBytes},
+							},
+						})
 					}
 				}
 			}
