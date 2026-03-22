@@ -49,11 +49,21 @@ type searchActivateMsg struct {
 	prompts []string
 }
 
+// setEditorStateMsg changes the editor state via the bubbletea event queue,
+// avoiding data races when mutating state while the program is running.
+type setEditorStateMsg struct {
+	state editorState
+}
+
 func (h *editorHarness) Init() tea.Cmd { return nil }
 
 func (h *editorHarness) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if sa, ok := msg.(searchActivateMsg); ok {
 		h.editor.EnterSearchMode(sa.prompts)
+		return h, nil
+	}
+	if ss, ok := msg.(setEditorStateMsg); ok {
+		h.editor.SetState(ss.state)
 		return h, nil
 	}
 
@@ -378,7 +388,8 @@ func TestTeatest_CtrlC_CancelsWhileRunning(t *testing.T) {
 	tm.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
 	settle()
 
-	h.editor.SetState(editorIdle)
+	tm.Send(setEditorStateMsg{state: editorIdle})
+	settle()
 	quitHarness(tm)
 
 	got := finalEditorHarness(t, tm)
@@ -400,7 +411,8 @@ func TestTeatest_Escape_CancelsWhileRunning(t *testing.T) {
 	tm.Send(tea.KeyMsg{Type: tea.KeyEscape})
 	settle()
 
-	h.editor.SetState(editorIdle)
+	tm.Send(setEditorStateMsg{state: editorIdle})
+	settle()
 	quitHarness(tm)
 
 	got := finalEditorHarness(t, tm)
@@ -514,7 +526,8 @@ func TestTeatest_SteeringWhileRunning(t *testing.T) {
 	tm.Send(tea.KeyMsg{Type: tea.KeyEnter})
 	settle()
 
-	h.editor.SetState(editorIdle)
+	tm.Send(setEditorStateMsg{state: editorIdle})
+	settle()
 	quitHarness(tm)
 
 	got := finalEditorHarness(t, tm)
