@@ -912,7 +912,7 @@ func TestReadLoop_LogsUnrecognizedType(t *testing.T) {
 		log.SetOutput(os.Stderr)
 	})
 
-	p.readLoop()
+	p.readLoop(context.Background())
 
 	logOutput := buf.String()
 	if !strings.Contains(logOutput, "test-unrecognized") {

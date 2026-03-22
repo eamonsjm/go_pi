@@ -22,6 +22,30 @@ type ToolRegistry interface {
 	Register(t tools.Tool)
 }
 
+// PluginSource indicates the trust level of a plugin's origin directory.
+type PluginSource int
+
+const (
+	// SourceGlobal represents plugins from ~/.gi/plugins/ — implicitly trusted.
+	SourceGlobal PluginSource = iota
+	// SourceProjectLocal represents plugins from .gi/plugins/ in the project
+	// directory. These require explicit user approval before execution.
+	SourceProjectLocal
+	// SourceCLIFlag represents plugins specified via --plugin flag — explicitly trusted.
+	SourceCLIFlag
+)
+
+// DiscoverDir pairs a plugin directory path with its trust source.
+type DiscoverDir struct {
+	Path   string
+	Source PluginSource
+}
+
+// PluginApprover is called before loading a plugin from an untrusted source
+// (project-local). It receives the plugin name and its absolute directory path.
+// Return true to allow loading, false to skip the plugin.
+type PluginApprover func(name, pluginDir string) (bool, error)
+
 // Manager handles discovery, loading, initialization, and lifecycle management
 // of all plugins. It bridges plugin-provided tools and commands into the host's
 // registries.
@@ -31,6 +55,7 @@ type Manager struct {
 	toolRegistry ToolRegistry
 	restartCfg   *RestartConfig   // if set, enables auto-restart for plugins
 	heartbeatCfg *HeartbeatConfig // if set, enables periodic heartbeats
+	approver     PluginApprover   // called for untrusted plugin sources
 
 	heartbeatCancel context.CancelFunc // cancels the heartbeat goroutine
 	heartbeatDone   chan struct{}      // closed when heartbeat goroutine exits
@@ -54,16 +79,25 @@ func (m *Manager) SetRestartConfig(cfg *RestartConfig) {
 	m.mu.Unlock()
 }
 
+// SetApprover sets the function called before loading plugins from untrusted
+// sources (project-local directories). If nil, untrusted plugins are blocked.
+func (m *Manager) SetApprover(fn PluginApprover) {
+	m.approver = fn
+}
+
 // Discover scans the given directories for plugins. Each subdirectory is
 // examined for either a plugin.json manifest or a same-named executable.
+// Plugins from untrusted sources (SourceProjectLocal) require approval via
+// the configured PluginApprover before they are loaded. If no approver is
+// set, untrusted plugins are skipped.
 // Errors for individual plugins are logged but do not prevent other plugins
 // from loading.
-func (m *Manager) Discover(ctx context.Context, dirs []string) error {
-	for _, dir := range dirs {
+func (m *Manager) Discover(ctx context.Context, dirs []DiscoverDir) error {
+	for _, dd := range dirs {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		entries, err := os.ReadDir(dir)
+		entries, err := os.ReadDir(dd.Path)
 		if err != nil {
 			// Directory doesn't exist or isn't readable -- skip silently.
 			continue
@@ -74,7 +108,25 @@ func (m *Manager) Discover(ctx context.Context, dirs []string) error {
 				continue
 			}
 
-			pluginDir := filepath.Join(dir, entry.Name())
+			pluginDir := filepath.Join(dd.Path, entry.Name())
+
+			// Project-local plugins require explicit approval.
+			if dd.Source == SourceProjectLocal {
+				if m.approver == nil {
+					log.Printf("plugin: skipping unapproved project-local plugin %s (no approver configured)", entry.Name())
+					continue
+				}
+				approved, err := m.approver(entry.Name(), pluginDir)
+				if err != nil {
+					log.Printf("plugin: approval error for %s: %v", entry.Name(), err)
+					continue
+				}
+				if !approved {
+					log.Printf("plugin: skipping unapproved project-local plugin %s", entry.Name())
+					continue
+				}
+			}
+
 			if err := m.loadFromDir(pluginDir, entry.Name()); err != nil {
 				log.Printf("plugin: failed to load %s: %v", entry.Name(), err)
 			}

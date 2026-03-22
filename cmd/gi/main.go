@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"flag"
 	"fmt"
@@ -26,6 +27,8 @@ import (
 	"github.com/ejm/go_pi/pkg/skill"
 	"github.com/ejm/go_pi/pkg/tools"
 	"github.com/ejm/go_pi/pkg/tui"
+
+	"golang.org/x/term"
 )
 
 func main() {
@@ -143,12 +146,27 @@ func run() int {
 	if err != nil {
 		log.Printf("Warning: could not determine working directory: %v", err)
 	}
-	var pluginDirs []string
+
+	// Set up approval for project-local plugins. Non-interactive modes
+	// (print, json, rpc) deny project-local plugins by default — use
+	// --plugin to load them explicitly.
+	isInteractive := *printFlag == "" && !*jsonFlag && !*rpcFlag
+	if isInteractive {
+		pluginMgr.SetApprover(makePluginApprover(cfg))
+	}
+
+	var pluginDirs []plugin.DiscoverDir
 	if home != "" {
-		pluginDirs = append(pluginDirs, filepath.Join(home, ".gi", "plugins"))
+		pluginDirs = append(pluginDirs, plugin.DiscoverDir{
+			Path:   filepath.Join(home, ".gi", "plugins"),
+			Source: plugin.SourceGlobal,
+		})
 	}
 	if cwd != "" {
-		pluginDirs = append(pluginDirs, filepath.Join(cwd, ".gi", "plugins"))
+		pluginDirs = append(pluginDirs, plugin.DiscoverDir{
+			Path:   filepath.Join(cwd, ".gi", "plugins"),
+			Source: plugin.SourceProjectLocal,
+		})
 	}
 	if err := pluginMgr.Discover(context.Background(), pluginDirs); err != nil {
 		log.Printf("Failed to discover plugins: %v", err)
@@ -982,6 +1000,55 @@ func executeSampling(ctx context.Context, provider ai.Provider, model string, re
 		Content: mcp.MCPContentItem{Type: "text", Text: text.String()},
 		Model:   model,
 	}, nil
+}
+
+// makePluginApprover returns a PluginApprover that checks the config for
+// previously trusted paths and, if not found, prompts the user on stderr.
+// If stdin is not a terminal (e.g. piped input), untrusted plugins are denied.
+func makePluginApprover(cfg *config.Config) plugin.PluginApprover {
+	return func(name, pluginDir string) (bool, error) {
+		absDir, err := filepath.Abs(pluginDir)
+		if err != nil {
+			absDir = pluginDir
+		}
+
+		// Check if already trusted.
+		for _, trusted := range cfg.TrustedProjectPlugins {
+			if trusted == absDir {
+				return true, nil
+			}
+		}
+
+		// Non-terminal stdin means we can't prompt — deny by default.
+		if !term.IsTerminal(int(os.Stdin.Fd())) {
+			return false, nil
+		}
+
+		fmt.Fprintf(os.Stderr, "\nProject-local plugin detected: %s\n", name)
+		fmt.Fprintf(os.Stderr, "  Path: %s\n", absDir)
+		fmt.Fprintf(os.Stderr, "  Plugins from project directories can execute arbitrary code.\n")
+		fmt.Fprintf(os.Stderr, "Allow this plugin? [y/N/always] ")
+
+		reader := bufio.NewReader(os.Stdin)
+		response, err := reader.ReadString('\n')
+		if err != nil {
+			return false, nil
+		}
+		response = strings.TrimSpace(strings.ToLower(response))
+
+		switch response {
+		case "y", "yes":
+			return true, nil
+		case "a", "always":
+			cfg.TrustedProjectPlugins = append(cfg.TrustedProjectPlugins, absDir)
+			if err := cfg.Save(); err != nil {
+				log.Printf("Warning: failed to save trusted plugin to config: %v", err)
+			}
+			return true, nil
+		default:
+			return false, nil
+		}
+	}
 }
 
 // processFileArgs processes CLI positional arguments, expanding @filepath

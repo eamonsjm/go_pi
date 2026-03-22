@@ -35,6 +35,24 @@ func makeExitExe(t *testing.T) string {
 	return p
 }
 
+// makeRelExe creates a small exit-0 executable inside pluginDir and returns
+// its filename (relative path suitable for Manifest.Executable).
+func makeRelExe(t *testing.T, pluginDir string) string {
+	t.Helper()
+	var name, content string
+	if runtime.GOOS == "windows" {
+		name = "run.bat"
+		content = "@exit /b 0\n"
+	} else {
+		name = "run.sh"
+		content = "#!/bin/sh\nexit 0\n"
+	}
+	if err := os.WriteFile(filepath.Join(pluginDir, name), []byte(content), 0755); err != nil {
+		t.Fatal(err)
+	}
+	return name
+}
+
 func TestNewManager(t *testing.T) {
 	reg := tools.NewRegistry()
 	m := NewManager(reg)
@@ -54,7 +72,7 @@ func TestDiscover_NonExistentDir(t *testing.T) {
 	m := NewManager(reg)
 
 	// Non-existent directories should be silently skipped.
-	err := m.Discover(context.Background(), []string{"/no/such/directory/exists"})
+	err := m.Discover(context.Background(), []DiscoverDir{{Path: "/no/such/directory/exists", Source: SourceGlobal}})
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
@@ -69,7 +87,7 @@ func TestDiscover_EmptyDir(t *testing.T) {
 	reg := tools.NewRegistry()
 	m := NewManager(reg)
 
-	err := m.Discover(context.Background(), []string{dir})
+	err := m.Discover(context.Background(), []DiscoverDir{{Path: dir, Source: SourceGlobal}})
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
@@ -87,7 +105,7 @@ func TestDiscover_SkipsFiles(t *testing.T) {
 	reg := tools.NewRegistry()
 	m := NewManager(reg)
 
-	err := m.Discover(context.Background(), []string{dir})
+	err := m.Discover(context.Background(), []DiscoverDir{{Path: dir, Source: SourceGlobal}})
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
@@ -121,7 +139,7 @@ func TestDiscover_WithManifest(t *testing.T) {
 	reg := tools.NewRegistry()
 	m := NewManager(reg)
 
-	err := m.Discover(context.Background(), []string{dir})
+	err := m.Discover(context.Background(), []DiscoverDir{{Path: dir, Source: SourceGlobal}})
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
@@ -160,7 +178,7 @@ func TestDiscover_ManifestDefaultName(t *testing.T) {
 
 	reg := tools.NewRegistry()
 	m := NewManager(reg)
-	m.Discover(context.Background(), []string{dir})
+	m.Discover(context.Background(), []DiscoverDir{{Path: dir, Source: SourceGlobal}})
 
 	if len(m.plugins) != 1 {
 		t.Fatalf("plugins = %d, want 1", len(m.plugins))
@@ -185,7 +203,7 @@ func TestDiscover_BadManifest(t *testing.T) {
 	m := NewManager(reg)
 
 	// Should not return an error — individual plugin failures are logged and skipped.
-	err := m.Discover(context.Background(), []string{dir})
+	err := m.Discover(context.Background(), []DiscoverDir{{Path: dir, Source: SourceGlobal}})
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
@@ -203,7 +221,7 @@ func TestDiscover_NoManifestNoExecutable(t *testing.T) {
 	reg := tools.NewRegistry()
 	m := NewManager(reg)
 
-	err := m.Discover(context.Background(), []string{dir})
+	err := m.Discover(context.Background(), []DiscoverDir{{Path: dir, Source: SourceGlobal}})
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
@@ -225,7 +243,7 @@ func TestDiscover_ExecutableNotExecutable(t *testing.T) {
 
 	reg := tools.NewRegistry()
 	m := NewManager(reg)
-	m.Discover(context.Background(), []string{dir})
+	m.Discover(context.Background(), []DiscoverDir{{Path: dir, Source: SourceGlobal}})
 
 	if len(m.plugins) != 0 {
 		t.Errorf("plugins = %d, want 0 (not executable)", len(m.plugins))
@@ -311,7 +329,7 @@ func TestDiscover_RejectsAbsoluteExecutablePath(t *testing.T) {
 
 	reg := tools.NewRegistry()
 	m := NewManager(reg)
-	m.Discover([]string{dir})
+	m.Discover(context.Background(), []DiscoverDir{{Path: dir, Source: SourceGlobal}})
 
 	if len(m.plugins) != 0 {
 		t.Errorf("plugins = %d, want 0 (absolute path should be rejected)", len(m.plugins))
@@ -333,7 +351,7 @@ func TestDiscover_RejectsPathTraversal(t *testing.T) {
 
 	reg := tools.NewRegistry()
 	m := NewManager(reg)
-	m.Discover([]string{dir})
+	m.Discover(context.Background(), []DiscoverDir{{Path: dir, Source: SourceGlobal}})
 
 	if len(m.plugins) != 0 {
 		t.Errorf("plugins = %d, want 0 (path traversal should be rejected)", len(m.plugins))
@@ -704,6 +722,126 @@ func TestSetHeartbeatConfig_Nil(t *testing.T) {
 
 	if m.heartbeatDone != nil {
 		t.Error("heartbeat goroutine started with nil config")
+	}
+}
+
+// --- Project-local plugin approval tests ------------------------------------
+
+func TestDiscover_ProjectLocalBlockedWithoutApprover(t *testing.T) {
+	dir := t.TempDir()
+	pluginDir := filepath.Join(dir, "malicious")
+	os.MkdirAll(pluginDir, 0755)
+
+	exeName := makeRelExe(t, pluginDir)
+	data, _ := json.Marshal(Manifest{Name: "malicious", Executable: exeName})
+	os.WriteFile(filepath.Join(pluginDir, "plugin.json"), data, 0644)
+
+	reg := tools.NewRegistry()
+	m := NewManager(reg)
+	// No approver set — project-local plugins must be blocked.
+
+	err := m.Discover(context.Background(), []DiscoverDir{{Path: dir, Source: SourceProjectLocal}})
+	if err != nil {
+		t.Fatalf("Discover: %v", err)
+	}
+	if len(m.plugins) != 0 {
+		t.Errorf("plugins = %d, want 0 (project-local without approver)", len(m.plugins))
+	}
+}
+
+func TestDiscover_ProjectLocalBlockedWhenDenied(t *testing.T) {
+	dir := t.TempDir()
+	pluginDir := filepath.Join(dir, "untrusted")
+	os.MkdirAll(pluginDir, 0755)
+
+	exeName := makeRelExe(t, pluginDir)
+	data, _ := json.Marshal(Manifest{Name: "untrusted", Executable: exeName})
+	os.WriteFile(filepath.Join(pluginDir, "plugin.json"), data, 0644)
+
+	reg := tools.NewRegistry()
+	m := NewManager(reg)
+	m.SetApprover(func(name, dir string) (bool, error) {
+		return false, nil // deny
+	})
+
+	err := m.Discover(context.Background(), []DiscoverDir{{Path: dir, Source: SourceProjectLocal}})
+	if err != nil {
+		t.Fatalf("Discover: %v", err)
+	}
+	if len(m.plugins) != 0 {
+		t.Errorf("plugins = %d, want 0 (project-local denied)", len(m.plugins))
+	}
+}
+
+func TestDiscover_ProjectLocalAllowedWhenApproved(t *testing.T) {
+	dir := t.TempDir()
+	pluginDir := filepath.Join(dir, "trusted")
+	os.MkdirAll(pluginDir, 0755)
+
+	exeName := makeRelExe(t, pluginDir)
+	data, _ := json.Marshal(Manifest{Name: "trusted", Executable: exeName})
+	os.WriteFile(filepath.Join(pluginDir, "plugin.json"), data, 0644)
+
+	reg := tools.NewRegistry()
+	m := NewManager(reg)
+	m.SetApprover(func(name, dir string) (bool, error) {
+		return true, nil // approve
+	})
+
+	err := m.Discover(context.Background(), []DiscoverDir{{Path: dir, Source: SourceProjectLocal}})
+	if err != nil {
+		t.Fatalf("Discover: %v", err)
+	}
+	if len(m.plugins) != 1 {
+		t.Errorf("plugins = %d, want 1 (project-local approved)", len(m.plugins))
+	}
+	m.Shutdown()
+}
+
+func TestDiscover_GlobalPluginsNotGated(t *testing.T) {
+	dir := t.TempDir()
+	pluginDir := filepath.Join(dir, "global-plugin")
+	os.MkdirAll(pluginDir, 0755)
+
+	exeName := makeRelExe(t, pluginDir)
+	data, _ := json.Marshal(Manifest{Name: "global", Executable: exeName})
+	os.WriteFile(filepath.Join(pluginDir, "plugin.json"), data, 0644)
+
+	reg := tools.NewRegistry()
+	m := NewManager(reg)
+	// No approver needed — global source is always trusted.
+
+	err := m.Discover(context.Background(), []DiscoverDir{{Path: dir, Source: SourceGlobal}})
+	if err != nil {
+		t.Fatalf("Discover: %v", err)
+	}
+	if len(m.plugins) != 1 {
+		t.Errorf("plugins = %d, want 1 (global plugins not gated)", len(m.plugins))
+	}
+	m.Shutdown()
+}
+
+func TestDiscover_ApproverErrorSkipsPlugin(t *testing.T) {
+	dir := t.TempDir()
+	pluginDir := filepath.Join(dir, "error-case")
+	os.MkdirAll(pluginDir, 0755)
+
+	exeName := makeRelExe(t, pluginDir)
+	data, _ := json.Marshal(Manifest{Name: "error-case", Executable: exeName})
+	os.WriteFile(filepath.Join(pluginDir, "plugin.json"), data, 0644)
+
+	reg := tools.NewRegistry()
+	m := NewManager(reg)
+	m.SetApprover(func(name, dir string) (bool, error) {
+		return false, errors.New("approval system failure")
+	})
+
+	err := m.Discover(context.Background(), []DiscoverDir{{Path: dir, Source: SourceProjectLocal}})
+	if err != nil {
+		t.Fatalf("Discover: %v", err)
+	}
+	if len(m.plugins) != 0 {
+		t.Errorf("plugins = %d, want 0 (approver error should skip)", len(m.plugins))
 	}
 }
 

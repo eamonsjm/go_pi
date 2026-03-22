@@ -91,6 +91,10 @@ type Config struct {
 	// MCP configs may interpolate. Global config has full interpolation access;
 	// project-level is restricted to this allowlist for security.
 	AllowProjectEnvVars []string `json:"allowProjectEnvVars,omitempty"`
+
+	// TrustedProjectPlugins lists absolute paths of project-local plugin
+	// directories that the user has explicitly approved for execution.
+	TrustedProjectPlugins []string `json:"trusted_project_plugins,omitempty"`
 }
 
 // DefaultConfig returns a Config populated with sensible defaults.
@@ -193,6 +197,10 @@ func LoadConfig(opts ...LoadConfigOption) (*Config, error) {
 		}
 	}
 
+	// Preserve trusted_project_plugins from global config — project-local
+	// config must not be able to trust its own plugins.
+	trustedPlugins := cfg.TrustedProjectPlugins
+
 	// Project-local config.
 	localPath := filepath.Join(".gi", "settings.json")
 	if o.localConfigPath != "" {
@@ -237,6 +245,9 @@ func LoadConfig(opts ...LoadConfigOption) (*Config, error) {
 	if !providerOK {
 		return nil, fmt.Errorf("invalid default_provider %q: must be one of %s", cfg.DefaultProvider, strings.Join(validProviders, ", "))
 	}
+
+	// Restore trusted plugins from global config only.
+	cfg.TrustedProjectPlugins = trustedPlugins
 
 	return cfg, nil
 }
@@ -422,6 +433,15 @@ func mergeFromFile(cfg *Config, path string) error {
 		var vars []string
 		if json.Unmarshal(v, &vars) == nil {
 			cfg.AllowProjectEnvVars = vars
+		}
+	}
+
+	// Trusted project plugins (only from global config — project-local config
+	// must not be able to trust itself).
+	if v, ok := raw["trusted_project_plugins"]; ok {
+		var paths []string
+		if json.Unmarshal(v, &paths) == nil && paths != nil {
+			cfg.TrustedProjectPlugins = paths
 		}
 	}
 

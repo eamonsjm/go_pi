@@ -24,7 +24,7 @@ func TestDiscover_ManifestEmptyJSON(t *testing.T) {
 	reg := tools.NewRegistry()
 	m := NewManager(reg)
 
-	err := m.Discover(context.Background(), []string{dir})
+	err := m.Discover(context.Background(), []DiscoverDir{{Path: dir, Source: SourceGlobal}})
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
@@ -45,7 +45,7 @@ func TestDiscover_ManifestTruncatedJSON(t *testing.T) {
 	reg := tools.NewRegistry()
 	m := NewManager(reg)
 
-	err := m.Discover(context.Background(), []string{dir})
+	err := m.Discover(context.Background(), []DiscoverDir{{Path: dir, Source: SourceGlobal}})
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
@@ -65,7 +65,7 @@ func TestDiscover_ManifestArrayJSON(t *testing.T) {
 	reg := tools.NewRegistry()
 	m := NewManager(reg)
 
-	err := m.Discover(context.Background(), []string{dir})
+	err := m.Discover(context.Background(), []DiscoverDir{{Path: dir, Source: SourceGlobal}})
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
@@ -85,7 +85,7 @@ func TestDiscover_ManifestEmptyFile(t *testing.T) {
 	reg := tools.NewRegistry()
 	m := NewManager(reg)
 
-	err := m.Discover(context.Background(), []string{dir})
+	err := m.Discover(context.Background(), []DiscoverDir{{Path: dir, Source: SourceGlobal}})
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
@@ -105,7 +105,7 @@ func TestDiscover_ManifestBinaryGarbage(t *testing.T) {
 	reg := tools.NewRegistry()
 	m := NewManager(reg)
 
-	err := m.Discover(context.Background(), []string{dir})
+	err := m.Discover(context.Background(), []DiscoverDir{{Path: dir, Source: SourceGlobal}})
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
@@ -131,7 +131,7 @@ func TestDiscover_ManifestPointsToMissingExecutable(t *testing.T) {
 	reg := tools.NewRegistry()
 	m := NewManager(reg)
 
-	err := m.Discover(context.Background(), []string{dir})
+	err := m.Discover(context.Background(), []DiscoverDir{{Path: dir, Source: SourceGlobal}})
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
@@ -158,7 +158,7 @@ func TestDiscover_ManifestPointsToDirectory(t *testing.T) {
 	reg := tools.NewRegistry()
 	m := NewManager(reg)
 
-	err := m.Discover(context.Background(), []string{dir})
+	err := m.Discover(context.Background(), []DiscoverDir{{Path: dir, Source: SourceGlobal}})
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
@@ -182,7 +182,7 @@ func TestDiscover_ManifestRelativeExeMissing(t *testing.T) {
 	reg := tools.NewRegistry()
 	m := NewManager(reg)
 
-	err := m.Discover(context.Background(), []string{dir})
+	err := m.Discover(context.Background(), []DiscoverDir{{Path: dir, Source: SourceGlobal}})
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
@@ -219,7 +219,7 @@ func TestDiscover_ManifestRelativeExeResolved(t *testing.T) {
 	reg := tools.NewRegistry()
 	m := NewManager(reg)
 
-	err := m.Discover(context.Background(), []string{dir})
+	err := m.Discover(context.Background(), []DiscoverDir{{Path: dir, Source: SourceGlobal}})
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
@@ -309,7 +309,11 @@ func TestDiscover_MultipleDirsSomeInvalid(t *testing.T) {
 	m := NewManager(reg)
 
 	// Mix of nonexistent and valid directories.
-	err := m.Discover(context.Background(), []string{"/nonexistent/dir1", goodDir, "/nonexistent/dir2"})
+	err := m.Discover(context.Background(), []DiscoverDir{
+		{Path: "/nonexistent/dir1", Source: SourceGlobal},
+		{Path: goodDir, Source: SourceGlobal},
+		{Path: "/nonexistent/dir2", Source: SourceGlobal},
+	})
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
@@ -344,7 +348,10 @@ func TestDiscover_MultipleDirsMixedPlugins(t *testing.T) {
 	reg := tools.NewRegistry()
 	m := NewManager(reg)
 
-	err := m.Discover(context.Background(), []string{dir1, dir2})
+	err := m.Discover(context.Background(), []DiscoverDir{
+		{Path: dir1, Source: SourceGlobal},
+		{Path: dir2, Source: SourceGlobal},
+	})
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
@@ -390,7 +397,7 @@ func TestShutdown_Idempotent(t *testing.T) {
 	data, _ := json.Marshal(Manifest{Name: "test", Executable: exeName})
 	os.WriteFile(filepath.Join(pluginDir, "plugin.json"), data, 0644)
 
-	m.Discover(context.Background(), []string{dir})
+	m.Discover(context.Background(), []DiscoverDir{{Path: dir, Source: SourceGlobal}})
 
 	// First shutdown.
 	m.Shutdown()
