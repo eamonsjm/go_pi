@@ -167,16 +167,24 @@ func NewLoginCommand(store *auth.Store, resolver *auth.Resolver) *SlashCommand {
 				}
 
 				codeCh := make(chan string, 1)
+				ctx, cancel := context.WithCancel(context.Background())
 
 				return authOAuthMsg{
 					providerName: oauthProv.Name(),
 					url:          session.AuthorizeURL,
 					codeCh:       codeCh,
+					cancelAuth:   cancel,
 					waitCmd: func() tea.Msg {
+						defer cancel()
 						// Block until the user pastes the code.
 						var code string
 						select {
 						case code = <-codeCh:
+						case <-ctx.Done():
+							return CommandResultMsg{
+								Text:    "Login cancelled.",
+								IsError: true,
+							}
 						case <-time.After(defaultLoginTimeout):
 							return CommandResultMsg{
 								Text:    "Login timed out — no code entered within 10 minutes.",
@@ -192,7 +200,9 @@ func NewLoginCommand(store *auth.Store, resolver *auth.Resolver) *SlashCommand {
 							}
 						}
 
-						cred, err := anthProv.ExchangeCode(context.TODO(), session, code)
+						exchCtx, exchCancel := context.WithTimeout(ctx, 30*time.Second)
+						defer exchCancel()
+						cred, err := anthProv.ExchangeCode(exchCtx, session, code)
 						if err != nil {
 							return CommandResultMsg{
 								Text:    fmt.Sprintf("Login failed: %v", err),
