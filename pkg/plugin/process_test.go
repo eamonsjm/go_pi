@@ -1335,7 +1335,9 @@ func TestHeartbeat_Success(t *testing.T) {
 		t.Fatalf("Initialize: %v", err)
 	}
 
-	status, err := p.Heartbeat(5 * time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	status, err := p.Heartbeat(ctx)
 	if err != nil {
 		t.Fatalf("Heartbeat: %v", err)
 	}
@@ -1373,7 +1375,9 @@ func TestHeartbeat_Timeout(t *testing.T) {
 	}
 
 	// The helper takes 500ms to respond; use a 50ms timeout.
-	_, err := p.Heartbeat(50 * time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	_, err := p.Heartbeat(ctx)
 	if err == nil {
 		t.Fatal("expected timeout error")
 	}
@@ -1393,7 +1397,9 @@ func TestHeartbeat_OldPluginIgnores(t *testing.T) {
 	}
 
 	// Old plugin ignores heartbeat — should timeout.
-	_, err := p.Heartbeat(100 * time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	_, err := p.Heartbeat(ctx)
 	if err == nil {
 		t.Fatal("expected timeout error from old plugin")
 	}
@@ -1411,7 +1417,9 @@ func TestHeartbeat_ClosedProcess(t *testing.T) {
 	}
 	p.Stop()
 
-	_, err := p.Heartbeat(1 * time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	_, err := p.Heartbeat(ctx)
 	if err == nil {
 		t.Fatal("expected error from heartbeat on closed process")
 	}
@@ -1427,7 +1435,9 @@ func TestHeartbeat_DoesNotInterfereWithTools(t *testing.T) {
 	}
 
 	// Heartbeat first.
-	status, err := p.Heartbeat(5 * time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	status, err := p.Heartbeat(ctx)
 	if err != nil {
 		t.Fatalf("Heartbeat: %v", err)
 	}
