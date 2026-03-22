@@ -80,8 +80,8 @@ func (r *Resolver) Resolve(ctx context.Context, provider string) (string, error)
 		// Fall through on error for non-OAuth — try env vars.
 	}
 
-	// 4. Environment variable.
-	if envName, ok := config.ProviderEnvVars[provider]; ok {
+	// 4. Environment variable (API key credentials only).
+	if envName, ok := config.ProviderAPIKeyEnvVars[provider]; ok {
 		if val := os.Getenv(envName); val != "" {
 			return val, nil
 		}

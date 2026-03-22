@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -146,13 +145,16 @@ func settingsUpdate(key, value string, cfg *config.Config, agentLoop *agent.Agen
 		return settingsError(fmt.Sprintf("use /theme %s to change the theme", value))
 
 	case "provider":
-		if _, ok := config.ProviderEnvVars[value]; !ok {
-			names := make([]string, 0, len(config.ProviderEnvVars))
-			for k := range config.ProviderEnvVars {
-				names = append(names, k)
+		valid := config.ValidProviderNames()
+		found := false
+		for _, n := range valid {
+			if n == value {
+				found = true
+				break
 			}
-			sort.Strings(names)
-			return settingsError(fmt.Sprintf("unknown provider %q — valid: %s", value, strings.Join(names, ", ")))
+		}
+		if !found {
+			return settingsError(fmt.Sprintf("unknown provider %q — valid: %s", value, strings.Join(valid, ", ")))
 		}
 		return settingsError(fmt.Sprintf("provider change to %q requires restart. Edit ~/.gi/settings.json and relaunch.", value))
 
