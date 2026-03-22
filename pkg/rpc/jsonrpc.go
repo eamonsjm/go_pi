@@ -14,6 +14,7 @@ import (
 	"syscall"
 
 	"github.com/ejm/go_pi/pkg/agent"
+	"golang.org/x/sync/errgroup"
 )
 
 // stdinProxy copies os.Stdin into an io.Pipe and cancels the context when
@@ -287,17 +288,15 @@ func (s *rpcServer) handlePrompt(ctx context.Context, cancel context.CancelFunc,
 
 	events := s.agentLoop.Events()
 
-	var promptErr error
-	done := make(chan struct{})
-	go func() {
+	g, gCtx := errgroup.WithContext(ctx)
+	g.Go(func() (err error) {
 		defer func() {
 			if r := recover(); r != nil {
-				promptErr = fmt.Errorf("panic in Prompt: %v", r)
+				err = fmt.Errorf("panic in Prompt: %v", r)
 			}
-			close(done)
 		}()
-		promptErr = s.agentLoop.Prompt(ctx, params.Text)
-	}()
+		return s.agentLoop.Prompt(gCtx, params.Text)
+	})
 
 	var resultText strings.Builder
 loop:
@@ -318,14 +317,14 @@ loop:
 			if event.Type == agent.EventAssistantText {
 				resultText.WriteString(event.Delta)
 			}
-		case <-done:
-			// Prompt goroutine finished (possibly via panic recovery)
-			// before closing the events channel.
+		case <-gCtx.Done():
+			// Prompt goroutine returned an error (possibly via panic
+			// recovery) before the events channel closed.
 			break loop
 		}
 	}
 
-	<-done
+	promptErr := g.Wait()
 
 	if promptErr != nil {
 		s.sendResponse(Response{

@@ -12,6 +12,7 @@ import (
 	"syscall"
 
 	"github.com/ejm/go_pi/pkg/agent"
+	"golang.org/x/sync/errgroup"
 )
 
 // RunJSONStream runs the agent in JSON event stream mode. It reads a prompt
@@ -73,17 +74,15 @@ func RunJSONStream(agentLoop *agent.AgentLoop, prompt string) {
 	enc := json.NewEncoder(os.Stdout)
 	events := agentLoop.Events()
 
-	done := make(chan struct{})
-	var promptErr error
-	go func() {
+	g, gCtx := errgroup.WithContext(ctx)
+	g.Go(func() (err error) {
 		defer func() {
 			if r := recover(); r != nil {
-				promptErr = fmt.Errorf("panic in Prompt: %v", r)
+				err = fmt.Errorf("panic in Prompt: %v", r)
 			}
-			close(done)
 		}()
-		promptErr = agentLoop.Prompt(ctx, prompt)
-	}()
+		return agentLoop.Prompt(gCtx, prompt)
+	})
 
 	var sawError bool
 loop:
@@ -107,9 +106,9 @@ loop:
 			if event.Type == agent.EventAgentEnd {
 				break loop
 			}
-		case <-done:
-			// Prompt goroutine finished (possibly via panic recovery)
-			// before closing the events channel.
+		case <-gCtx.Done():
+			// Prompt goroutine returned an error (possibly via panic
+			// recovery) before the events channel closed.
 			break loop
 		}
 	}
@@ -117,7 +116,7 @@ loop:
 	// Wait for the Prompt goroutine to finish so it doesn't outlive this
 	// function. Context cancellation (via defer cancel above) ensures
 	// Prompt returns promptly even if the event loop exited early.
-	<-done
+	promptErr := g.Wait()
 
 	// If Prompt returned an error but no error event was emitted to the
 	// stream, write a synthetic error event so callers see the failure.
