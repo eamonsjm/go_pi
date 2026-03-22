@@ -93,6 +93,76 @@ func TestRenderTemplate_MultilineConditional(t *testing.T) {
 	}
 }
 
+func TestRenderTemplate_ShellEscapeSubstitution(t *testing.T) {
+	body := "Run: git commit -m {{shell:message}}"
+	vars := map[string]string{"message": "fix: something's broken"}
+	got := RenderTemplate(body, vars)
+	want := `Run: git commit -m 'fix: something'\''s broken'`
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestRenderTemplate_ShellEscapeInjectionAttempt(t *testing.T) {
+	body := "Run: echo {{shell:input}}"
+	vars := map[string]string{"input": "'; rm -rf / #"}
+	got := RenderTemplate(body, vars)
+	want := `Run: echo ''\''; rm -rf / #'`
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestRenderTemplate_ShellEscapeUndefinedLeftAsIs(t *testing.T) {
+	body := "Run: echo {{shell:missing}}"
+	got := RenderTemplate(body, map[string]string{})
+	if got != body {
+		t.Errorf("got %q, want %q", got, body)
+	}
+}
+
+func TestRenderTemplate_ShellAndPlainMixed(t *testing.T) {
+	body := "Project {{name}}: run echo {{shell:arg}}"
+	vars := map[string]string{"name": "foo", "arg": "hello world"}
+	got := RenderTemplate(body, vars)
+	want := "Project foo: run echo 'hello world'"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestRenderTemplate_ShellEscapeInConditional(t *testing.T) {
+	body := "{{#if msg}}Run: git commit -m {{shell:msg}}{{/if}}"
+	vars := map[string]string{"msg": "it's done"}
+	got := RenderTemplate(body, vars)
+	want := `Run: git commit -m 'it'\''s done'`
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestShellQuote(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"hello", "'hello'"},
+		{"hello world", "'hello world'"},
+		{"it's", `'it'\''s'`},
+		{"", "''"},
+		{"'; rm -rf / #", `''\''; rm -rf / #'`},
+		{`"double"`, `'"double"'`},
+		{"no-special", "'no-special'"},
+		{"a'b'c", `'a'\''b'\''c'`},
+	}
+	for _, tt := range tests {
+		got := ShellQuote(tt.input)
+		if got != tt.want {
+			t.Errorf("ShellQuote(%q): got %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
 func TestRenderTemplate_NoVarsNoConditionals(t *testing.T) {
 	body := "Plain text with no templates."
 	got := RenderTemplate(body, map[string]string{})
