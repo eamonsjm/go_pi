@@ -3,9 +3,9 @@ package tui
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"runtime"
-	"sort"
 	"strings"
 	"time"
 
@@ -271,12 +271,7 @@ func NewAuthStatusCommand(store *auth.Store, resolver *auth.Resolver) *SlashComm
 				var sb strings.Builder
 				sb.WriteString("Authentication Status:\n")
 
-				providers := make([]string, 0, len(config.ProviderEnvVars))
-				for k := range config.ProviderEnvVars {
-					providers = append(providers, k)
-				}
-				sort.Strings(providers)
-				for _, p := range providers {
+				for _, p := range config.ValidProviderNames() {
 					key, _ := resolver.Resolve(context.TODO(), p)
 					cred := store.Get(p)
 
@@ -299,6 +294,12 @@ func NewAuthStatusCommand(store *auth.Store, resolver *auth.Resolver) *SlashComm
 							}
 						} else {
 							sb.WriteString(" (env var)")
+						}
+					} else if envName, ok := config.ProviderConfigEnvVars[p]; ok {
+						if val := os.Getenv(envName); val != "" {
+							fmt.Fprintf(&sb, "\n  %s: configured (%s set)", p, envName)
+						} else {
+							fmt.Fprintf(&sb, "\n  %s: not configured", p)
 						}
 					} else {
 						fmt.Fprintf(&sb, "\n  %s: not configured", p)
