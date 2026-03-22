@@ -14,13 +14,20 @@ import (
 	"github.com/ejm/go_pi/pkg/tools"
 )
 
+// ToolRegistry is the interface used by Manager to register and look up tools.
+// It is satisfied by *tools.Registry.
+type ToolRegistry interface {
+	Get(name string) (tools.Tool, bool)
+	Register(t tools.Tool)
+}
+
 // Manager handles discovery, loading, initialization, and lifecycle management
 // of all plugins. It bridges plugin-provided tools and commands into the host's
 // registries.
 type Manager struct {
 	mu           sync.RWMutex
 	plugins      []*PluginProcess
-	toolRegistry *tools.Registry
+	toolRegistry ToolRegistry
 	restartCfg   *RestartConfig   // if set, enables auto-restart for plugins
 	heartbeatCfg *HeartbeatConfig // if set, enables periodic heartbeats
 
@@ -30,7 +37,7 @@ type Manager struct {
 
 // NewManager creates a new plugin manager. The tool registry is used to register
 // plugin-provided tools alongside built-in tools.
-func NewManager(toolRegistry *tools.Registry) *Manager {
+func NewManager(toolRegistry ToolRegistry) *Manager {
 	cfg := DefaultRestartConfig()
 	return &Manager{
 		toolRegistry: toolRegistry,
