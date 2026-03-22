@@ -22,20 +22,20 @@ func main() {
 	// Get private key from environment
 	privKeyStr := os.Getenv("GITHUB_APP_PRIVATE_KEY")
 	if privKeyStr == "" {
-		fmt.Println("ERROR: GITHUB_APP_PRIVATE_KEY not set")
+		fmt.Fprintln(os.Stderr, "ERROR: GITHUB_APP_PRIVATE_KEY not set")
 		os.Exit(1)
 	}
 
 	// Parse the private key
 	block, _ := pem.Decode([]byte(privKeyStr))
 	if block == nil {
-		fmt.Println("ERROR: Failed to parse private key PEM")
+		fmt.Fprintln(os.Stderr, "ERROR: Failed to parse private key PEM")
 		os.Exit(1)
 	}
 
 	privKey, err := x509.ParsePKCS1PrivateKey(block.Bytes)
 	if err != nil {
-		fmt.Println("ERROR: Failed to parse RSA private key:", err)
+		fmt.Fprintln(os.Stderr, "ERROR: Failed to parse RSA private key:", err)
 		os.Exit(1)
 	}
 
@@ -49,7 +49,7 @@ func main() {
 
 	tokenStr, err := token.SignedString(privKey)
 	if err != nil {
-		fmt.Println("ERROR: Failed to sign JWT:", err)
+		fmt.Fprintln(os.Stderr, "ERROR: Failed to sign JWT:", err)
 		os.Exit(1)
 	}
 
@@ -58,13 +58,13 @@ func main() {
 
 	// Step 2: Try to fetch workflow runs (this will fail without proper app ID, but tests API access)
 	fmt.Println("\n✓ Step 2: Testing GitHub API access...")
-	client := &http.Client{}
+	client := &http.Client{Timeout: 30 * time.Second}
 
 	// Try to fetch workflow runs for this repo
 	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/actions/runs", *owner, *repo)
 	req, err := http.NewRequest("GET", apiURL, nil)
 	if err != nil {
-		fmt.Println("ERROR: Failed to create HTTP request:", err)
+		fmt.Fprintln(os.Stderr, "ERROR: Failed to create HTTP request:", err)
 		os.Exit(1)
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
@@ -74,14 +74,14 @@ func main() {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		fmt.Println("ERROR: Failed to reach GitHub API:", err)
+		fmt.Fprintln(os.Stderr, "ERROR: Failed to reach GitHub API:", err)
 		os.Exit(1)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		fmt.Println("ERROR: Failed to read response body:", err)
+		fmt.Fprintln(os.Stderr, "ERROR: Failed to read response body:", err)
 		os.Exit(1)
 	}
 

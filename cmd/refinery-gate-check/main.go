@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
 	"time"
 
@@ -39,9 +40,11 @@ func main() {
 		}
 	}
 
-	// Create context with timeout
+	// Create context with timeout and signal cancellation
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(*timeoutSec)*time.Second)
 	defer cancel()
+	ctx, stop := signal.NotifyContext(ctx, os.Interrupt)
+	defer stop()
 
 	// Create gate checker and run CI check
 	checker := refinery_gate.NewGateChecker(*owner, *repo, *token, *branch, workflows)

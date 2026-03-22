@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -214,7 +215,9 @@ func main() {
 		if initialPrompt != "" {
 			prompt = initialPrompt + "\n\n" + prompt
 		}
-		runPrintMode(agentLoop, sessionMgr, prompt)
+		if code := runPrintMode(agentLoop, sessionMgr, prompt); code != 0 {
+			os.Exit(code)
+		}
 		return
 	}
 
@@ -462,13 +465,13 @@ func buildSystemPrompt() string {
 	return base + "\n\n" + strings.Join(parts, "\n\n")
 }
 
-func runPrintMode(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, prompt string) {
+func runPrintMode(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, prompt string) int {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Handle Ctrl+C
+	// Handle Ctrl+C and SIGTERM
 	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, os.Interrupt)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-sigCh
 		cancel()
@@ -487,12 +490,13 @@ func runPrintMode(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, promp
 			fmt.Print(event.Delta)
 		case agent.EventAgentEnd:
 			fmt.Println()
-			return
+			return 0
 		case agent.EventAgentError:
 			fmt.Fprintf(os.Stderr, "\nError: %v\n", event.Error)
-			os.Exit(1)
+			return 1
 		}
 	}
+	return 0
 }
 
 func makeAgentLoop(provider ai.Provider, registry *tools.Registry, cfg *config.Config, skillReg *skill.Registry) *agent.AgentLoop {
