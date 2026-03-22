@@ -1,6 +1,10 @@
 package agent
 
-import "github.com/ejm/go_pi/pkg/ai"
+import (
+	"log"
+
+	"github.com/ejm/go_pi/pkg/ai"
+)
 
 // Option configures an AgentLoop.
 type Option func(*AgentLoop)
@@ -66,6 +70,15 @@ func WithReserveTokens(n int) Option {
 func WithKeepRecentTokens(n int) Option {
 	return func(a *AgentLoop) {
 		a.keepRecentTokens = n
+	}
+}
+
+// WithLogger sets the logger for operational messages. If nil, log.Default() is used.
+func WithLogger(l *log.Logger) Option {
+	return func(a *AgentLoop) {
+		if l != nil {
+			a.logger = l
+		}
 	}
 }
 
