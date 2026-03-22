@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -620,7 +621,7 @@ func startTestPlugin(t *testing.T, mode string) *PluginProcess {
 func TestInitialize_Success(t *testing.T) {
 	p := startTestPlugin(t, "echo_caps")
 
-	err := p.Initialize(PluginConfig{
+	err := p.Initialize(context.Background(), PluginConfig{
 		Cwd:       "/tmp",
 		Model:     "test-model",
 		Provider:  "test",
@@ -647,11 +648,11 @@ func TestInitialize_Success(t *testing.T) {
 
 func TestExecuteTool_RoundTrip(t *testing.T) {
 	p := startTestPlugin(t, "echo_caps")
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
-	content, isError, err := p.ExecuteTool("call-1", "echo", map[string]any{"x": 1})
+	content, isError, err := p.ExecuteTool(context.Background(),"call-1", "echo", map[string]any{"x": 1})
 	if err != nil {
 		t.Fatalf("ExecuteTool: %v", err)
 	}
@@ -665,11 +666,11 @@ func TestExecuteTool_RoundTrip(t *testing.T) {
 
 func TestExecuteTool_ErrorResult(t *testing.T) {
 	p := startTestPlugin(t, "tool_error")
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
-	content, isError, err := p.ExecuteTool("call-err", "anything", nil)
+	content, isError, err := p.ExecuteTool(context.Background(),"call-err", "anything", nil)
 	if err != nil {
 		t.Fatalf("ExecuteTool: %v", err)
 	}
@@ -683,11 +684,11 @@ func TestExecuteTool_ErrorResult(t *testing.T) {
 
 func TestExecuteCommand_RoundTrip(t *testing.T) {
 	p := startTestPlugin(t, "echo_caps")
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
-	text, isError, err := p.ExecuteCommand("greet", "world")
+	text, isError, err := p.ExecuteCommand(context.Background(),"greet", "world")
 	if err != nil {
 		t.Fatalf("ExecuteCommand: %v", err)
 	}
@@ -701,7 +702,7 @@ func TestExecuteCommand_RoundTrip(t *testing.T) {
 
 func TestSendEvent_FireAndForget(t *testing.T) {
 	p := startTestPlugin(t, "echo_caps")
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -718,7 +719,7 @@ func TestSendEvent_FireAndForget(t *testing.T) {
 
 func TestInjectMessages_Routing(t *testing.T) {
 	p := startTestPlugin(t, "inject_messages")
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -753,7 +754,7 @@ func TestInjectMessages_Routing(t *testing.T) {
 
 func TestStop_GracefulShutdown(t *testing.T) {
 	p := startTestPlugin(t, "echo_caps")
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -769,7 +770,7 @@ func TestStop_GracefulShutdown(t *testing.T) {
 
 func TestStop_Idempotent(t *testing.T) {
 	p := startTestPlugin(t, "echo_caps")
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -783,7 +784,7 @@ func TestStop_Idempotent(t *testing.T) {
 
 func TestSend_AfterClose(t *testing.T) {
 	p := startTestPlugin(t, "echo_caps")
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 	p.Stop()
@@ -800,7 +801,7 @@ func TestSend_AfterClose(t *testing.T) {
 func TestInitialize_ProcessExitedDuringInit(t *testing.T) {
 	p := startTestPlugin(t, "exit_immediately")
 
-	err := p.Initialize(PluginConfig{})
+	err := p.Initialize(context.Background(), PluginConfig{})
 	if err == nil {
 		t.Fatal("expected error from crashed process")
 	}
@@ -844,7 +845,7 @@ func TestReadLoop_SkipsBadJSON(t *testing.T) {
 
 	// Initialize should succeed because the helper sends bad JSON first
 	// (which readLoop skips), then valid capabilities.
-	err := p.Initialize(PluginConfig{})
+	err := p.Initialize(context.Background(), PluginConfig{})
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
@@ -890,7 +891,7 @@ func TestWaitResponse_Timeout(t *testing.T) {
 	}
 
 	start := time.Now()
-	_, err := p.waitResponse(50 * time.Millisecond)
+	_, err := p.waitResponse(context.Background(),50 * time.Millisecond)
 	elapsed := time.Since(start)
 
 	if err == nil {
@@ -913,7 +914,7 @@ func TestWaitResponse_ChannelClosed(t *testing.T) {
 		responseCh: responseCh,
 	}
 
-	_, err := p.waitResponse(5 * time.Second)
+	_, err := p.waitResponse(context.Background(),5 * time.Second)
 	if err == nil {
 		t.Fatal("expected error from closed channel")
 	}
@@ -926,12 +927,12 @@ func TestWaitResponse_ChannelClosed(t *testing.T) {
 
 func TestCrashDuringActiveSend(t *testing.T) {
 	p := startTestPlugin(t, "crash_on_tool")
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
 	// Send a tool call — the plugin crashes upon receiving it.
-	_, _, err := p.ExecuteTool("call-crash", "anything", nil)
+	_, _, err := p.ExecuteTool(context.Background(),"call-crash", "anything", nil)
 	if err == nil {
 		t.Fatal("expected error from crashed process during tool call")
 	}
@@ -945,7 +946,7 @@ func TestCrashDuringActiveSend(t *testing.T) {
 
 func TestPrematureStdoutClose(t *testing.T) {
 	p := startTestPlugin(t, "close_stdout_early")
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -961,7 +962,7 @@ func TestPrematureStdoutClose(t *testing.T) {
 
 	// Plugin closed stdout; responseCh is now closed.
 	// ExecuteTool should fail with "process exited".
-	_, _, err := p.ExecuteTool("call-closed", "anything", nil)
+	_, _, err := p.ExecuteTool(context.Background(),"call-closed", "anything", nil)
 	if err == nil {
 		t.Fatal("expected error when plugin closed stdout")
 	}
@@ -972,7 +973,7 @@ func TestPrematureStdoutClose(t *testing.T) {
 
 func TestHangingPluginTimeout(t *testing.T) {
 	p := startTestPlugin(t, "hang_on_tool")
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -986,7 +987,7 @@ func TestHangingPluginTimeout(t *testing.T) {
 	}
 
 	// Use a short timeout to verify timeout enforcement without waiting 30s.
-	_, err := p.waitResponse(100 * time.Millisecond)
+	_, err := p.waitResponse(context.Background(),100 * time.Millisecond)
 	if err == nil {
 		t.Fatal("expected timeout error from hanging plugin")
 	}
@@ -997,12 +998,12 @@ func TestHangingPluginTimeout(t *testing.T) {
 
 func TestExecuteToolOnClosedProcess(t *testing.T) {
 	p := startTestPlugin(t, "echo_caps")
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 	p.Stop()
 
-	_, _, err := p.ExecuteTool("call-after-close", "echo", nil)
+	_, _, err := p.ExecuteTool(context.Background(),"call-after-close", "echo", nil)
 	if err == nil {
 		t.Fatal("expected error from ExecuteTool on closed process")
 	}
@@ -1013,12 +1014,12 @@ func TestExecuteToolOnClosedProcess(t *testing.T) {
 
 func TestExecuteCommandOnClosedProcess(t *testing.T) {
 	p := startTestPlugin(t, "echo_caps")
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 	p.Stop()
 
-	_, _, err := p.ExecuteCommand("greet", "world")
+	_, _, err := p.ExecuteCommand(context.Background(),"greet", "world")
 	if err == nil {
 		t.Fatal("expected error from ExecuteCommand on closed process")
 	}
@@ -1031,12 +1032,12 @@ func TestExecuteCommandOnClosedProcess(t *testing.T) {
 
 func TestAutoRestart_RecoverFromCrash(t *testing.T) {
 	p := startTestPlugin(t, "echo_caps")
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
 	// Verify the plugin works before crash.
-	content, _, err := p.ExecuteTool("pre-crash", "echo", nil)
+	content, _, err := p.ExecuteTool(context.Background(),"pre-crash", "echo", nil)
 	if err != nil {
 		t.Fatalf("ExecuteTool before crash: %v", err)
 	}
@@ -1072,7 +1073,7 @@ func TestAutoRestart_RecoverFromCrash(t *testing.T) {
 	}
 
 	// Verify plugin works after restart.
-	content, _, err = p.ExecuteTool("post-crash", "echo", nil)
+	content, _, err = p.ExecuteTool(context.Background(),"post-crash", "echo", nil)
 	if err != nil {
 		t.Fatalf("ExecuteTool after restart: %v", err)
 	}
@@ -1087,7 +1088,7 @@ func TestAutoRestart_RecoverFromCrash(t *testing.T) {
 
 func TestAutoRestart_NoRestartOnCleanShutdown(t *testing.T) {
 	p := startTestPlugin(t, "echo_caps")
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -1112,7 +1113,7 @@ func TestAutoRestart_NoRestartOnCleanShutdown(t *testing.T) {
 
 func TestAutoRestart_MaxAttemptsExhausted(t *testing.T) {
 	p := startTestPlugin(t, "echo_caps")
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -1155,7 +1156,7 @@ func TestAutoRestart_MaxAttemptsExhausted(t *testing.T) {
 
 func TestAutoRestart_RestartingState(t *testing.T) {
 	p := startTestPlugin(t, "echo_caps")
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -1208,7 +1209,7 @@ func TestAutoRestart_RestartingState(t *testing.T) {
 
 func TestAutoRestart_StopDuringRestart(t *testing.T) {
 	p := startTestPlugin(t, "echo_caps")
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -1262,7 +1263,7 @@ func TestAutoRestart_NoGoroutineLeakOnFailedRespawn(t *testing.T) {
 	goroutinesBefore := runtime.NumGoroutine()
 
 	p := startTestPlugin(t, "echo_caps")
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -1330,7 +1331,7 @@ func TestDefaultRestartConfig(t *testing.T) {
 
 func TestHeartbeat_Success(t *testing.T) {
 	p := startTestPlugin(t, "heartbeat_ack")
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -1367,7 +1368,7 @@ func TestHeartbeat_Success(t *testing.T) {
 
 func TestHeartbeat_Timeout(t *testing.T) {
 	p := startTestPlugin(t, "heartbeat_slow")
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -1387,7 +1388,7 @@ func TestHeartbeat_Timeout(t *testing.T) {
 
 func TestHeartbeat_OldPluginIgnores(t *testing.T) {
 	p := startTestPlugin(t, "heartbeat_ignore")
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -1405,7 +1406,7 @@ func TestHeartbeat_OldPluginIgnores(t *testing.T) {
 
 func TestHeartbeat_ClosedProcess(t *testing.T) {
 	p := startTestPlugin(t, "heartbeat_ack")
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 	p.Stop()
@@ -1421,7 +1422,7 @@ func TestHeartbeat_ClosedProcess(t *testing.T) {
 
 func TestHeartbeat_DoesNotInterfereWithTools(t *testing.T) {
 	p := startTestPlugin(t, "heartbeat_ack")
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -1435,7 +1436,7 @@ func TestHeartbeat_DoesNotInterfereWithTools(t *testing.T) {
 	}
 
 	// Tool call should still work.
-	content, isError, err := p.ExecuteTool("call-1", "echo", nil)
+	content, isError, err := p.ExecuteTool(context.Background(),"call-1", "echo", nil)
 	if err != nil {
 		t.Fatalf("ExecuteTool: %v", err)
 	}
@@ -1490,7 +1491,7 @@ func TestToolTimeout_NoGoroutineLeak(t *testing.T) {
 	goroutinesBefore := runtime.NumGoroutine()
 
 	p := startTestPlugin(t, "slow_tool")
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -1504,7 +1505,7 @@ func TestToolTimeout_NoGoroutineLeak(t *testing.T) {
 			ID:   fmt.Sprintf("timeout-%d", i),
 			Name: "slow",
 		})
-		_, err := p.waitResponse(10 * time.Millisecond)
+		_, err := p.waitResponse(context.Background(),10 * time.Millisecond)
 		if err != nil {
 			timeouts++
 		}
@@ -1614,7 +1615,7 @@ func TestTimeoutConfigFromManifest_ZeroUsesDefaults(t *testing.T) {
 
 func TestExecuteTool_CustomTimeout(t *testing.T) {
 	p := startTestPlugin(t, "hang_on_tool")
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -1622,7 +1623,7 @@ func TestExecuteTool_CustomTimeout(t *testing.T) {
 	p.SetTimeouts(TimeoutConfig{ToolTimeout: 50 * time.Millisecond})
 
 	start := time.Now()
-	_, _, err := p.ExecuteTool("call-short", "anything", nil)
+	_, _, err := p.ExecuteTool(context.Background(),"call-short", "anything", nil)
 	elapsed := time.Since(start)
 
 	if err == nil {
@@ -1642,7 +1643,7 @@ func TestExecuteCommand_CustomTimeout(t *testing.T) {
 	// which hangs on tool_call. For commands, it just never responds (no
 	// command handler), so it will also timeout.
 	p := startTestPlugin(t, "hang_on_tool")
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -1650,7 +1651,7 @@ func TestExecuteCommand_CustomTimeout(t *testing.T) {
 	p.SetTimeouts(TimeoutConfig{CommandTimeout: 50 * time.Millisecond})
 
 	start := time.Now()
-	_, _, err := p.ExecuteCommand("anything", "args")
+	_, _, err := p.ExecuteCommand(context.Background(),"anything", "args")
 	elapsed := time.Since(start)
 
 	if err == nil {
@@ -1666,14 +1667,14 @@ func TestExecuteCommand_CustomTimeout(t *testing.T) {
 
 func TestExecuteTool_KillsProcessOnTimeout(t *testing.T) {
 	p := startTestPlugin(t, "hang_on_tool")
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
 	// Set a very short tool timeout.
 	p.SetTimeouts(TimeoutConfig{ToolTimeout: 50 * time.Millisecond})
 
-	_, _, err := p.ExecuteTool("call-kill", "anything", nil)
+	_, _, err := p.ExecuteTool(context.Background(),"call-kill", "anything", nil)
 	if err == nil {
 		t.Fatal("expected timeout error")
 	}
@@ -1718,7 +1719,7 @@ func TestHandleTimeout_NilCmd(t *testing.T) {
 
 func TestUIRequests_Routing(t *testing.T) {
 	p := startTestPlugin(t, "ui_requests")
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -1762,7 +1763,7 @@ func TestUIRequests_Routing(t *testing.T) {
 
 func TestRespondToUIRequest(t *testing.T) {
 	p := startTestPlugin(t, "ui_requests")
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 

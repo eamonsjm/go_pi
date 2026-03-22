@@ -159,14 +159,14 @@ func (m *Manager) startAndRegisterWithManifest(name, execPath string, manifest *
 // Initialize sends the initialize message to all loaded plugins and registers
 // their tools and commands. Plugins that fail initialization or registration
 // are stopped and removed.
-func (m *Manager) Initialize(cfg PluginConfig) error {
+func (m *Manager) Initialize(ctx context.Context, cfg PluginConfig) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	var alive []*PluginProcess
 
 	for _, p := range m.plugins {
-		if err := m.initializePlugin(p, cfg); err != nil {
+		if err := m.initializePlugin(ctx, p, cfg); err != nil {
 			log.Printf("plugin: %s initialization failed: %v", p.name, err)
 			continue
 		}
@@ -186,8 +186,8 @@ func (m *Manager) Initialize(cfg PluginConfig) error {
 // initializePlugin initializes a single plugin and registers its tools.
 // If any step after successful Initialize() fails (including panics during
 // tool registration), the plugin process is stopped to prevent leaks.
-func (m *Manager) initializePlugin(p *PluginProcess, cfg PluginConfig) (retErr error) {
-	if err := p.Initialize(cfg); err != nil {
+func (m *Manager) initializePlugin(ctx context.Context, p *PluginProcess, cfg PluginConfig) (retErr error) {
+	if err := p.Initialize(ctx, cfg); err != nil {
 		if stopErr := p.Stop(); stopErr != nil {
 			log.Printf("plugin %s: cleanup: failed to stop after init failure: %v", p.name, stopErr)
 		}

@@ -39,7 +39,7 @@ func TestPluginTool_NameDescriptionSchema(t *testing.T) {
 
 func TestPluginTool_Execute_Success(t *testing.T) {
 	p := startTestPlugin(t, "echo_caps")
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -59,7 +59,7 @@ func TestPluginTool_Execute_Success(t *testing.T) {
 
 func TestPluginTool_Execute_PluginError(t *testing.T) {
 	p := startTestPlugin(t, "tool_error")
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -83,7 +83,7 @@ func TestPluginTool_Execute_PluginError(t *testing.T) {
 
 func TestPluginTool_Execute_DeadProcess(t *testing.T) {
 	p := startTestPlugin(t, "echo_caps")
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 	p.Stop()

@@ -280,7 +280,7 @@ func TestInitialize_RegistersTools(t *testing.T) {
 	m := NewManager(reg)
 	m.plugins = []*PluginProcess{p}
 
-	err := m.Initialize(PluginConfig{})
+	err := m.Initialize(context.Background(), PluginConfig{})
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
@@ -305,7 +305,7 @@ func TestInitialize_SkipsDuplicateTools(t *testing.T) {
 	m := NewManager(reg)
 	m.plugins = []*PluginProcess{p}
 
-	m.Initialize(PluginConfig{})
+	m.Initialize(context.Background(), PluginConfig{})
 
 	// The existing tool should remain (not be replaced).
 	tool, _ := reg.Get("echo")
@@ -322,7 +322,7 @@ func TestInitialize_RemovesFailedPlugins(t *testing.T) {
 	m := NewManager(reg)
 	m.plugins = []*PluginProcess{bad, good}
 
-	m.Initialize(PluginConfig{})
+	m.Initialize(context.Background(), PluginConfig{})
 
 	if len(m.plugins) != 1 {
 		t.Fatalf("plugins = %d, want 1 (failed plugin should be removed)", len(m.plugins))
@@ -334,7 +334,7 @@ func TestInitialize_RemovesFailedPlugins(t *testing.T) {
 
 func TestShutdown(t *testing.T) {
 	p := startTestPlugin(t, "echo_caps")
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -353,7 +353,7 @@ func TestShutdown(t *testing.T) {
 
 func TestPluginTools(t *testing.T) {
 	p := startTestPlugin(t, "echo_caps")
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -372,7 +372,7 @@ func TestPluginTools(t *testing.T) {
 
 func TestPluginCommands(t *testing.T) {
 	p := startTestPlugin(t, "echo_caps")
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -391,7 +391,7 @@ func TestPluginCommands(t *testing.T) {
 
 func TestForwardEvent(t *testing.T) {
 	p := startTestPlugin(t, "echo_caps")
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -412,7 +412,7 @@ func TestForwardEvent(t *testing.T) {
 
 func TestForwardEvent_SkipsDeadPlugins(t *testing.T) {
 	p := startTestPlugin(t, "echo_caps")
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 	p.Stop()
@@ -526,7 +526,7 @@ func TestInitialize_StopsPluginOnRegistrationPanic(t *testing.T) {
 		toolRegistry: nil,
 	}
 
-	err := m.Initialize(PluginConfig{})
+	err := m.Initialize(context.Background(), PluginConfig{})
 	if err != nil {
 		t.Fatalf("Initialize returned error: %v", err)
 	}
@@ -544,7 +544,7 @@ func TestInitialize_StopsPluginOnRegistrationPanic(t *testing.T) {
 
 func TestStartHeartbeats_SendsPeriodicHeartbeats(t *testing.T) {
 	p := startTestPlugin(t, "heartbeat_ack")
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -598,7 +598,7 @@ func TestPluginHealthy_UnknownPlugin(t *testing.T) {
 
 func TestShutdown_StopsHeartbeats(t *testing.T) {
 	p := startTestPlugin(t, "heartbeat_ack")
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 

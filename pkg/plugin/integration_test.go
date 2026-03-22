@@ -108,7 +108,7 @@ func TestIntegration_InitializationHandshake(t *testing.T) {
 	bin := buildTestPlugin(t)
 	p := startIntegrationPlugin(t, bin, "normal")
 
-	err := p.Initialize(PluginConfig{
+	err := p.Initialize(context.Background(), PluginConfig{
 		Cwd:       "/tmp",
 		Model:     "test-model",
 		Provider:  "test",
@@ -145,12 +145,12 @@ func TestIntegration_ToolCallRoundTrip(t *testing.T) {
 	bin := buildTestPlugin(t)
 	p := startIntegrationPlugin(t, bin, "normal")
 
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
 	// Test reverse tool.
-	content, isError, err := p.ExecuteTool("call-1", "reverse", map[string]any{"text": "hello"})
+	content, isError, err := p.ExecuteTool(context.Background(),"call-1", "reverse", map[string]any{"text": "hello"})
 	if err != nil {
 		t.Fatalf("ExecuteTool reverse: %v", err)
 	}
@@ -162,7 +162,7 @@ func TestIntegration_ToolCallRoundTrip(t *testing.T) {
 	}
 
 	// Test upper tool.
-	content, isError, err = p.ExecuteTool("call-2", "upper", map[string]any{"text": "hello"})
+	content, isError, err = p.ExecuteTool(context.Background(),"call-2", "upper", map[string]any{"text": "hello"})
 	if err != nil {
 		t.Fatalf("ExecuteTool upper: %v", err)
 	}
@@ -178,11 +178,11 @@ func TestIntegration_ToolCallUnknownTool(t *testing.T) {
 	bin := buildTestPlugin(t)
 	p := startIntegrationPlugin(t, bin, "normal")
 
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
-	content, isError, err := p.ExecuteTool("call-unk", "nonexistent", nil)
+	content, isError, err := p.ExecuteTool(context.Background(),"call-unk", "nonexistent", nil)
 	if err != nil {
 		t.Fatalf("ExecuteTool: %v", err)
 	}
@@ -198,11 +198,11 @@ func TestIntegration_CommandExecution(t *testing.T) {
 	bin := buildTestPlugin(t)
 	p := startIntegrationPlugin(t, bin, "normal")
 
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
-	text, isError, err := p.ExecuteCommand("test-cmd", "arg1 arg2")
+	text, isError, err := p.ExecuteCommand(context.Background(),"test-cmd", "arg1 arg2")
 	if err != nil {
 		t.Fatalf("ExecuteCommand: %v", err)
 	}
@@ -218,11 +218,11 @@ func TestIntegration_CommandUnknown(t *testing.T) {
 	bin := buildTestPlugin(t)
 	p := startIntegrationPlugin(t, bin, "normal")
 
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
-	text, isError, err := p.ExecuteCommand("bogus", "")
+	text, isError, err := p.ExecuteCommand(context.Background(),"bogus", "")
 	if err != nil {
 		t.Fatalf("ExecuteCommand: %v", err)
 	}
@@ -238,7 +238,7 @@ func TestIntegration_EventForwarding(t *testing.T) {
 	bin := buildTestPlugin(t)
 	p := startIntegrationPlugin(t, bin, "event_recorder")
 
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -258,7 +258,7 @@ func TestIntegration_EventForwarding(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// Query recorded events.
-	content, isError, err := p.ExecuteTool("call-ev", "get_events", nil)
+	content, isError, err := p.ExecuteTool(context.Background(),"call-ev", "get_events", nil)
 	if err != nil {
 		t.Fatalf("ExecuteTool get_events: %v", err)
 	}
@@ -289,7 +289,7 @@ func TestIntegration_InjectMessage(t *testing.T) {
 	bin := buildTestPlugin(t)
 	p := startIntegrationPlugin(t, bin, "inject_on_init")
 
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -330,7 +330,7 @@ func TestIntegration_GracefulShutdown(t *testing.T) {
 	bin := buildTestPlugin(t)
 	p := startIntegrationPlugin(t, bin, "normal")
 
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -358,12 +358,12 @@ func TestIntegration_CrashRecovery(t *testing.T) {
 	bin := buildTestPlugin(t)
 	p := startIntegrationPlugin(t, bin, "crash_on_tool")
 
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
 	// Sending a tool call causes the plugin to crash.
-	_, _, err := p.ExecuteTool("call-crash", "crash", nil)
+	_, _, err := p.ExecuteTool(context.Background(),"call-crash", "crash", nil)
 	if err == nil {
 		t.Fatal("expected error from crashed plugin")
 	}
@@ -428,7 +428,7 @@ func TestIntegration_InitTimeout(t *testing.T) {
 		t.Fatalf("Send initialize: %v", err)
 	}
 
-	_, err = p.waitResponse(200 * time.Millisecond)
+	_, err = p.waitResponse(context.Background(), 200*time.Millisecond)
 	if err == nil {
 		t.Fatal("expected timeout error from slow init")
 	}
@@ -481,7 +481,7 @@ func TestIntegration_ManagerDiscoverAndInitialize(t *testing.T) {
 		t.Fatalf("plugins = %d, want 1", len(m.plugins))
 	}
 
-	if err := m.Initialize(PluginConfig{
+	if err := m.Initialize(context.Background(), PluginConfig{
 		Cwd:       "/tmp",
 		Model:     "test",
 		Provider:  "test",
@@ -527,7 +527,7 @@ func TestIntegration_ManagerForwardEvent(t *testing.T) {
 	bin := buildTestPlugin(t)
 	p := startIntegrationPlugin(t, bin, "event_recorder")
 
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -548,7 +548,7 @@ func TestIntegration_ManagerForwardEvent(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// Query the plugin to verify events were received.
-	content, _, err := p.ExecuteTool("call-check", "get_events", nil)
+	content, _, err := p.ExecuteTool(context.Background(),"call-check", "get_events", nil)
 	if err != nil {
 		t.Fatalf("ExecuteTool: %v", err)
 	}
@@ -577,7 +577,7 @@ func TestIntegration_ManagerLoadPlugin(t *testing.T) {
 		t.Fatalf("plugins = %d, want 1", len(m.plugins))
 	}
 
-	if err := m.Initialize(PluginConfig{}); err != nil {
+	if err := m.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -593,7 +593,7 @@ func TestIntegration_MultipleToolCallsSequential(t *testing.T) {
 	bin := buildTestPlugin(t)
 	p := startIntegrationPlugin(t, bin, "normal")
 
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -610,7 +610,7 @@ func TestIntegration_MultipleToolCallsSequential(t *testing.T) {
 	}
 
 	for i, tc := range cases {
-		content, isError, err := p.ExecuteTool(
+		content, isError, err := p.ExecuteTool(context.Background(),
 			fmt.Sprintf("call-%d", i),
 			tc.tool,
 			map[string]any{"text": tc.text},
@@ -631,7 +631,7 @@ func TestIntegration_ToolCallAfterEvent(t *testing.T) {
 	bin := buildTestPlugin(t)
 	p := startIntegrationPlugin(t, bin, "normal")
 
-	if err := p.Initialize(PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -640,7 +640,7 @@ func TestIntegration_ToolCallAfterEvent(t *testing.T) {
 		t.Fatalf("SendEvent: %v", err)
 	}
 
-	content, _, err := p.ExecuteTool("interleave-1", "reverse", map[string]any{"text": "test"})
+	content, _, err := p.ExecuteTool(context.Background(),"interleave-1", "reverse", map[string]any{"text": "test"})
 	if err != nil {
 		t.Fatalf("ExecuteTool after event: %v", err)
 	}
@@ -652,7 +652,7 @@ func TestIntegration_ToolCallAfterEvent(t *testing.T) {
 		t.Fatalf("SendEvent: %v", err)
 	}
 
-	content, _, err = p.ExecuteTool("interleave-2", "upper", map[string]any{"text": "test"})
+	content, _, err = p.ExecuteTool(context.Background(),"interleave-2", "upper", map[string]any{"text": "test"})
 	if err != nil {
 		t.Fatalf("ExecuteTool after second event: %v", err)
 	}
@@ -673,7 +673,7 @@ func TestUIRequest(t *testing.T) {
 		Provider:  "test",
 		GiVersion: "0.1.0",
 	}
-	if err := p.Initialize(cfg); err != nil {
+	if err := p.Initialize(context.Background(), cfg); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -700,7 +700,7 @@ func TestUIRequest(t *testing.T) {
 	p2 := startIntegrationPlugin(t, binPath, "ui_request")
 	defer p2.Stop()
 
-	if err := p2.Initialize(cfg); err != nil {
+	if err := p2.Initialize(context.Background(), cfg); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
