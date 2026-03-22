@@ -91,11 +91,42 @@ func NewAgentLoop(provider ai.Provider, toolRegistry *tools.Registry, opts ...Op
 	return a
 }
 
+// ensureInit lazily initializes channels that are nil on a zero-value
+// AgentLoop. This makes the zero value safe: callers who construct
+// &AgentLoop{} instead of using NewAgentLoop won't hit nil-channel panics.
+// The caller must NOT hold a.mu.
+func (a *AgentLoop) ensureInit() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.events == nil {
+		a.events = make(chan AgentEvent, eventBufSize)
+	}
+	if a.steerCh == nil {
+		a.steerCh = make(chan string, 2)
+	}
+	if a.followUpCh == nil {
+		a.followUpCh = make(chan string, 2)
+	}
+	if a.tools == nil {
+		a.tools = tools.NewRegistry()
+	}
+	if a.hooks == nil {
+		a.hooks = tools.NewHookRegistry()
+	}
+	if a.metrics == nil {
+		a.metrics = tools.NewMetrics()
+	}
+	if a.logger == nil {
+		a.logger = log.Default()
+	}
+}
+
 // Events returns the channel on which agent events are emitted.
 // The caller should read from this channel to receive real-time updates.
 // The channel is closed when the current Prompt call completes, so
 // a consumer using range will exit automatically.
 func (a *AgentLoop) Events() <-chan AgentEvent {
+	a.ensureInit()
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.events
@@ -185,6 +216,7 @@ func (a *AgentLoop) Cancel() {
 // remaining tool calls are skipped and the steering message is sent to the model
 // as a user turn. Safe to call from any goroutine.
 func (a *AgentLoop) Steer(text string) {
+	a.ensureInit()
 	select {
 	case a.steerCh <- text:
 	default:
@@ -195,6 +227,7 @@ func (a *AgentLoop) Steer(text string) {
 // FollowUp queues a follow-up user message that will be processed after the
 // current agent run finishes. Safe to call from any goroutine.
 func (a *AgentLoop) FollowUp(text string) {
+	a.ensureInit()
 	select {
 	case a.followUpCh <- text:
 	default:
@@ -207,6 +240,7 @@ func (a *AgentLoop) FollowUp(text string) {
 // throughout execution. Prompt blocks until the agent run completes or the context
 // is cancelled.
 func (a *AgentLoop) Prompt(ctx context.Context, text string) error {
+	a.ensureInit()
 	if a.provider == nil {
 		return ErrNoProvider
 	}

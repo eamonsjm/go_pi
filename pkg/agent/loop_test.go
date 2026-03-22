@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -1217,4 +1218,64 @@ func TestDoTurnStreamErrorDrainsChannel(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("producer goroutine did not exit; stream was not drained after error")
 	}
+}
+
+// TestZeroValueAgentLoop verifies that a zero-value AgentLoop does not panic.
+// Before the ensureInit fix, close(nil) on the events channel caused a panic.
+func TestZeroValueAgentLoop(t *testing.T) {
+	t.Run("Prompt with provider does not panic", func(t *testing.T) {
+		a := &AgentLoop{}
+		a.SetProvider(&mockProvider{streamFn: textResponse("ok")})
+		// Must not panic on nil channel close.
+		err := a.Prompt(context.Background(), "hello")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("Prompt without provider returns ErrNoProvider", func(t *testing.T) {
+		a := &AgentLoop{}
+		err := a.Prompt(context.Background(), "hello")
+		if !errors.Is(err, ErrNoProvider) {
+			t.Fatalf("expected ErrNoProvider, got %v", err)
+		}
+	})
+
+	t.Run("Steer on zero value does not block or panic", func(t *testing.T) {
+		a := &AgentLoop{}
+		done := make(chan struct{})
+		go func() {
+			a.Steer("test")
+			close(done)
+		}()
+		select {
+		case <-done:
+			// ok
+		case <-time.After(time.Second):
+			t.Fatal("Steer blocked on zero-value AgentLoop")
+		}
+	})
+
+	t.Run("FollowUp on zero value does not block or panic", func(t *testing.T) {
+		a := &AgentLoop{}
+		done := make(chan struct{})
+		go func() {
+			a.FollowUp("test")
+			close(done)
+		}()
+		select {
+		case <-done:
+			// ok
+		case <-time.After(time.Second):
+			t.Fatal("FollowUp blocked on zero-value AgentLoop")
+		}
+	})
+
+	t.Run("Events on zero value returns non-nil channel", func(t *testing.T) {
+		a := &AgentLoop{}
+		ch := a.Events()
+		if ch == nil {
+			t.Fatal("Events() returned nil on zero-value AgentLoop")
+		}
+	})
 }
