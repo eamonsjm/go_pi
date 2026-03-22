@@ -442,13 +442,13 @@ func (p *PluginProcess) UIRequests() <-chan PluginMessage {
 }
 
 // Heartbeat sends a heartbeat message and waits for a heartbeat_ack within
-// the given timeout. If the plugin responds in time, health is marked true and
-// the status is stored. If the plugin does not respond, health is marked false.
+// the context's deadline. If the plugin responds in time, health is marked true
+// and the status is stored. If the context expires first, health is marked false.
 // Old plugins that don't recognize heartbeat simply won't respond; callers
 // should treat the first missed heartbeat as the signal to mark unhealthy
 // (the Manager handles backward compatibility by assuming healthy until the
 // first heartbeat is actually sent).
-func (p *PluginProcess) Heartbeat(timeout time.Duration) (*HeartbeatStatus, error) {
+func (p *PluginProcess) Heartbeat(ctx context.Context) (*HeartbeatStatus, error) {
 	p.mu.Lock()
 	if p.closed || p.restarting {
 		p.mu.Unlock()
@@ -464,9 +464,6 @@ func (p *PluginProcess) Heartbeat(timeout time.Duration) (*HeartbeatStatus, erro
 		return nil, err
 	}
 
-	timer := time.NewTimer(timeout)
-	defer timer.Stop()
-
 	select {
 	case msg, ok := <-heartbeatCh:
 		if !ok {
@@ -481,7 +478,7 @@ func (p *PluginProcess) Heartbeat(timeout time.Duration) (*HeartbeatStatus, erro
 		p.lastHeartbeatStatus = msg.Status
 		p.mu.Unlock()
 		return msg.Status, nil
-	case <-timer.C:
+	case <-ctx.Done():
 		p.mu.Lock()
 		p.healthy = false
 		p.mu.Unlock()
@@ -938,15 +935,13 @@ func (p *PluginProcess) respawn(ctx context.Context) error {
 	return nil
 }
 
-// WaitUIRequest waits for a ui_request message from the plugin with a timeout.
-// Returns the UI request message from the plugin or an error.
-func (p *PluginProcess) WaitUIRequest(timeout time.Duration) (PluginMessage, error) {
+// WaitUIRequest waits for a ui_request message from the plugin.
+// Returns the UI request message from the plugin or an error if the context
+// expires first.
+func (p *PluginProcess) WaitUIRequest(ctx context.Context) (PluginMessage, error) {
 	p.mu.Lock()
 	uiRequestCh := p.uiRequestCh
 	p.mu.Unlock()
-
-	timer := time.NewTimer(timeout)
-	defer timer.Stop()
 
 	select {
 	case msg, ok := <-uiRequestCh:
@@ -954,7 +949,7 @@ func (p *PluginProcess) WaitUIRequest(timeout time.Duration) (PluginMessage, err
 			return PluginMessage{}, fmt.Errorf("plugin %s: process exited", p.name)
 		}
 		return msg, nil
-	case <-timer.C:
+	case <-ctx.Done():
 		return PluginMessage{}, &timeoutError{plugin: p.name}
 	}
 }

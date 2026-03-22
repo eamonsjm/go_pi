@@ -269,14 +269,14 @@ func (m *Manager) StartHeartbeats(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				m.heartbeatAll(cfg.Timeout)
+				m.heartbeatAll(ctx, cfg.Timeout)
 			}
 		}
 	}()
 }
 
 // heartbeatAll sends a heartbeat to each alive plugin and logs unhealthy ones.
-func (m *Manager) heartbeatAll(timeout time.Duration) {
+func (m *Manager) heartbeatAll(ctx context.Context, timeout time.Duration) {
 	m.mu.RLock()
 	plugins := make([]*PluginProcess, len(m.plugins))
 	copy(plugins, m.plugins)
@@ -287,7 +287,9 @@ func (m *Manager) heartbeatAll(timeout time.Duration) {
 			continue
 		}
 
-		status, err := p.Heartbeat(timeout)
+		hbCtx, cancel := context.WithTimeout(ctx, timeout)
+		status, err := p.Heartbeat(hbCtx)
+		cancel()
 		if err != nil {
 			log.Printf("plugin %s: unhealthy: %v", p.name, err)
 			continue
