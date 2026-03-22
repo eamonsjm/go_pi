@@ -13,15 +13,17 @@ type normalizer struct {
 	fn   func(string) string
 }
 
-// normalizers is the ordered list of fuzzy-match normalizations applied when an
-// exact match fails. Each entry is tried independently against the original
-// file content — they are NOT composed. If a normalizer produces exactly one
-// match it wins; otherwise we continue to the next.
-var normalizers = []normalizer{
-	{"smart quotes → straight quotes", normalizeQuotes},
-	{"Unicode NFC normalization", normalizeUnicode},
-	{"whitespace normalization (tabs ↔ spaces)", normalizeWhitespace},
-	{"combined (quotes + unicode + whitespace)", normalizeCombined},
+// getNormalizers returns the ordered list of fuzzy-match normalizations applied
+// when an exact match fails. Each entry is tried independently against the
+// original file content — they are NOT composed. If a normalizer produces
+// exactly one match it wins; otherwise we continue to the next.
+func getNormalizers() []normalizer {
+	return []normalizer{
+		{"smart quotes → straight quotes", normalizeQuotes},
+		{"Unicode NFC normalization", normalizeUnicode},
+		{"whitespace normalization (tabs ↔ spaces)", normalizeWhitespace},
+		{"combined (quotes + unicode + whitespace)", normalizeCombined},
+	}
 }
 
 // normalizeQuotes replaces common smart/curly quote characters with their
@@ -71,7 +73,7 @@ func normalizeCombined(s string) string {
 //   - normName: which normalizer succeeded (for reporting)
 //   - found: whether a unique match was found
 func fuzzyFind(content, oldString string) (matchedContent string, normName string, found bool) {
-	for _, n := range normalizers {
+	for _, n := range getNormalizers() {
 		normContent := n.fn(content)
 		normOld := n.fn(oldString)
 

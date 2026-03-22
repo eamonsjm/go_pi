@@ -79,7 +79,11 @@ func main() {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Println("ERROR: Failed to read response body:", err)
+		os.Exit(1)
+	}
 
 	if resp.StatusCode == 401 {
 		fmt.Printf("  ✓ API is reachable (got 401 Unauthorized - expected without proper auth)\n")

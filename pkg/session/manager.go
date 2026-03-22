@@ -82,7 +82,8 @@ type Manager struct {
 // The directory is created if it does not exist.
 func NewManager(dir string) *Manager {
 	return &Manager{
-		dir: dir,
+		dir:             dir,
+		skippedToolUses: make(map[string]bool),
 	}
 }
 
@@ -407,9 +408,6 @@ func (m *Manager) SaveMessage(msg ai.Message) error {
 	if msg.Role == ai.RoleAssistant {
 		if skippedIDs := m.findDuplicateToolUseIDs(msg); len(skippedIDs) > 0 {
 			m.mu.Lock()
-			if m.skippedToolUses == nil {
-				m.skippedToolUses = make(map[string]bool)
-			}
 			for _, id := range skippedIDs {
 				m.skippedToolUses[id] = true
 			}

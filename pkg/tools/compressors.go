@@ -278,7 +278,6 @@ func (c *GitLogCompactor) compact(output string) string {
 	result := make([]string, 0, len(lines))
 	var inMessage bool
 	var messageLines int
-	var currentCommit string
 
 	commitPattern := gitCommitPattern
 	authorPattern := gitAuthorPattern
@@ -298,8 +297,7 @@ func (c *GitLogCompactor) compact(output string) string {
 			hash := matches[1]
 			// At high compression, only keep short hash
 			if c.level == CompressionHigh {
-				currentCommit = hash[:7]
-				result = append(result, "commit "+currentCommit)
+				result = append(result, "commit "+hash[:7])
 			} else {
 				result = append(result, line)
 			}

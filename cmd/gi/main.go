@@ -674,7 +674,9 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 	// Set UI response callback
 	app.SetUIResponseCallback(func(response *tui.PluginUIResponseMsg) {
 		if proc, ok := pluginsByName[response.PluginName]; ok {
-			_ = proc.RespondToUIRequest(response.ID, response.Value, response.Closed, response.Error)
+			if err := proc.RespondToUIRequest(response.ID, response.Value, response.Closed, response.Error); err != nil {
+				log.Printf("plugin %s: UI response error: %v", response.PluginName, err)
+			}
 		}
 	})
 

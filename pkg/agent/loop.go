@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -11,6 +12,9 @@ import (
 	"github.com/ejm/go_pi/pkg/ai"
 	"github.com/ejm/go_pi/pkg/tools"
 )
+
+// ErrNoProvider is returned when Prompt is called without a configured AI provider.
+var ErrNoProvider = errors.New("no AI provider configured")
 
 const eventBufSize = 1024
 
@@ -199,7 +203,7 @@ func (a *AgentLoop) FollowUp(text string) {
 // is cancelled.
 func (a *AgentLoop) Prompt(ctx context.Context, text string) error {
 	if a.provider == nil {
-		return fmt.Errorf("no AI provider configured. Set an API key (ANTHROPIC_API_KEY, OPENROUTER_API_KEY, or OPENAI_API_KEY) and restart pi")
+		return ErrNoProvider
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	a.mu.Lock()
@@ -534,7 +538,8 @@ func (a *AgentLoop) executeTool(ctx context.Context, tc ai.ContentBlock) ai.Mess
 		}
 
 		// Fire after-execution hooks
-		resultText, hookErr := a.hooks.After(ctx, tc.ToolName, params, resultText, nil)
+		var hookErr error
+		resultText, hookErr = a.hooks.After(ctx, tc.ToolName, params, resultText, nil)
 		if hookErr != nil {
 			isError = true
 			resultText = hookErr.Error()
@@ -563,7 +568,8 @@ func (a *AgentLoop) executeTool(ctx context.Context, tc ai.ContentBlock) ai.Mess
 	originalSize := len(result)
 
 	// Fire after-execution hooks
-	result, hookErr := a.hooks.After(ctx, tc.ToolName, params, result, nil)
+	var hookErr error
+	result, hookErr = a.hooks.After(ctx, tc.ToolName, params, result, nil)
 	if hookErr != nil {
 		isError = true
 		result = hookErr.Error()

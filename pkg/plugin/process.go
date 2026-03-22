@@ -553,6 +553,8 @@ func (p *PluginProcess) Stop() error {
 				log.Printf("plugin %s: cleanup: failed to kill process after shutdown timeout: %v", p.name, err)
 			}
 		}
+		// Drain the Wait goroutine to prevent a leak after Kill.
+		<-done
 		return fmt.Errorf("plugin %s: killed after shutdown timeout", p.name)
 	}
 }

@@ -261,13 +261,24 @@ func (s *rpcServer) handlePrompt(ctx context.Context, cancel context.CancelFunc,
 	}()
 
 	var params PromptParams
-	if err := json.Unmarshal(req.Params, &params); err != nil || params.Text == "" {
+	if err := json.Unmarshal(req.Params, &params); err != nil {
 		s.sendResponse(Response{
 			JSONRPC: "2.0",
 			ID:      req.ID,
 			Error: &RPCError{
 				Code:    CodeInvalidParams,
-				Message: "Invalid params: expected {\"text\": \"...\"}",
+				Message: fmt.Sprintf("Invalid params: %v", err),
+			},
+		}, cancel)
+		return
+	}
+	if params.Text == "" {
+		s.sendResponse(Response{
+			JSONRPC: "2.0",
+			ID:      req.ID,
+			Error: &RPCError{
+				Code:    CodeInvalidParams,
+				Message: "Invalid params: \"text\" must not be empty",
 			},
 		}, cancel)
 		return

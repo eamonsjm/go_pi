@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -142,7 +143,9 @@ func (o *OpenAIOAuth) Login(ctx context.Context, cb OAuthCallbacks) (*Credential
 
 	server := &http.Server{Handler: mux}
 	go func() {
-		_ = server.Serve(listener)
+		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
+			log.Printf("oauth callback server: %v", err)
+		}
 	}()
 	defer func() {
 		// Use a timeout so Shutdown doesn't block indefinitely if a

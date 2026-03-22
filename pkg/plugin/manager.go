@@ -305,7 +305,9 @@ func (m *Manager) Shutdown() error {
 	// Stop heartbeat goroutine if running.
 	if m.heartbeatCancel != nil {
 		m.heartbeatCancel()
-		<-m.heartbeatDone
+		if m.heartbeatDone != nil {
+			<-m.heartbeatDone
+		}
 		m.heartbeatCancel = nil
 	}
 

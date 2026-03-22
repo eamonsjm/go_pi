@@ -46,7 +46,10 @@ func RunJSONStream(agentLoop *agent.AgentLoop, prompt string) {
 				sb.WriteString(scanner.Text())
 			}
 			if err := scanner.Err(); err != nil {
-				data, _ := json.Marshal(Event{Type: "error", Error: fmt.Sprintf("reading stdin: %v", err)})
+				data, mErr := json.Marshal(Event{Type: "error", Error: fmt.Sprintf("reading stdin: %v", err)})
+				if mErr != nil {
+					log.Fatalf("jsonstream: failed to marshal error event: %v", mErr)
+				}
 				if _, wErr := fmt.Fprintf(os.Stdout, "%s\n", data); wErr != nil {
 					log.Printf("jsonstream: failed to write error: %v", wErr)
 				}
@@ -55,7 +58,10 @@ func RunJSONStream(agentLoop *agent.AgentLoop, prompt string) {
 			prompt = sb.String()
 		}
 		if prompt == "" {
-			data, _ := json.Marshal(Event{Type: "error", Error: "no prompt provided"})
+			data, mErr := json.Marshal(Event{Type: "error", Error: "no prompt provided"})
+			if mErr != nil {
+				log.Fatalf("jsonstream: failed to marshal error event: %v", mErr)
+			}
 			if _, err := fmt.Fprintf(os.Stdout, "%s\n", data); err != nil {
 				log.Printf("jsonstream: failed to write error: %v", err)
 			}

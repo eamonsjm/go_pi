@@ -138,6 +138,7 @@ type Plugin struct {
 	mu     sync.Mutex
 	writer *json.Encoder
 	failed atomic.Bool
+	done   atomic.Bool // set by shutdown message for clean exit
 }
 
 // NewPlugin creates a new plugin with the given name.
@@ -246,7 +247,7 @@ func (p *Plugin) Run() {
 			continue
 		}
 		p.dispatch(msg)
-		if p.failed.Load() {
+		if p.failed.Load() || p.done.Load() {
 			return
 		}
 	}
@@ -280,7 +281,7 @@ func (p *Plugin) dispatch(msg hostMessage) {
 	case "event":
 		p.handleEvent(msg)
 	case "shutdown":
-		os.Exit(0)
+		p.done.Store(true)
 	}
 }
 
