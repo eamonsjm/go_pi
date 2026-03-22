@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -100,7 +101,7 @@ func TestStoreWithLock(t *testing.T) {
 	s, _ := NewStore(path)
 
 	called := false
-	err := s.WithLock(func() error {
+	err := s.WithLock(context.Background(), func() error {
 		called = true
 		return nil
 	})
@@ -114,6 +115,32 @@ func TestStoreWithLock(t *testing.T) {
 	// Lock file should exist.
 	if _, err := os.Stat(path + ".lock"); err != nil {
 		t.Errorf("lock file not created: %v", err)
+	}
+}
+
+func TestStoreLockRespectsContext(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "auth.json")
+	s1, _ := NewStore(path)
+	s2, _ := NewStore(path)
+
+	// Acquire lock with first store.
+	if err := s1.Lock(context.Background()); err != nil {
+		t.Fatalf("Lock s1: %v", err)
+	}
+	defer s1.Unlock()
+
+	// Try to acquire with an already-cancelled context — should fail immediately.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := s2.Lock(ctx)
+	if err == nil {
+		s2.Unlock()
+		t.Fatal("Lock with cancelled context should fail")
+	}
+	if !strings.Contains(err.Error(), "context canceled") {
+		t.Errorf("expected context canceled error, got: %v", err)
 	}
 }
 

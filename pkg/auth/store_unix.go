@@ -3,9 +3,11 @@
 package auth
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"syscall"
+	"time"
 )
 
 // checkFilePermissions verifies the auth store file is not group/world accessible.
@@ -27,9 +29,11 @@ func checkFilePermissions(path string) error {
 }
 
 // Lock acquires an exclusive file lock on the auth store.
+// It respects ctx for cancellation/timeout — if the context expires while
+// waiting for the lock, Lock returns with the context's error.
 // Callers must call Unlock when done (typically via defer).
 // The lock file is adjacent to auth.json (auth.json.lock).
-func (s *Store) Lock() error {
+func (s *Store) Lock(ctx context.Context) error {
 	lockPath := s.path + ".lock"
 
 	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600)
@@ -37,13 +41,22 @@ func (s *Store) Lock() error {
 		return fmt.Errorf("open lock file: %w", err)
 	}
 
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
-		_ = f.Close()
-		return fmt.Errorf("acquire lock: %w", err)
-	}
+	for {
+		if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err == nil {
+			s.lockFile = f
+			return nil
+		} else if err != syscall.EWOULDBLOCK {
+			_ = f.Close()
+			return fmt.Errorf("acquire lock: %w", err)
+		}
 
-	s.lockFile = f
-	return nil
+		select {
+		case <-ctx.Done():
+			_ = f.Close()
+			return fmt.Errorf("acquire lock: %w", ctx.Err())
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
 }
 
 // Unlock releases the file lock acquired by Lock. Safe to call if not locked.
