@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -599,5 +600,78 @@ func TestAnthropicOAuth_Login_EmptyCode(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected error for empty code")
+	}
+}
+
+func TestTokenResponse_String_RedactsSecrets(t *testing.T) {
+	tr := tokenResponse{
+		AccessToken:  "sk-secret-access-token",
+		RefreshToken: "rt-secret-refresh-token",
+		TokenType:    "bearer",
+		ExpiresIn:    3600,
+		APIKey:       "sk-ant-api-key",
+	}
+	s := tr.String()
+
+	if strings.Contains(s, "sk-secret-access-token") {
+		t.Error("String() leaks AccessToken")
+	}
+	if strings.Contains(s, "rt-secret-refresh-token") {
+		t.Error("String() leaks RefreshToken")
+	}
+	if strings.Contains(s, "sk-ant-api-key") {
+		t.Error("String() leaks APIKey")
+	}
+	if !strings.Contains(s, "[set]") {
+		t.Error("String() should show [set] for populated secret fields")
+	}
+	if !strings.Contains(s, "bearer") {
+		t.Error("String() should show TokenType")
+	}
+	if !strings.Contains(s, "3600") {
+		t.Error("String() should show ExpiresIn")
+	}
+}
+
+func TestTokenResponse_GoString(t *testing.T) {
+	tr := tokenResponse{AccessToken: "secret"}
+	s := fmt.Sprintf("%#v", tr)
+	if strings.Contains(s, "secret") {
+		t.Error("GoString() leaks AccessToken")
+	}
+}
+
+func TestTokenExchangeRequest_String_RedactsSecrets(t *testing.T) {
+	tr := tokenExchangeRequest{
+		GrantType:    "authorization_code",
+		ClientID:     "client-123",
+		Code:         "secret-auth-code",
+		CodeVerifier: "secret-verifier",
+		RefreshToken: "secret-refresh",
+	}
+	s := tr.String()
+
+	if strings.Contains(s, "secret-auth-code") {
+		t.Error("String() leaks Code")
+	}
+	if strings.Contains(s, "secret-verifier") {
+		t.Error("String() leaks CodeVerifier")
+	}
+	if strings.Contains(s, "secret-refresh") {
+		t.Error("String() leaks RefreshToken")
+	}
+	if !strings.Contains(s, "authorization_code") {
+		t.Error("String() should show GrantType")
+	}
+	if !strings.Contains(s, "client-123") {
+		t.Error("String() should show ClientID")
+	}
+}
+
+func TestTokenResponse_String_EmptyFields(t *testing.T) {
+	tr := tokenResponse{TokenType: "bearer"}
+	s := tr.String()
+	if !strings.Contains(s, "[empty]") {
+		t.Error("String() should show [empty] for unset secret fields")
 	}
 }

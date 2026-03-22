@@ -106,6 +106,15 @@ type tokenResponse struct {
 	APIKey       string `json:"api_key,omitempty"`
 }
 
+// String implements fmt.Stringer to prevent accidental logging of token values.
+func (t tokenResponse) String() string {
+	return fmt.Sprintf("tokenResponse{AccessToken:%s RefreshToken:%s TokenType:%s ExpiresIn:%d APIKey:%s}",
+		redact(t.AccessToken), redact(t.RefreshToken), t.TokenType, t.ExpiresIn, redact(t.APIKey))
+}
+
+// GoString implements fmt.GoStringer for %#v formatting.
+func (t tokenResponse) GoString() string { return t.String() }
+
 // tokenExchangeRequest is the JSON body sent to the token endpoint.
 type tokenExchangeRequest struct {
 	GrantType    string `json:"grant_type"`
@@ -115,6 +124,12 @@ type tokenExchangeRequest struct {
 	RedirectURI  string `json:"redirect_uri,omitempty"`
 	CodeVerifier string `json:"code_verifier,omitempty"`
 	RefreshToken string `json:"refresh_token,omitempty"`
+}
+
+// String implements fmt.Stringer to prevent accidental logging of sensitive fields.
+func (t tokenExchangeRequest) String() string {
+	return fmt.Sprintf("tokenExchangeRequest{GrantType:%s ClientID:%s Code:%s CodeVerifier:%s RefreshToken:%s}",
+		t.GrantType, t.ClientID, redact(t.Code), redact(t.CodeVerifier), redact(t.RefreshToken))
 }
 
 // tokenErrorResponse is the error response from the token endpoint.
