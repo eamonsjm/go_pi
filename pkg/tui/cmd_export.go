@@ -40,7 +40,10 @@ func NewExportCommand(sessionMgr *session.Manager) *SlashCommand {
 				// Determine output path.
 				outPath := strings.TrimSpace(args)
 				if outPath == "" {
-					home, _ := os.UserHomeDir()
+					home, err := os.UserHomeDir()
+					if err != nil {
+						return CommandResultMsg{Text: "Failed to determine home directory: " + err.Error(), IsError: true}
+					}
 					dir := filepath.Join(home, ".gi", "exports")
 					if err := os.MkdirAll(dir, 0o700); err != nil {
 						return CommandResultMsg{Text: "Failed to create export dir: " + err.Error(), IsError: true}
