@@ -23,10 +23,14 @@ type rtkUpdatedMsg struct {
 	value   string
 }
 
-// validCategories defines the set of recognised RTK compression categories.
-var validCategories = map[string]bool{
-	"git": true, "docker": true, "build": true,
-	"package": true, "test": true, "file": true, "other": true,
+// isValidCategory reports whether s is a recognised RTK compression category.
+func isValidCategory(s string) bool {
+	switch s {
+	case "git", "docker", "build", "package", "test", "file", "other":
+		return true
+	default:
+		return false
+	}
 }
 
 // NewRTKCommand returns a SlashCommand for /rtk that displays RTK metrics and
@@ -255,7 +259,7 @@ func rtkEnableCategory(category string, cfg *config.Config) tea.Cmd {
 		return rtkError("RTK not configured")
 	}
 
-	if !validCategories[category] {
+	if !isValidCategory(category) {
 		return rtkError(fmt.Sprintf("invalid category %q", category))
 	}
 
@@ -278,7 +282,7 @@ func rtkDisableCategory(category string, cfg *config.Config) tea.Cmd {
 		return rtkError("RTK not configured")
 	}
 
-	if !validCategories[category] {
+	if !isValidCategory(category) {
 		return rtkError(fmt.Sprintf("invalid category %q", category))
 	}
 

@@ -22,12 +22,20 @@ type settingsUpdatedMsg struct {
 	value string
 }
 
-// validThinkingLevels enumerates allowed values for the thinking setting.
-var validThinkingLevels = map[string]ai.ThinkingLevel{
-	"off":    ai.ThinkingOff,
-	"low":    ai.ThinkingLow,
-	"medium": ai.ThinkingMedium,
-	"high":   ai.ThinkingHigh,
+// parseThinkingLevel converts a string to the corresponding ThinkingLevel.
+func parseThinkingLevel(s string) (ai.ThinkingLevel, bool) {
+	switch s {
+	case "off":
+		return ai.ThinkingOff, true
+	case "low":
+		return ai.ThinkingLow, true
+	case "medium":
+		return ai.ThinkingMedium, true
+	case "high":
+		return ai.ThinkingHigh, true
+	default:
+		return "", false
+	}
 }
 
 // NewSettingsCommand returns a SlashCommand for /settings that displays and
@@ -102,7 +110,7 @@ func settingsUpdate(key, value string, cfg *config.Config, agentLoop *agent.Agen
 	switch key {
 
 	case "thinking":
-		level, ok := validThinkingLevels[value]
+		level, ok := parseThinkingLevel(value)
 		if !ok {
 			return settingsError(fmt.Sprintf("invalid thinking level %q — valid: off, low, medium, high", value))
 		}

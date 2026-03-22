@@ -817,8 +817,10 @@ func (a *App) handleAction(action Action) tea.Cmd {
 	return nil
 }
 
-// thinkingOrder defines the cycle order for thinking levels.
-var thinkingOrder = []string{"off", "low", "medium", "high"}
+// getThinkingOrder returns the cycle order for thinking levels.
+func getThinkingOrder() []string {
+	return []string{"off", "low", "medium", "high"}
+}
 
 // cycleThinking advances the thinking level to the next value in the cycle.
 func (a *App) cycleThinking() tea.Cmd {
@@ -827,16 +829,17 @@ func (a *App) cycleThinking() tea.Cmd {
 	}
 
 	current := a.cfg.ThinkingLevel
+	order := getThinkingOrder()
 	nextIdx := 0
-	for i, level := range thinkingOrder {
+	for i, level := range order {
 		if level == current {
-			nextIdx = (i + 1) % len(thinkingOrder)
+			nextIdx = (i + 1) % len(order)
 			break
 		}
 	}
 
-	next := thinkingOrder[nextIdx]
-	level := validThinkingLevels[next]
+	next := order[nextIdx]
+	level, _ := parseThinkingLevel(next)
 	a.cfg.ThinkingLevel = next
 	a.agentLoop.SetThinking(level)
 	a.header.SetThinking(level)
@@ -855,9 +858,10 @@ func (a *App) cycleModel(direction int) tea.Cmd {
 		return nil
 	}
 
+	models := getDefaultModels()
 	currentModel := a.cfg.DefaultModel
 	currentIdx := -1
-	for i, opt := range defaultModels {
+	for i, opt := range models {
 		if opt.Model == currentModel {
 			currentIdx = i
 			break
@@ -868,10 +872,10 @@ func (a *App) cycleModel(direction int) tea.Cmd {
 	if currentIdx < 0 {
 		nextIdx = 0
 	} else {
-		nextIdx = (currentIdx + direction + len(defaultModels)) % len(defaultModels)
+		nextIdx = (currentIdx + direction + len(models)) % len(models)
 	}
 
-	opt := defaultModels[nextIdx]
+	opt := models[nextIdx]
 	return func() tea.Msg {
 		return modelSelectedMsg{provider: opt.Provider, model: opt.Model}
 	}

@@ -29,9 +29,9 @@ type Theme struct {
 	GlamourStyle string `json:"glamour_style"` // "dark" or "light"
 }
 
-// Built-in themes.
-var (
-	DarkTheme = Theme{
+// darkTheme returns the built-in dark theme.
+func darkTheme() Theme {
+	return Theme{
 		Name:         "dark",
 		Primary:      "#7C3AED",
 		Secondary:    "#06B6D4",
@@ -48,8 +48,11 @@ var (
 		HeaderBg:     "#111827",
 		GlamourStyle: "dark",
 	}
+}
 
-	LightTheme = Theme{
+// lightTheme returns the built-in light theme.
+func lightTheme() Theme {
+	return Theme{
 		Name:         "light",
 		Primary:      "#7C3AED",
 		Secondary:    "#0891B2",
@@ -66,7 +69,7 @@ var (
 		HeaderBg:     "#F3F4F6",
 		GlamourStyle: "light",
 	}
-)
+}
 
 // ActiveTheme returns a copy of the current theme.
 func ActiveTheme() Theme {
@@ -90,13 +93,13 @@ func ResolveTheme(name string) (Theme, error) {
 	switch name {
 	case "", "auto":
 		if termenv.NewOutput(os.Stderr).HasDarkBackground() {
-			return DarkTheme, nil
+			return darkTheme(), nil
 		}
-		return LightTheme, nil
+		return lightTheme(), nil
 	case "dark":
-		return DarkTheme, nil
+		return darkTheme(), nil
 	case "light":
-		return LightTheme, nil
+		return lightTheme(), nil
 	default:
 		return loadCustomTheme(name)
 	}
@@ -122,7 +125,7 @@ func loadCustomTheme(name string) (Theme, error) {
 		}
 
 		// Start from dark theme defaults so partial themes work.
-		t := DarkTheme
+		t := darkTheme()
 		if err := json.Unmarshal(data, &t); err != nil {
 			return Theme{}, fmt.Errorf("load theme %s: %w", name, err)
 		}

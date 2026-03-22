@@ -68,7 +68,7 @@ type styleSnapshot struct {
 var currentStyles atomic.Pointer[styleSnapshot]
 
 func init() {
-	s := buildStyles(DarkTheme)
+	s := buildStyles(darkTheme())
 	currentStyles.Store(&s)
 }
 

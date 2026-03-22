@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 	"unicode/utf8"
 
 	"github.com/ejm/go_pi/pkg/ai"
@@ -15,40 +16,51 @@ type secretPattern struct {
 	Pattern *regexp.Regexp
 }
 
-// secretPatterns contains compiled regexes for common secret formats.
-var secretPatterns = []secretPattern{
-	// AWS access keys
-	{Name: "AWS access key", Pattern: regexp.MustCompile(`(?i)AKIA[0-9A-Z]{16}`)},
-	// AWS secret keys (40 char base64 near "aws" or "secret")
-	{Name: "AWS secret key", Pattern: regexp.MustCompile(`(?i)(?:aws.{0,20})?['\"]?[A-Za-z0-9/+=]{40}['\"]?\s*$`)},
+// getSecretPatterns returns compiled regexes for common secret formats.
+// The patterns are compiled once and reused across calls.
+func getSecretPatterns() []secretPattern {
+	secretPatternsOnce.Do(func() {
+		compiledSecretPatterns = []secretPattern{
+			// AWS access keys
+			{Name: "AWS access key", Pattern: regexp.MustCompile(`(?i)AKIA[0-9A-Z]{16}`)},
+			// AWS secret keys (40 char base64 near "aws" or "secret")
+			{Name: "AWS secret key", Pattern: regexp.MustCompile(`(?i)(?:aws.{0,20})?['\"]?[A-Za-z0-9/+=]{40}['\"]?\s*$`)},
 
-	// GitHub tokens
-	{Name: "GitHub token", Pattern: regexp.MustCompile(`(?:ghp|gho|ghs|ghr|github_pat)_[A-Za-z0-9_]{20,}`)},
+			// GitHub tokens
+			{Name: "GitHub token", Pattern: regexp.MustCompile(`(?:ghp|gho|ghs|ghr|github_pat)_[A-Za-z0-9_]{20,}`)},
 
-	// Generic API keys / tokens (key=value or key: value patterns)
-	{Name: "API key/token", Pattern: regexp.MustCompile(`(?i)(?:api[_-]?key|api[_-]?secret|access[_-]?token|auth[_-]?token|secret[_-]?key)\s*[=:]\s*['\"]?[A-Za-z0-9/+=_\-.]{16,}['\"]?`)},
+			// Generic API keys / tokens (key=value or key: value patterns)
+			{Name: "API key/token", Pattern: regexp.MustCompile(`(?i)(?:api[_-]?key|api[_-]?secret|access[_-]?token|auth[_-]?token|secret[_-]?key)\s*[=:]\s*['\"]?[A-Za-z0-9/+=_\-.]{16,}['\"]?`)},
 
-	// Passwords in config
-	{Name: "password", Pattern: regexp.MustCompile(`(?i)(?:password|passwd|pwd)\s*[=:]\s*['\"]?[^\s'"]{8,}['\"]?`)},
+			// Passwords in config
+			{Name: "password", Pattern: regexp.MustCompile(`(?i)(?:password|passwd|pwd)\s*[=:]\s*['\"]?[^\s'"]{8,}['\"]?`)},
 
-	// Private keys
-	{Name: "private key", Pattern: regexp.MustCompile(`-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----`)},
+			// Private keys
+			{Name: "private key", Pattern: regexp.MustCompile(`-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----`)},
 
-	// Bearer tokens
-	{Name: "bearer token", Pattern: regexp.MustCompile(`(?i)bearer\s+[A-Za-z0-9\-._~+/]+=*`)},
+			// Bearer tokens
+			{Name: "bearer token", Pattern: regexp.MustCompile(`(?i)bearer\s+[A-Za-z0-9\-._~+/]+=*`)},
 
-	// Connection strings with embedded credentials
-	{Name: "connection string", Pattern: regexp.MustCompile(`(?i)(?:mongodb|postgres|mysql|redis|amqp)(?:\+\w+)?://[^@\s]+:[^@\s]+@`)},
+			// Connection strings with embedded credentials
+			{Name: "connection string", Pattern: regexp.MustCompile(`(?i)(?:mongodb|postgres|mysql|redis|amqp)(?:\+\w+)?://[^@\s]+:[^@\s]+@`)},
 
-	// Slack tokens
-	{Name: "Slack token", Pattern: regexp.MustCompile(`xox[bpors]-[A-Za-z0-9-]+`)},
+			// Slack tokens
+			{Name: "Slack token", Pattern: regexp.MustCompile(`xox[bpors]-[A-Za-z0-9-]+`)},
 
-	// Stripe keys
-	{Name: "Stripe key", Pattern: regexp.MustCompile(`(?:sk|pk|rk)_(?:test|live)_[A-Za-z0-9]{20,}`)},
+			// Stripe keys
+			{Name: "Stripe key", Pattern: regexp.MustCompile(`(?:sk|pk|rk)_(?:test|live)_[A-Za-z0-9]{20,}`)},
 
-	// Generic long hex strings that look like secrets (32+ hex chars after a key-like label)
-	{Name: "hex secret", Pattern: regexp.MustCompile(`(?i)(?:secret|token|key|credential)\s*[=:]\s*['\"]?[0-9a-f]{32,}['\"]?`)},
+			// Generic long hex strings that look like secrets (32+ hex chars after a key-like label)
+			{Name: "hex secret", Pattern: regexp.MustCompile(`(?i)(?:secret|token|key|credential)\s*[=:]\s*['\"]?[0-9a-f]{32,}['\"]?`)},
+		}
+	})
+	return compiledSecretPatterns
 }
+
+var (
+	secretPatternsOnce    sync.Once
+	compiledSecretPatterns []secretPattern
+)
 
 // secretFinding records one detected secret in the session content.
 type secretFinding struct {
@@ -77,7 +89,7 @@ func scanMessagesForSecrets(msgs []ai.Message) []secretFinding {
 				continue
 			}
 
-			for _, sp := range secretPatterns {
+			for _, sp := range getSecretPatterns() {
 				matches := sp.Pattern.FindAllStringIndex(text, -1)
 				for _, loc := range matches {
 					excerpt := excerptAround(text, loc[0], loc[1])
@@ -155,7 +167,7 @@ func excerptAround(text string, start, end int) string {
 
 // redactSecrets replaces detected secret patterns in text with [REDACTED].
 func redactSecrets(text string) string {
-	for _, sp := range secretPatterns {
+	for _, sp := range getSecretPatterns() {
 		text = sp.Pattern.ReplaceAllStringFunc(text, func(match string) string {
 			// For key=value patterns, preserve the key portion
 			if eqIdx := strings.IndexAny(match, "=:"); eqIdx >= 0 {

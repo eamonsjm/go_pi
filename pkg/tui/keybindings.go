@@ -23,16 +23,28 @@ const (
 	ActionHistorySearch      Action = "history_search"
 )
 
-// actionDescriptions provides human-readable descriptions for /hotkeys display.
-var actionDescriptions = map[Action]string{
-	ActionToggleThinking:     "Toggle thinking block expand/collapse",
-	ActionToggleToolResult:   "Toggle tool result expand/collapse",
-	ActionCycleThinking:      "Cycle thinking level (off/low/medium/high)",
-	ActionCycleModelForward:  "Cycle to next model",
-	ActionCycleModelBackward: "Cycle to previous model",
-	ActionSuspend:            "Suspend (Ctrl+Z)",
-	ActionToggleMouse:        "Toggle mouse capture (for scroll vs text selection)",
-	ActionHistorySearch:      "Reverse-search prompt history",
+// actionDescription returns the human-readable description for a given action.
+func actionDescription(a Action) string {
+	switch a {
+	case ActionToggleThinking:
+		return "Toggle thinking block expand/collapse"
+	case ActionToggleToolResult:
+		return "Toggle tool result expand/collapse"
+	case ActionCycleThinking:
+		return "Cycle thinking level (off/low/medium/high)"
+	case ActionCycleModelForward:
+		return "Cycle to next model"
+	case ActionCycleModelBackward:
+		return "Cycle to previous model"
+	case ActionSuspend:
+		return "Suspend (Ctrl+Z)"
+	case ActionToggleMouse:
+		return "Toggle mouse capture (for scroll vs text selection)"
+	case ActionHistorySearch:
+		return "Reverse-search prompt history"
+	default:
+		return ""
+	}
 }
 
 // Binding represents a key-to-action mapping.
@@ -47,16 +59,18 @@ type KeybindingConfig struct {
 	keyToAction map[string]Action
 }
 
-// defaultBindings are the built-in keybindings for app-level actions.
-var defaultBindings = []Binding{
-	{Key: "ctrl+t", Action: ActionToggleThinking},
-	{Key: "alt+r", Action: ActionToggleToolResult},
-	{Key: "ctrl+r", Action: ActionHistorySearch},
-	{Key: "shift+tab", Action: ActionCycleThinking},
-	{Key: "ctrl+p", Action: ActionCycleModelForward},
-	{Key: "alt+p", Action: ActionCycleModelBackward},
-	{Key: "ctrl+z", Action: ActionSuspend},
-	{Key: "alt+m", Action: ActionToggleMouse},
+// getDefaultBindings returns the built-in keybindings for app-level actions.
+func getDefaultBindings() []Binding {
+	return []Binding{
+		{Key: "ctrl+t", Action: ActionToggleThinking},
+		{Key: "alt+r", Action: ActionToggleToolResult},
+		{Key: "ctrl+r", Action: ActionHistorySearch},
+		{Key: "shift+tab", Action: ActionCycleThinking},
+		{Key: "ctrl+p", Action: ActionCycleModelForward},
+		{Key: "alt+p", Action: ActionCycleModelBackward},
+		{Key: "ctrl+z", Action: ActionSuspend},
+		{Key: "alt+m", Action: ActionToggleMouse},
+	}
 }
 
 // LoadKeybindings loads keybinding configuration from ~/.gi/keybindings.json,
@@ -68,7 +82,7 @@ func LoadKeybindings() *KeybindingConfig {
 	}
 
 	// Apply defaults.
-	for _, b := range defaultBindings {
+	for _, b := range getDefaultBindings() {
 		kc.actionToKey[b.Action] = b.Key
 	}
 

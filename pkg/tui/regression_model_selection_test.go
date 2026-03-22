@@ -10,7 +10,7 @@ import (
 // ---------------------------------------------------------------------------
 // Model selection regression tests
 //
-// All tests use dynamic model names from defaultModels to avoid brittleness
+// All tests use dynamic model names from getDefaultModels() to avoid brittleness
 // when the model list changes (see gp-lq0u notes about the reverted
 // TestAppModelChangeNotification that hardcoded 'claude-opus').
 // ---------------------------------------------------------------------------
@@ -218,11 +218,11 @@ func TestModelSelectorView(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAppModelChangeNotification(t *testing.T) {
-	// Use dynamic model names from defaultModels to avoid brittleness.
-	if len(defaultModels) == 0 {
+	// Use dynamic model names from getDefaultModels() to avoid brittleness.
+	if len(getDefaultModels()) == 0 {
 		t.Skip("no default models defined")
 	}
-	testModel := defaultModels[0]
+	testModel := getDefaultModels()[0]
 
 	app := NewApp()
 
@@ -263,7 +263,7 @@ func TestAppModelChangeNotification_MultipleModels(t *testing.T) {
 	// Verify the callback works for every model in the catalogue.
 	app := NewApp()
 
-	for _, model := range defaultModels {
+	for _, model := range getDefaultModels() {
 		var gotProvider, gotModel string
 		app.SetModelChangeCallback(func(p, m string) {
 			gotProvider = p
@@ -457,7 +457,7 @@ func TestAppModelCommandIntegration(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestModelSelectorEndToEndFlow(t *testing.T) {
-	if len(defaultModels) == 0 {
+	if len(getDefaultModels()) == 0 {
 		t.Skip("no default models")
 	}
 
