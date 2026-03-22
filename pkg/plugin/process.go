@@ -737,6 +737,19 @@ func (p *PluginProcess) waitAndSupervise(stopCh <-chan struct{}) {
 	defer close(p.stopped)
 	defer p.readLoopWg.Wait() // ensure readLoop is done before signaling stopped
 
+	// Create a context that cancels when stopCh closes, so respawn's
+	// Initialize call is cancelled during shutdown.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go func() {
+		select {
+		case <-stopCh:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+
 	for {
 		p.mu.Lock()
 		cmd := p.cmd
@@ -799,7 +812,7 @@ func (p *PluginProcess) waitAndSupervise(stopCh <-chan struct{}) {
 				return
 			}
 
-			if err := p.respawn(); err != nil {
+			if err := p.respawn(ctx); err != nil {
 				log.Printf("plugin %s: restart attempt %d failed: %v", p.name, count, err)
 				// Loop continues — restartCount already incremented, will try again
 				// or give up if max attempts reached.
@@ -844,7 +857,7 @@ func (p *PluginProcess) waitAndSupervise(stopCh <-chan struct{}) {
 // respawn creates a new plugin subprocess, sets up communication channels,
 // and re-initializes the plugin. The old channels must already be closed
 // (by readLoop exiting) before calling this.
-func (p *PluginProcess) respawn() error {
+func (p *PluginProcess) respawn(ctx context.Context) error {
 	// Ensure the previous readLoop goroutine has fully exited before
 	// replacing channels and starting a new one.
 	p.readLoopWg.Wait()
@@ -900,7 +913,7 @@ func (p *PluginProcess) respawn() error {
 	p.applyMemoryLimit()
 
 	// Re-initialize the plugin with the saved config.
-	if err := p.Initialize(context.Background(), p.pluginCfg); err != nil {
+	if err := p.Initialize(ctx, p.pluginCfg); err != nil {
 		if killErr := cmd.Process.Kill(); killErr != nil {
 			log.Printf("plugin %s: cleanup: failed to kill process after re-init failure: %v", p.name, killErr)
 		}
