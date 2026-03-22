@@ -384,7 +384,7 @@ func resolveProvider(ctx context.Context, cfg *config.Config, resolver *auth.Res
 func buildSystemPrompt() string {
 	base := "You are Claude Code, Anthropic's official CLI for Claude."
 
-	var parts []string
+	parts := make([]string, 0, 4)
 	seenContent := make(map[string]bool)
 
 	// Walk directory tree from current to root, collecting files
@@ -744,7 +744,7 @@ func processFileArgs(args []string) (string, error) {
 		}
 	}
 
-	var parts []string
+	parts := make([]string, 0, 2)
 	if len(files) > 0 {
 		parts = append(parts, strings.Join(files, "\n\n"))
 	}

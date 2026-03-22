@@ -218,7 +218,7 @@ func (e *GoBuildErrorExtractor) extract(output string) string {
 		}
 	}
 
-	var result []string
+	result := make([]string, 0, len(fileErrors)+len(summaryErrors))
 
 	// At high compression, only show first unique error per file prefix
 	if e.level == CompressionHigh {
