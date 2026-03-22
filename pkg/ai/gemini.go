@@ -418,9 +418,8 @@ func (p *GeminiProvider) readSSEStream(ctx context.Context, body io.ReadCloser, 
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
 	var (
-		started     bool
-		usage       Usage
-		toolCallIdx int
+		started bool
+		usage   Usage
 	)
 
 	for scanner.Scan() {
@@ -467,7 +466,6 @@ func (p *GeminiProvider) readSSEStream(ctx context.Context, body io.ReadCloser, 
 		for _, part := range candidate.Content.Parts {
 			if part.FunctionCall != nil {
 				// Generate a tool call ID since Gemini doesn't provide one.
-				toolCallIdx++
 				toolID := nextToolCallID("gemini_call")
 
 				ch <- StreamEvent{

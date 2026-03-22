@@ -300,7 +300,6 @@ func (p *OllamaProvider) readStream(ctx context.Context, body io.ReadCloser, ch 
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
 	started := false
-	toolCallIdx := 0
 
 	for scanner.Scan() {
 		line := scanner.Bytes()
@@ -334,7 +333,6 @@ func (p *OllamaProvider) readStream(ctx context.Context, body io.ReadCloser, ch 
 		// Tool calls — Ollama emits complete tool calls in a single chunk.
 		for _, tc := range chunk.Message.ToolCalls {
 			callID := nextToolCallID("ollama_call")
-			toolCallIdx++
 
 			ch <- StreamEvent{
 				Type:       EventToolUseStart,
