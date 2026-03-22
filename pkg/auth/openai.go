@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"net"
 	"net/http"
@@ -118,7 +119,7 @@ func (o *OpenAIOAuth) Login(ctx context.Context, cb OAuthCallbacks) (*Credential
 			desc := r.URL.Query().Get("error_description")
 			w.Header().Set("Content-Type", "text/html")
 			_, _ = fmt.Fprintf(w, "<html><body><h2>Login Failed</h2><p>%s</p></body></html>",
-				strings.ReplaceAll(desc, "<", "&lt;"))
+				html.EscapeString(desc))
 			resultCh <- callbackResult{err: fmt.Errorf("oauth error: %s: %s", errParam, desc)}
 			return
 		}
