@@ -107,10 +107,13 @@ func (a *AgentLoop) Messages() []ai.Message {
 }
 
 // SetMessages replaces the conversation history (e.g. when restoring a session).
+// The input slice is copied to prevent the caller from mutating agent state.
 func (a *AgentLoop) SetMessages(msgs []ai.Message) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.messages = msgs
+	cp := make([]ai.Message, len(msgs))
+	copy(cp, msgs)
+	a.messages = cp
 }
 
 // SetModel changes the model used for subsequent LLM calls.

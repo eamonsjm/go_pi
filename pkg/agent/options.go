@@ -34,9 +34,12 @@ func WithSystemPrompt(prompt string) Option {
 }
 
 // WithMessages pre-loads conversation history (e.g. from a restored session).
+// The input slice is copied to prevent the caller from mutating agent state.
 func WithMessages(msgs []ai.Message) Option {
 	return func(a *AgentLoop) {
-		a.messages = msgs
+		cp := make([]ai.Message, len(msgs))
+		copy(cp, msgs)
+		a.messages = cp
 	}
 }
 
