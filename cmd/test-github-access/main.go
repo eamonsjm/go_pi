@@ -15,6 +15,13 @@ import (
 )
 
 func main() {
+	if err := run(); err != nil {
+		fmt.Fprintln(os.Stderr, "ERROR:", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	owner := flag.String("owner", "eamonsjm", "GitHub owner")
 	repo := flag.String("repo", "go_pi", "GitHub repo")
 	flag.Parse()
@@ -22,21 +29,18 @@ func main() {
 	// Get private key from environment
 	privKeyStr := os.Getenv("GITHUB_APP_PRIVATE_KEY")
 	if privKeyStr == "" {
-		fmt.Fprintln(os.Stderr, "ERROR: GITHUB_APP_PRIVATE_KEY not set")
-		os.Exit(1)
+		return fmt.Errorf("GITHUB_APP_PRIVATE_KEY not set")
 	}
 
 	// Parse the private key
 	block, _ := pem.Decode([]byte(privKeyStr))
 	if block == nil {
-		fmt.Fprintln(os.Stderr, "ERROR: Failed to parse private key PEM")
-		os.Exit(1)
+		return fmt.Errorf("failed to parse private key PEM")
 	}
 
 	privKey, err := x509.ParsePKCS1PrivateKey(block.Bytes)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "ERROR: Failed to parse RSA private key:", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to parse RSA private key: %w", err)
 	}
 
 	// Create JWT token (GitHub App ID would normally come from config)
@@ -49,8 +53,7 @@ func main() {
 
 	tokenStr, err := token.SignedString(privKey)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "ERROR: Failed to sign JWT:", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to sign JWT: %w", err)
 	}
 
 	fmt.Println("✓ Step 1: Successfully created JWT token from GitHub App private key")
@@ -64,8 +67,7 @@ func main() {
 	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/actions/runs", *owner, *repo)
 	req, err := http.NewRequest("GET", apiURL, nil)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "ERROR: Failed to create HTTP request:", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to create HTTP request: %w", err)
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
@@ -74,15 +76,13 @@ func main() {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "ERROR: Failed to reach GitHub API:", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to reach GitHub API: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "ERROR: Failed to read response body:", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to read response body: %w", err)
 	}
 
 	if resp.StatusCode == 401 {
@@ -113,4 +113,5 @@ func main() {
 
 	fmt.Println("\n✓ Step 3: GitHub API connectivity verified")
 	fmt.Println("\nPolecat can access GitHub APIs. Private key loaded successfully.")
+	return nil
 }
