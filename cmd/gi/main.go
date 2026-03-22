@@ -161,7 +161,7 @@ func run() int {
 			}
 		}
 	}
-	if err := pluginMgr.Initialize(plugin.PluginConfig{
+	if err := pluginMgr.Initialize(context.Background(), plugin.PluginConfig{
 		Cwd:       cwd,
 		Model:     cfg.DefaultModel,
 		Provider:  cfg.DefaultProvider,
@@ -566,7 +566,7 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 				Description: cmdDef.Description,
 				Execute: func(args string) tea.Cmd {
 					return func() tea.Msg {
-						text, isErr, err := proc.ExecuteCommand(cmdDef.Name, args)
+						text, isErr, err := proc.ExecuteCommand(context.Background(), cmdDef.Name, args)
 						if err != nil {
 							return tui.CommandResultMsg{Text: err.Error(), IsError: true}
 						}

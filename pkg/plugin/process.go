@@ -298,8 +298,7 @@ func (e *timeoutError) Error() string {
 }
 
 // waitResponse waits for a response message on the response channel with a timeout.
-// If ctx is non-nil and is cancelled before a response arrives, the context error
-// is returned immediately.
+// If ctx is cancelled before a response arrives, ctx.Err() is returned.
 func (p *PluginProcess) waitResponse(ctx context.Context, timeout time.Duration) (PluginMessage, error) {
 	p.mu.Lock()
 	responseCh := p.responseCh
@@ -323,7 +322,7 @@ func (p *PluginProcess) waitResponse(ctx context.Context, timeout time.Duration)
 
 // Initialize sends the initialize message and waits for a capabilities response.
 // The config is saved for automatic re-initialization on restart.
-func (p *PluginProcess) Initialize(cfg PluginConfig) error {
+func (p *PluginProcess) Initialize(ctx context.Context, cfg PluginConfig) error {
 	p.pluginCfg = cfg
 
 	if err := p.Send(HostMessage{
@@ -333,7 +332,7 @@ func (p *PluginProcess) Initialize(cfg PluginConfig) error {
 		return fmt.Errorf("sending initialize message: %w", err)
 	}
 
-	msg, err := p.waitResponse(context.Background(), p.timeouts.InitTimeout)
+	msg, err := p.waitResponse(ctx, p.timeouts.InitTimeout)
 	if err != nil {
 		return fmt.Errorf("plugin %s: initialization failed: %w", p.name, err)
 	}
@@ -349,8 +348,7 @@ func (p *PluginProcess) Initialize(cfg PluginConfig) error {
 
 // ExecuteTool sends a tool_call message and waits for the tool_result response.
 // Returns the result content, whether it was an error, and any communication error.
-// If ctx is cancelled or the plugin exceeds the configured tool timeout, the
-// process is killed.
+// If the plugin exceeds the configured tool timeout, the process is killed.
 func (p *PluginProcess) ExecuteTool(ctx context.Context, id, name string, params map[string]any) (string, bool, error) {
 	if err := p.Send(HostMessage{
 		Type:   "tool_call",
@@ -379,7 +377,7 @@ func (p *PluginProcess) ExecuteTool(ctx context.Context, id, name string, params
 // ExecuteCommand sends a command message and waits for the command_result response.
 // Returns the result text, whether it was an error, and any communication error.
 // If the plugin exceeds the configured command timeout, the process is killed.
-func (p *PluginProcess) ExecuteCommand(name, args string) (string, bool, error) {
+func (p *PluginProcess) ExecuteCommand(ctx context.Context, name, args string) (string, bool, error) {
 	if err := p.Send(HostMessage{
 		Type: "command",
 		Name: name,
@@ -388,7 +386,7 @@ func (p *PluginProcess) ExecuteCommand(name, args string) (string, bool, error) 
 		return "", true, err
 	}
 
-	msg, err := p.waitResponse(context.Background(), p.timeouts.CommandTimeout)
+	msg, err := p.waitResponse(ctx, p.timeouts.CommandTimeout)
 	if err != nil {
 		if isTimeout(err) {
 			p.handleTimeout("command", name, p.timeouts.CommandTimeout)
@@ -883,7 +881,7 @@ func (p *PluginProcess) respawn() error {
 	p.applyMemoryLimit()
 
 	// Re-initialize the plugin with the saved config.
-	if err := p.Initialize(p.pluginCfg); err != nil {
+	if err := p.Initialize(context.Background(), p.pluginCfg); err != nil {
 		if killErr := cmd.Process.Kill(); killErr != nil {
 			log.Printf("plugin %s: cleanup: failed to kill process after re-init failure: %v", p.name, killErr)
 		}
