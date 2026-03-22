@@ -822,6 +822,12 @@ func (p *PluginProcess) respawn() error {
 	}
 
 	if err := cmd.Start(); err != nil {
+		if closeErr := stdinPipe.Close(); closeErr != nil {
+			log.Printf("plugin %s: cleanup: failed to close stdin pipe: %v", p.name, closeErr)
+		}
+		if closeErr := stdoutPipe.Close(); closeErr != nil {
+			log.Printf("plugin %s: cleanup: failed to close stdout pipe: %v", p.name, closeErr)
+		}
 		return fmt.Errorf("starting plugin: %w", err)
 	}
 
