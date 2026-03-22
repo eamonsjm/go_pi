@@ -255,15 +255,14 @@ func (p *BedrockProvider) readEventStream(ctx context.Context, output *bedrockru
 				ch <- StreamEvent{Type: EventTextDelta, Delta: delta.Value}
 			case *types.ContentBlockDeltaMemberToolUse:
 				idx := derefInt32(ev.Value.ContentBlockIndex)
-				evt := StreamEvent{
-					Type:         EventToolUseDelta,
-					PartialInput: derefStr(delta.Value.Input),
-				}
 				if state := activeTools[idx]; state != nil {
-					evt.ToolCallID = state.id
-					evt.ToolName = state.name
+					ch <- StreamEvent{
+						Type:         EventToolUseDelta,
+						ToolCallID:   state.id,
+						ToolName:     state.name,
+						PartialInput: derefStr(delta.Value.Input),
+					}
 				}
-				ch <- evt
 			}
 
 		case *types.ConverseStreamOutputMemberContentBlockStop:
