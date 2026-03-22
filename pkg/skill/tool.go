@@ -2,8 +2,18 @@ package skill
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
+)
+
+// Sentinel errors for skill tool execution.
+var (
+	// ErrMissingSkillParam is returned when the "skill" parameter is empty or absent.
+	ErrMissingSkillParam = errors.New("missing required parameter: skill")
+
+	// ErrUnknownSkill is returned when the requested skill is not in the registry.
+	ErrUnknownSkill = errors.New("unknown skill")
 )
 
 // SkillTool is a tool that allows the LLM to invoke skills by name.
@@ -48,14 +58,14 @@ func (t *SkillTool) Schema() any {
 func (t *SkillTool) Execute(ctx context.Context, params map[string]any) (string, error) {
 	name, _ := params["skill"].(string)
 	if name == "" {
-		return "", fmt.Errorf("missing required parameter: skill")
+		return "", ErrMissingSkillParam
 	}
 
 	args, _ := params["args"].(string)
 
 	s, ok := t.registry.Get(name)
 	if !ok {
-		return "", fmt.Errorf("unknown skill: %q. Available skills: %s", name, strings.Join(t.registry.Names(), ", "))
+		return "", fmt.Errorf("%w: %q (available: %s)", ErrUnknownSkill, name, strings.Join(t.registry.Names(), ", "))
 	}
 
 	body, err := s.LoadBody(ctx)

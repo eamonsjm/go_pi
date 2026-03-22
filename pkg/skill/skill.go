@@ -3,6 +3,7 @@ package skill
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -11,6 +12,15 @@ import (
 	"sync"
 
 	"gopkg.in/yaml.v3"
+)
+
+// Sentinel errors for skill parsing.
+var (
+	// ErrMissingName is returned when skill frontmatter lacks a required "name" field.
+	ErrMissingName = errors.New("skill frontmatter missing required field: name")
+
+	// ErrInvalidFrontmatter is returned when a skill file has malformed frontmatter delimiters.
+	ErrInvalidFrontmatter = errors.New("invalid skill frontmatter")
 )
 
 // Skill is a reusable prompt template invoked as a slash command or via the Skill tool.
@@ -104,7 +114,7 @@ func ParseSkill(data []byte) (*Skill, error) {
 	}
 
 	if s.Name == "" {
-		return nil, fmt.Errorf("skill frontmatter missing required field: name")
+		return nil, ErrMissingName
 	}
 
 	s.Body = body
@@ -125,7 +135,7 @@ func ParseFrontmatterOnly(data []byte) (*Skill, error) {
 	}
 
 	if s.Name == "" {
-		return nil, fmt.Errorf("skill frontmatter missing required field: name")
+		return nil, ErrMissingName
 	}
 
 	return &s, nil
@@ -137,7 +147,7 @@ func ParseFrontmatterOnly(data []byte) (*Skill, error) {
 func splitFrontmatter(data []byte) (frontmatter []byte, body string, err error) {
 	trimmed := bytes.TrimLeft(data, " \t\r\n")
 	if !bytes.HasPrefix(trimmed, []byte("---")) {
-		return nil, "", fmt.Errorf("skill file does not start with '---' frontmatter delimiter")
+		return nil, "", fmt.Errorf("%w: file does not start with '---' delimiter", ErrInvalidFrontmatter)
 	}
 
 	// Find the closing delimiter after the opening one.
@@ -146,12 +156,12 @@ func splitFrontmatter(data []byte) (frontmatter []byte, body string, err error) 
 	if idx := bytes.IndexByte(rest, '\n'); idx >= 0 {
 		rest = rest[idx+1:]
 	} else {
-		return nil, "", fmt.Errorf("skill file has no content after opening '---'")
+		return nil, "", fmt.Errorf("%w: no content after opening '---'", ErrInvalidFrontmatter)
 	}
 
 	closeIdx := bytes.Index(rest, []byte("\n---"))
 	if closeIdx < 0 {
-		return nil, "", fmt.Errorf("skill file missing closing '---' frontmatter delimiter")
+		return nil, "", fmt.Errorf("%w: missing closing '---' delimiter", ErrInvalidFrontmatter)
 	}
 
 	frontmatter = rest[:closeIdx]
