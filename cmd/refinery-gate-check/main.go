@@ -14,6 +14,10 @@ import (
 )
 
 func main() {
+	os.Exit(run())
+}
+
+func run() int {
 	owner := flag.String("owner", "eamonsjm", "GitHub repository owner")
 	repo := flag.String("repo", "go_pi", "GitHub repository name")
 	token := flag.String("token", "", "GitHub API token (or GITHUB_TOKEN env var)")
@@ -28,7 +32,7 @@ func main() {
 		*token = os.Getenv("GITHUB_TOKEN")
 		if *token == "" {
 			fmt.Fprintf(os.Stderr, "ERROR: GitHub token required (--token or GITHUB_TOKEN env var)\n")
-			os.Exit(1)
+			return 1
 		}
 	}
 
@@ -61,14 +65,14 @@ func main() {
 		}
 		jsonOut, _ := json.MarshalIndent(output, "", "  ")
 		fmt.Println(string(jsonOut))
-		os.Exit(1)
+		return 1
 	}
 
 	// Output gate status as JSON
 	jsonOut, err := json.MarshalIndent(status, "", "  ")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "ERROR: Failed to marshal output: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 
 	fmt.Println(string(jsonOut))
@@ -78,10 +82,11 @@ func main() {
 		if *verbose {
 			fmt.Fprintf(os.Stderr, "Gate check FAILED: %s\n", status.Reason)
 		}
-		os.Exit(1)
+		return 1
 	}
 
 	if *verbose {
 		fmt.Fprintf(os.Stderr, "Gate check PASSED: %s\n", status.Reason)
 	}
+	return 0
 }
