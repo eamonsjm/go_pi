@@ -1400,3 +1400,64 @@ func TestZeroValueAgentLoop(t *testing.T) {
 		}
 	})
 }
+
+// TestEmitDuringPromptClose verifies that concurrent emit() calls do not panic
+// when Prompt() closes the events channel. This is a regression test for a race
+// where emit() could send on a closed channel if Compact() (or any method
+// calling emit) ran concurrently with Prompt() completion.
+func TestEmitDuringPromptClose(t *testing.T) {
+	// Use a slow provider so we can control when Prompt() finishes.
+	gate := make(chan struct{})
+	provider := &mockProvider{
+		streamFn: func(_ context.Context, _ ai.StreamRequest) (<-chan ai.StreamEvent, error) {
+			ch := make(chan ai.StreamEvent, 10)
+			go func() {
+				defer close(ch)
+				<-gate // wait for test to release
+				ch <- ai.StreamEvent{Type: ai.EventMessageStart}
+				ch <- ai.StreamEvent{Type: ai.EventTextDelta, Delta: "done"}
+				ch <- ai.StreamEvent{Type: ai.EventMessageEnd, Usage: &ai.Usage{InputTokens: 1, OutputTokens: 1}}
+			}()
+			return ch, nil
+		},
+	}
+
+	a := NewAgentLoop(provider, tools.NewRegistry())
+
+	// Drain events so the buffer doesn't fill.
+	events := a.Events()
+	go func() {
+		for range events {
+		}
+	}()
+
+	// Start Prompt in background — it blocks until we close gate.
+	promptDone := make(chan error, 1)
+	go func() {
+		promptDone <- a.Prompt(context.Background(), "hello")
+	}()
+
+	// Hammer emit() from multiple goroutines while Prompt() is about to close
+	// the events channel. With the race detector enabled (-race), this would
+	// catch send-on-closed-channel without the eventsMu fix.
+	var wg sync.WaitGroup
+	ctx := context.Background()
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 100; j++ {
+				a.emit(ctx, AgentEvent{Type: EventAgentError})
+			}
+		}()
+	}
+
+	// Release the provider so Prompt() finishes (and closes the channel).
+	close(gate)
+
+	// Wait for everything to finish without panicking.
+	wg.Wait()
+	if err := <-promptDone; err != nil {
+		t.Fatalf("Prompt returned error: %v", err)
+	}
+}

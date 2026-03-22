@@ -51,6 +51,12 @@ type AgentLoop struct {
 	messages []ai.Message
 	events   chan AgentEvent
 
+	// eventsMu serializes emit() sends and Prompt() channel close to
+	// prevent send-on-closed-channel panics. emit() holds RLock during
+	// the channel send; Prompt() holds a full Lock when closing and
+	// recreating the channel. Lock ordering: eventsMu before mu.
+	eventsMu sync.RWMutex
+
 	// cancel is called to abort the current Prompt execution.
 	cancel context.CancelFunc
 
@@ -264,10 +270,15 @@ func (a *AgentLoop) Prompt(ctx context.Context, text string) error {
 	// Close the events channel so consumer goroutines unblock (range
 	// terminates on a closed channel), then create a fresh channel for
 	// the next Prompt call.
+	//
+	// eventsMu.Lock waits for any in-flight emit() sends to complete
+	// before closing the channel, preventing send-on-closed-channel panics.
+	a.eventsMu.Lock()
 	a.mu.Lock()
 	close(a.events)
 	a.events = make(chan AgentEvent, eventBufSize)
 	a.mu.Unlock()
+	a.eventsMu.Unlock()
 
 	if err != nil {
 		return fmt.Errorf("prompt: %w", err)
@@ -703,11 +714,18 @@ func (a *AgentLoop) appendMessage(msg ai.Message) {
 // emit sends an event to the events channel. If the channel buffer is full,
 // it blocks until space is available or the context is cancelled — providing
 // back-pressure to the agent loop so events are never silently dropped.
-// The mutex is held briefly to snapshot the channel reference.
+//
+// eventsMu.RLock is held for the duration of the send so that Prompt() cannot
+// close the channel while a send is in flight. Multiple goroutines may emit
+// concurrently (RLock allows shared access).
 func (a *AgentLoop) emit(ctx context.Context, event AgentEvent) {
+	a.eventsMu.RLock()
+	defer a.eventsMu.RUnlock()
+
 	a.mu.Lock()
 	ch := a.events
 	a.mu.Unlock()
+
 	select {
 	case ch <- event:
 	case <-ctx.Done():
