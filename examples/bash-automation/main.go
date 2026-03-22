@@ -62,12 +62,17 @@ When asked to perform tasks, use the available tools to:
 	}
 	defer func() { _ = s.Close() }()
 
-	// Handle Ctrl+C
+	// Handle Ctrl+C. The goroutine exits via ctx.Done when the prompt
+	// ends, and signal.Stop unregisters the channel.
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt)
 	go func() {
-		<-sigCh
-		cancel()
+		select {
+		case <-sigCh:
+			cancel()
+		case <-ctx.Done():
+		}
+		signal.Stop(sigCh)
 	}()
 
 	// Example automation tasks

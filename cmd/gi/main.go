@@ -478,12 +478,17 @@ func runPrintMode(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, promp
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Handle Ctrl+C and SIGTERM
+	// Handle Ctrl+C and SIGTERM. The goroutine exits via ctx.Done when
+	// the prompt ends, and signal.Stop unregisters the channel.
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 	go func() {
-		<-sigCh
-		cancel()
+		select {
+		case <-sigCh:
+			cancel()
+		case <-ctx.Done():
+		}
+		signal.Stop(sigCh)
 	}()
 
 	events := agentLoop.Events()
