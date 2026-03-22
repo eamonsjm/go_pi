@@ -205,6 +205,9 @@ func (m *Manager) ListSessions() []SessionInfo {
 					}
 				}
 			}
+			if err := scanner.Err(); err != nil {
+				log.Printf("session: read %s: %v", path, err)
+			}
 			si.Entries = count
 			normalizeParentIDs(allEntries)
 			si.Branches = len(findLeafEntries(allEntries))
@@ -817,6 +820,9 @@ func (m *Manager) CollectUserPrompts(maxPrompts int) []string {
 			}
 			seen[text] = true
 			prompts = append(prompts, promptEntry{text: text, ts: e.Timestamp})
+		}
+		if err := scanner.Err(); err != nil {
+			log.Printf("session: read %s: %v", path, err)
 		}
 		if err := f.Close(); err != nil {
 			log.Printf("session: close %s: %v", path, err)
