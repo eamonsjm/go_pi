@@ -21,6 +21,8 @@ import (
 // ---------------------------------------------------------------------------
 
 // App is the top-level Bubble Tea model for the coding agent TUI.
+//
+// A zero-value App is not usable. Use [NewApp] to construct one.
 type App struct {
 	// Sub-components.
 	chat          *ChatView

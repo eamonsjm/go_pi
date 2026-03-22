@@ -10,6 +10,8 @@ import (
 )
 
 // Footer renders a single-line status bar at the bottom of the terminal.
+//
+// A zero-value Footer is not usable. Use [NewFooter] to construct one.
 type Footer struct {
 	width      int
 	cwd        string

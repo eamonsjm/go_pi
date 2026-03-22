@@ -202,6 +202,8 @@ type editorCommandMsg struct {
 
 // Editor wraps a bubbles/textarea and manages submission, steering, and
 // keyboard shortcuts.
+//
+// A zero-value Editor is not usable. Use [NewEditor] to construct one.
 type Editor struct {
 	textarea textarea.Model
 	state    editorState

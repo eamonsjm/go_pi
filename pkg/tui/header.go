@@ -8,6 +8,8 @@ import (
 )
 
 // Header renders a single-line top bar with app name, model info, and session.
+//
+// A zero-value Header is not usable. Use [NewHeader] to construct one.
 type Header struct {
 	width         int
 	model         string
