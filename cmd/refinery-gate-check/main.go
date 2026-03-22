@@ -38,7 +38,7 @@ func run(args []string, stdout, stderr io.Writer, opts ...refinery_gate.GateOpti
 	if *token == "" {
 		*token = os.Getenv("GITHUB_TOKEN")
 		if *token == "" {
-			fmt.Fprintf(stderr, "ERROR: GitHub token required (--token or GITHUB_TOKEN env var)\n")
+			_, _ = fmt.Fprintf(stderr, "ERROR: GitHub token required (--token or GITHUB_TOKEN env var)\n")
 			return 1
 		}
 	}
@@ -68,32 +68,32 @@ func run(args []string, stdout, stderr io.Writer, opts ...refinery_gate.GateOpti
 			"error":  err.Error(),
 		}
 		if *verbose {
-			fmt.Fprintf(stderr, "Error checking CI: %v\n", err)
+			_, _ = fmt.Fprintf(stderr, "Error checking CI: %v\n", err)
 		}
 		jsonOut, _ := json.MarshalIndent(output, "", "  ")
-		fmt.Fprintln(stdout, string(jsonOut))
+		_, _ = fmt.Fprintln(stdout, string(jsonOut))
 		return 1
 	}
 
 	// Output gate status as JSON
 	jsonOut, err := json.MarshalIndent(status, "", "  ")
 	if err != nil {
-		fmt.Fprintf(stderr, "ERROR: Failed to marshal output: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "ERROR: Failed to marshal output: %v\n", err)
 		return 1
 	}
 
-	fmt.Fprintln(stdout, string(jsonOut))
+	_, _ = fmt.Fprintln(stdout, string(jsonOut))
 
 	// Exit with appropriate status
 	if !status.Passed {
 		if *verbose {
-			fmt.Fprintf(stderr, "Gate check FAILED: %s\n", status.Reason)
+			_, _ = fmt.Fprintf(stderr, "Gate check FAILED: %s\n", status.Reason)
 		}
 		return 1
 	}
 
 	if *verbose {
-		fmt.Fprintf(stderr, "Gate check PASSED: %s\n", status.Reason)
+		_, _ = fmt.Fprintf(stderr, "Gate check PASSED: %s\n", status.Reason)
 	}
 	return 0
 }
