@@ -20,6 +20,13 @@ const (
 	defaultAnthropicRedirectURI  = "https://console.anthropic.com/oauth/code/callback"
 	defaultAnthropicScope        = "org:create_api_key user:profile user:inference"
 	defaultAuthTimeout           = 5 * time.Minute
+
+	// maxTokenResponseBytes limits how much data we read from token endpoint
+	// responses. A legitimate token response is a few KB at most; this cap
+	// prevents a malicious or compromised endpoint from causing memory
+	// exhaustion. The 30-second HTTP client timeout provides a secondary
+	// safeguard, but an explicit read limit is a low-cost defense-in-depth.
+	maxTokenResponseBytes = 1 << 20 // 1 MB
 )
 
 // AnthropicOAuth implements OAuthProvider for Anthropic using
@@ -171,7 +178,7 @@ func (a *AnthropicOAuth) ExchangeCode(ctx context.Context, session *AuthSession,
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxTokenResponseBytes))
 	if err != nil {
 		return nil, fmt.Errorf("read token response body: %w", err)
 	}
@@ -269,7 +276,7 @@ func (a *AnthropicOAuth) RefreshToken(ctx context.Context, cred *Credential) (*C
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxTokenResponseBytes))
 	if err != nil {
 		return nil, fmt.Errorf("read refresh response body: %w", err)
 	}

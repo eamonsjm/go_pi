@@ -199,7 +199,7 @@ func (o *OpenAIOAuth) exchangeCode(ctx context.Context, code, codeVerifier strin
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxTokenResponseBytes))
 	if err != nil {
 		return nil, fmt.Errorf("read token response body: %w", err)
 	}
@@ -237,7 +237,7 @@ func (o *OpenAIOAuth) RefreshToken(ctx context.Context, cred *Credential) (*Cred
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxTokenResponseBytes))
 	if err != nil {
 		return nil, fmt.Errorf("read refresh response body: %w", err)
 	}
