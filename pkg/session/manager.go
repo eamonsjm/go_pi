@@ -260,12 +260,16 @@ func (m *Manager) LatestSessionID(ctx context.Context) string {
 // AppendEntry appends a single entry to the current session's JSONL file
 // and the in-memory entry list. The entry's ParentID is automatically set
 // to the current active branch leaf if not already specified.
-func (m *Manager) AppendEntry(entry Entry) error {
+func (m *Manager) AppendEntry(ctx context.Context, entry Entry) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	if m.current == "" {
 		return ErrNoActiveSession
+	}
+
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("append entry: %w", err)
 	}
 
 	// Link to active branch if no explicit parent.
@@ -419,7 +423,7 @@ func RepairOrphanedToolUse(msgs []ai.Message) []ai.Message {
 // and appends it. Duplicate assistant tool_use messages are detected and
 // silently skipped to prevent session bloat from model retries (e.g. after
 // crash recovery where RepairOrphanedToolUse injects synthetic errors).
-func (m *Manager) SaveMessage(msg ai.Message) error {
+func (m *Manager) SaveMessage(ctx context.Context, msg ai.Message) error {
 	// Skip tool_result messages that reference deduplicated tool_use IDs.
 	if msg.Role == ai.RoleUser && m.shouldSkipToolResult(msg) {
 		return nil
@@ -447,7 +451,7 @@ func (m *Manager) SaveMessage(msg ai.Message) error {
 			Content: msg.Content,
 		},
 	}
-	return m.AppendEntry(entry)
+	return m.AppendEntry(ctx, entry)
 }
 
 // findDuplicateToolUseIDs checks if an assistant message's tool_use blocks
