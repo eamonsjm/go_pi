@@ -3,6 +3,7 @@ package session
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -103,8 +104,8 @@ func TestAppendEntryNoActiveSession(t *testing.T) {
 	m := NewManager(t.TempDir())
 	// No NewSession called.
 	err := m.AppendEntry(Entry{ID: "x", Type: "message"})
-	if err == nil {
-		t.Error("expected error when no active session")
+	if !errors.Is(err, ErrNoActiveSession) {
+		t.Errorf("expected ErrNoActiveSession, got %v", err)
 	}
 }
 
@@ -914,6 +915,24 @@ func TestForkAt(t *testing.T) {
 	}
 	if msgs[0].GetText() != "e1" || msgs[1].GetText() != "forked" {
 		t.Errorf("unexpected messages: %q, %q", msgs[0].GetText(), msgs[1].GetText())
+	}
+}
+
+func TestForkAtEntryNotFound(t *testing.T) {
+	dir := t.TempDir()
+	m := NewManager(dir)
+	m.NewSession()
+
+	err := m.ForkAt("nonexistent")
+	if !errors.Is(err, ErrEntryNotFound) {
+		t.Errorf("expected ErrEntryNotFound, got %v", err)
+	}
+	var enf *EntryNotFoundError
+	if !errors.As(err, &enf) {
+		t.Fatalf("expected *EntryNotFoundError, got %T", err)
+	}
+	if enf.EntryID != "nonexistent" {
+		t.Errorf("expected EntryID %q, got %q", "nonexistent", enf.EntryID)
 	}
 }
 
