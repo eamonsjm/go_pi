@@ -1784,3 +1784,77 @@ func TestRespondToUIRequest(t *testing.T) {
 
 	p.Stop()
 }
+
+// panicAfterReader delivers data on the first Read, then panics on subsequent
+// calls to simulate a crash inside readLoop's scanner.
+type panicAfterReader struct {
+	data []byte
+	pos  int
+	done bool
+}
+
+func (r *panicAfterReader) Read(p []byte) (int, error) {
+	if r.done {
+		panic("simulated readLoop panic")
+	}
+	n := copy(p, r.data[r.pos:])
+	r.pos += n
+	if r.pos >= len(r.data) {
+		r.done = true
+	}
+	return n, nil
+}
+
+func TestReadLoop_PanicRecovery(t *testing.T) {
+	// A reader that delivers one valid message then panics on the next read.
+	// readLoop must recover without crashing the host process.
+	pr := &panicAfterReader{
+		data: []byte(`{"type":"capabilities","tools":[]}` + "\n"),
+	}
+	scanner := bufio.NewScanner(pr)
+	scanner.Buffer(make([]byte, maxScannerBuffer), maxScannerBuffer)
+
+	p := &PluginProcess{
+		name:        "panic-test",
+		scanner:     scanner,
+		injectCh:    make(chan PluginMessage, 64),
+		responseCh:  make(chan PluginMessage, 16),
+		uiRequestCh: make(chan PluginMessage, 16),
+		heartbeatCh: make(chan PluginMessage, 4),
+		healthy:     true,
+	}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		p.readLoop()
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("readLoop did not return after panic")
+	}
+
+	// The first message (capabilities) should have been delivered before the panic.
+	msg, ok := <-p.responseCh
+	if ok {
+		if msg.Type != "capabilities" {
+			t.Errorf("got message type %q, want %q", msg.Type, "capabilities")
+		}
+	}
+
+	// All channels must be closed after readLoop exits.
+	if _, ok := <-p.responseCh; ok {
+		t.Error("responseCh not closed after panic recovery")
+	}
+	if _, ok := <-p.injectCh; ok {
+		t.Error("injectCh not closed after panic recovery")
+	}
+	if _, ok := <-p.uiRequestCh; ok {
+		t.Error("uiRequestCh not closed after panic recovery")
+	}
+	if _, ok := <-p.heartbeatCh; ok {
+		t.Error("heartbeatCh not closed after panic recovery")
+	}
+}
