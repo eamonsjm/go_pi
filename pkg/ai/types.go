@@ -1,9 +1,12 @@
 package ai
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"strings"
+	"sync"
 	"sync/atomic"
 )
 
@@ -213,6 +216,32 @@ func trySend(ctx context.Context, ch chan<- StreamEvent, event StreamEvent) bool
 	case <-ctx.Done():
 		return false
 	}
+}
+
+const sseMaxTokenSize = 1024 * 1024 // 1 MB max line size for SSE streams
+
+// sseBufferPool reuses the initial byte buffers passed to bufio.Scanner.Buffer
+// across SSE streams, avoiding a 64 KiB allocation per stream.
+var sseBufferPool = sync.Pool{
+	New: func() any {
+		b := make([]byte, 0, 64*1024)
+		return &b
+	},
+}
+
+// newSSEScanner returns a bufio.Scanner configured for SSE stream reading,
+// using a pooled buffer. Call the returned function when scanning is complete
+// to return the buffer to the pool.
+func newSSEScanner(r io.Reader) (scanner *bufio.Scanner, done func()) {
+	bufp := sseBufferPool.Get().(*[]byte)
+	buf := (*bufp)[:0]
+	scanner = bufio.NewScanner(r)
+	scanner.Buffer(buf, sseMaxTokenSize)
+	done = func() {
+		*bufp = buf[:0]
+		sseBufferPool.Put(bufp)
+	}
+	return scanner, done
 }
 
 // StreamEventType identifies what kind of stream event this is.

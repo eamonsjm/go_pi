@@ -1,7 +1,6 @@
 package ai
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -493,9 +492,8 @@ func (p *AnthropicProvider) readSSEStream(ctx context.Context, body io.ReadClose
 	}()
 	defer func() { _ = body.Close() }()
 
-	scanner := bufio.NewScanner(body)
-	// Allow up to 1MB per line for large tool inputs.
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	scanner, returnBuf := newSSEScanner(body)
+	defer returnBuf()
 
 	var (
 		eventType string
