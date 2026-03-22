@@ -148,6 +148,78 @@ func TestMapToBedrockMessage_ToolResultError(t *testing.T) {
 	}
 }
 
+func TestMapToBedrockMessage_RichToolResult(t *testing.T) {
+	msg := NewRichToolResultMessage("tool-rich", []ContentBlock{
+		{Type: ContentTypeText, Text: "first block"},
+		{Type: ContentTypeText, Text: "second block"},
+	}, false)
+
+	bm, err := mapToBedrockMessage(msg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(bm.Content) != 1 {
+		t.Fatalf("expected 1 content block, got %d", len(bm.Content))
+	}
+
+	resultBlock, ok := bm.Content[0].(*types.ContentBlockMemberToolResult)
+	if !ok {
+		t.Fatalf("expected ContentBlockMemberToolResult, got %T", bm.Content[0])
+	}
+	if *resultBlock.Value.ToolUseId != "tool-rich" {
+		t.Errorf("expected tool use ID %q, got %q", "tool-rich", *resultBlock.Value.ToolUseId)
+	}
+	if len(resultBlock.Value.Content) != 2 {
+		t.Fatalf("expected 2 tool result content blocks, got %d", len(resultBlock.Value.Content))
+	}
+	text0, ok := resultBlock.Value.Content[0].(*types.ToolResultContentBlockMemberText)
+	if !ok {
+		t.Fatalf("expected ToolResultContentBlockMemberText at [0], got %T", resultBlock.Value.Content[0])
+	}
+	if text0.Value != "first block" {
+		t.Errorf("expected text %q, got %q", "first block", text0.Value)
+	}
+	text1, ok := resultBlock.Value.Content[1].(*types.ToolResultContentBlockMemberText)
+	if !ok {
+		t.Fatalf("expected ToolResultContentBlockMemberText at [1], got %T", resultBlock.Value.Content[1])
+	}
+	if text1.Value != "second block" {
+		t.Errorf("expected text %q, got %q", "second block", text1.Value)
+	}
+	if resultBlock.Value.Status != types.ToolResultStatusSuccess {
+		t.Errorf("expected status %q, got %q", types.ToolResultStatusSuccess, resultBlock.Value.Status)
+	}
+}
+
+func TestMapToBedrockMessage_RichToolResultWithImage(t *testing.T) {
+	imgData := base64.StdEncoding.EncodeToString([]byte("fake-image"))
+	msg := NewRichToolResultMessage("tool-img", []ContentBlock{
+		{Type: ContentTypeText, Text: "description"},
+		{Type: ContentTypeImage, MediaType: "image/png", ImageData: imgData},
+	}, false)
+
+	bm, err := mapToBedrockMessage(msg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	resultBlock := bm.Content[0].(*types.ContentBlockMemberToolResult)
+	if len(resultBlock.Value.Content) != 2 {
+		t.Fatalf("expected 2 tool result content blocks, got %d", len(resultBlock.Value.Content))
+	}
+	if _, ok := resultBlock.Value.Content[0].(*types.ToolResultContentBlockMemberText); !ok {
+		t.Errorf("expected text block at [0], got %T", resultBlock.Value.Content[0])
+	}
+	imgBlock, ok := resultBlock.Value.Content[1].(*types.ToolResultContentBlockMemberImage)
+	if !ok {
+		t.Fatalf("expected image block at [1], got %T", resultBlock.Value.Content[1])
+	}
+	if imgBlock.Value.Format != types.ImageFormatPng {
+		t.Errorf("expected format %q, got %q", types.ImageFormatPng, imgBlock.Value.Format)
+	}
+}
+
 func TestMapToBedrockMessage_Image(t *testing.T) {
 	imgData := base64.StdEncoding.EncodeToString([]byte("fake-image-data"))
 	msg := Message{

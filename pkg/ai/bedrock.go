@@ -150,13 +150,28 @@ func mapToBedrockMessage(m Message) (types.Message, error) {
 			})
 
 		case ContentTypeToolResult:
-			content := cb.Content
+			var resultContent []types.ToolResultContentBlock
 			if len(cb.ContentBlocks) > 0 {
 				for _, sub := range cb.ContentBlocks {
-					if sub.Type == ContentTypeText {
-						content = sub.Text
-						break
+					switch sub.Type {
+					case ContentTypeText:
+						resultContent = append(resultContent, &types.ToolResultContentBlockMemberText{Value: sub.Text})
+					case ContentTypeImage:
+						imgBytes, imgErr := base64.StdEncoding.DecodeString(sub.ImageData)
+						if imgErr == nil {
+							resultContent = append(resultContent, &types.ToolResultContentBlockMemberImage{
+								Value: types.ImageBlock{
+									Format: mapMediaTypeToImageFormat(sub.MediaType),
+									Source: &types.ImageSourceMemberBytes{Value: imgBytes},
+								},
+							})
+						}
 					}
+				}
+			}
+			if len(resultContent) == 0 {
+				resultContent = []types.ToolResultContentBlock{
+					&types.ToolResultContentBlockMemberText{Value: cb.Content},
 				}
 			}
 			status := types.ToolResultStatusSuccess
@@ -166,10 +181,8 @@ func mapToBedrockMessage(m Message) (types.Message, error) {
 			blocks = append(blocks, &types.ContentBlockMemberToolResult{
 				Value: types.ToolResultBlock{
 					ToolUseId: &cb.ToolResultID,
-					Content: []types.ToolResultContentBlock{
-						&types.ToolResultContentBlockMemberText{Value: content},
-					},
-					Status: status,
+					Content:   resultContent,
+					Status:    status,
 				},
 			})
 		}
