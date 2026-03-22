@@ -126,7 +126,7 @@ func (gc *GateChecker) fetchWorkflowRuns(ctx context.Context) ([]Status, error) 
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("create GitHub API request: %w", err)
 	}
 
 	req.Header.Set("Accept", "application/vnd.github+json")
@@ -137,7 +137,7 @@ func (gc *GateChecker) fetchWorkflowRuns(ctx context.Context) ([]Status, error) 
 
 	resp, err := gc.client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("GitHub API request failed: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -156,7 +156,7 @@ func (gc *GateChecker) fetchWorkflowRuns(ctx context.Context) ([]Status, error) 
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parse GitHub API response: %w", err)
 	}
 
 	var runs []Status
