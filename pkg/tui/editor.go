@@ -547,10 +547,7 @@ func (e *Editor) Update(msg tea.Msg) tea.Cmd {
 
 			// Handle shell commands (! and !! prefix)
 			if strings.HasPrefix(text, "!") && !strings.HasPrefix(text, "//") {
-				// Detect !! (local only) or ! (send to AI)
-				if strings.HasPrefix(text, "!!") || strings.HasPrefix(text, "!") {
-					return executeShellCommand(text)
-				}
+				return executeShellCommand(text)
 			}
 
 			if strings.HasPrefix(text, "/") {
@@ -1048,9 +1045,7 @@ func (e *Editor) updateSearch(msg tea.KeyMsg) tea.Cmd {
 		e.ctrlCCount = 0
 
 		if strings.HasPrefix(text, "!") && !strings.HasPrefix(text, "//") {
-			if strings.HasPrefix(text, "!!") || strings.HasPrefix(text, "!") {
-				return executeShellCommand(text)
-			}
+			return executeShellCommand(text)
 		}
 		if strings.HasPrefix(text, "/") {
 			name, args := parseSlashCommand(text)
