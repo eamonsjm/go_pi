@@ -1632,6 +1632,13 @@ func TestTruncatePreview(t *testing.T) {
 		{"multi-byte CJK", strings.Repeat("a", 56) + "\u4e16\u754c", 60, strings.Repeat("a", 56) + "..."},
 		{"all emoji", "\U0001F600\U0001F601\U0001F602\U0001F603\U0001F604\U0001F605\U0001F606\U0001F607\U0001F608\U0001F609\U0001F60A\U0001F60B\U0001F60C\U0001F60D", 20, "\U0001F600\U0001F601\U0001F602\U0001F603..."},
 		{"empty string", "", 10, ""},
+		{"maxLen 0", "hello", 0, ""},
+		{"maxLen 1", "hello", 1, "h"},
+		{"maxLen 2", "hello", 2, "he"},
+		{"maxLen 3", "hello", 3, "hel"},
+		{"maxLen 4", "hello", 4, "h..."},
+		{"maxLen 3 multi-byte", "\U0001F600\U0001F601", 3, ""},
+		{"maxLen 1 multi-byte", "\U0001F600\U0001F601", 1, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
