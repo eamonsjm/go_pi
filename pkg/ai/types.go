@@ -136,6 +136,9 @@ func (m Message) GetToolCalls() []ContentBlock {
 	var calls []ContentBlock
 	for _, c := range m.Content {
 		if c.Type == ContentTypeToolUse {
+			if calls == nil {
+				calls = make([]ContentBlock, 0, len(m.Content))
+			}
 			calls = append(calls, c)
 		}
 	}
