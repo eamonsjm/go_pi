@@ -1,11 +1,13 @@
 package skill
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"regexp"
 	"strings"
+	"time"
 )
 
 // RenderTemplate performs variable substitution and conditional block evaluation
@@ -66,14 +68,15 @@ func substituteVars(body string, vars map[string]string) string {
 
 // ContextVars returns the standard context variables: cwd, branch, model.
 // The model parameter is the currently active model name.
-func ContextVars(model string) map[string]string {
+// The context is used to bound the git branch lookup with a timeout.
+func ContextVars(ctx context.Context, model string) map[string]string {
 	vars := make(map[string]string, 3)
 
 	if cwd, err := os.Getwd(); err == nil {
 		vars["cwd"] = cwd
 	}
 
-	if branch, err := gitBranch(); err == nil {
+	if branch, err := gitBranch(ctx); err == nil {
 		vars["branch"] = branch
 	}
 
@@ -84,9 +87,16 @@ func ContextVars(model string) map[string]string {
 	return vars
 }
 
+// gitBranchTimeout bounds how long we wait for git rev-parse before giving up.
+const gitBranchTimeout = 3 * time.Second
+
 // gitBranch returns the current git branch name via git rev-parse.
-func gitBranch() (string, error) {
-	out, err := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD").Output()
+// It uses a derived context with a short timeout so a hung git process
+// (e.g. NFS stall, locked index) cannot block indefinitely.
+func gitBranch(ctx context.Context) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, gitBranchTimeout)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "git", "rev-parse", "--abbrev-ref", "HEAD").Output()
 	if err != nil {
 		return "", err
 	}

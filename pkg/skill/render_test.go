@@ -1,6 +1,7 @@
 package skill
 
 import (
+	"context"
 	"testing"
 )
 
@@ -101,7 +102,7 @@ func TestRenderTemplate_NoVarsNoConditionals(t *testing.T) {
 }
 
 func TestContextVars(t *testing.T) {
-	vars := ContextVars("claude-sonnet-4-6")
+	vars := ContextVars(context.Background(), "claude-sonnet-4-6")
 	if vars["model"] != "claude-sonnet-4-6" {
 		t.Errorf("model: got %q, want %q", vars["model"], "claude-sonnet-4-6")
 	}
@@ -113,9 +114,26 @@ func TestContextVars(t *testing.T) {
 }
 
 func TestContextVars_EmptyModel(t *testing.T) {
-	vars := ContextVars("")
+	vars := ContextVars(context.Background(), "")
 	if _, ok := vars["model"]; ok {
 		t.Error("model key should not be set when model is empty")
+	}
+}
+
+func TestContextVars_CancelledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately
+	vars := ContextVars(ctx, "test-model")
+	// branch should be absent since the cancelled context prevents git from running.
+	if _, ok := vars["branch"]; ok {
+		t.Error("branch should not be set when context is already cancelled")
+	}
+	// cwd and model should still be present (no git involved).
+	if vars["cwd"] == "" {
+		t.Error("cwd should still be set with cancelled context")
+	}
+	if vars["model"] != "test-model" {
+		t.Errorf("model: got %q, want %q", vars["model"], "test-model")
 	}
 }
 

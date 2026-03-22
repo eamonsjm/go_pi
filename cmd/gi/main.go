@@ -586,7 +586,7 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 						if err != nil {
 							return tui.CommandResultMsg{Text: err.Error(), IsError: true}
 						}
-						vars := skill.ContextVars(cfg.DefaultModel)
+						vars := skill.ContextVars(context.Background(), cfg.DefaultModel)
 						for k, v := range argVars {
 							vars[k] = v
 						}
