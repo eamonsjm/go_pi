@@ -3,6 +3,7 @@
 package tui
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 )
@@ -12,6 +13,9 @@ func configureShellProcessGroup(cmd *exec.Cmd) {}
 
 // killShellProcessGroup kills a process on Windows.
 func killShellProcessGroup(pid int) error {
+	if pid <= 0 {
+		return fmt.Errorf("invalid pid %d: refusing to kill process", pid)
+	}
 	proc, err := os.FindProcess(pid)
 	if err != nil {
 		return err
