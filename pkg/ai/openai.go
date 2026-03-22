@@ -384,7 +384,7 @@ func (p *OpenAIProvider) readSSEStream(ctx context.Context, body io.ReadCloser, 
 
 		select {
 		case <-ctx.Done():
-			ch <- StreamEvent{Type: EventError, Error: ctx.Err()}
+			trySend(ctx, ch, StreamEvent{Type: EventError, Error: ctx.Err()})
 			return
 		default:
 		}
@@ -397,23 +397,25 @@ func (p *OpenAIProvider) readSSEStream(ctx context.Context, body io.ReadCloser, 
 
 		// End-of-stream sentinel.
 		if data == "[DONE]" {
-			ch <- StreamEvent{
+			trySend(ctx, ch, StreamEvent{
 				Type:  EventMessageEnd,
 				Usage: &usage,
-			}
+			})
 			return
 		}
 
 		var chunk oaiChunk
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-			ch <- StreamEvent{Type: EventError, Error: fmt.Errorf("openai: failed to parse chunk: %w", err)}
+			trySend(ctx, ch, StreamEvent{Type: EventError, Error: fmt.Errorf("openai: failed to parse chunk: %w", err)})
 			return
 		}
 
 		// Emit message_start on first chunk.
 		if !started {
 			started = true
-			ch <- StreamEvent{Type: EventMessageStart}
+			if !trySend(ctx, ch, StreamEvent{Type: EventMessageStart}) {
+				return
+			}
 		}
 
 		// Usage may arrive in a dedicated final chunk.
@@ -431,7 +433,9 @@ func (p *OpenAIProvider) readSSEStream(ctx context.Context, body io.ReadCloser, 
 
 		// Text content delta.
 		if delta.Content != nil && *delta.Content != "" {
-			ch <- StreamEvent{Type: EventTextDelta, Delta: *delta.Content}
+			if !trySend(ctx, ch, StreamEvent{Type: EventTextDelta, Delta: *delta.Content}) {
+				return
+			}
 		}
 
 		// Tool call deltas.
@@ -442,10 +446,12 @@ func (p *OpenAIProvider) readSSEStream(ctx context.Context, body io.ReadCloser, 
 			if tc.ID != "" {
 				state = &toolCallState{id: tc.ID, name: tc.Function.Name}
 				toolCalls[tc.Index] = state
-				ch <- StreamEvent{
+				if !trySend(ctx, ch, StreamEvent{
 					Type:       EventToolUseStart,
 					ToolCallID: tc.ID,
 					ToolName:   tc.Function.Name,
+				}) {
+					return
 				}
 			}
 
@@ -456,11 +462,13 @@ func (p *OpenAIProvider) readSSEStream(ctx context.Context, body io.ReadCloser, 
 
 			// Argument deltas.
 			if tc.Function.Arguments != "" {
-				ch <- StreamEvent{
+				if !trySend(ctx, ch, StreamEvent{
 					Type:         EventToolUseDelta,
 					ToolCallID:   state.id,
 					ToolName:     state.name,
 					PartialInput: tc.Function.Arguments,
+				}) {
+					return
 				}
 			}
 		}
@@ -470,10 +478,12 @@ func (p *OpenAIProvider) readSSEStream(ctx context.Context, body io.ReadCloser, 
 			reason := *choice.FinishReason
 			if reason == "tool_calls" || reason == "stop" {
 				for idx, state := range toolCalls {
-					ch <- StreamEvent{
+					if !trySend(ctx, ch, StreamEvent{
 						Type:       EventToolUseEnd,
 						ToolCallID: state.id,
 						ToolName:   state.name,
+					}) {
+						return
 					}
 					delete(toolCalls, idx)
 				}
@@ -482,6 +492,6 @@ func (p *OpenAIProvider) readSSEStream(ctx context.Context, body io.ReadCloser, 
 	}
 
 	if err := scanner.Err(); err != nil {
-		ch <- StreamEvent{Type: EventError, Error: fmt.Errorf("openai: stream read error: %w", err)}
+		trySend(ctx, ch, StreamEvent{Type: EventError, Error: fmt.Errorf("openai: stream read error: %w", err)})
 	}
 }

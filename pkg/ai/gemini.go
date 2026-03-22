@@ -427,7 +427,7 @@ func (p *GeminiProvider) readSSEStream(ctx context.Context, body io.ReadCloser, 
 
 		select {
 		case <-ctx.Done():
-			ch <- StreamEvent{Type: EventError, Error: ctx.Err()}
+			trySend(ctx, ch, StreamEvent{Type: EventError, Error: ctx.Err()})
 			return
 		default:
 		}
@@ -440,14 +440,16 @@ func (p *GeminiProvider) readSSEStream(ctx context.Context, body io.ReadCloser, 
 
 		var resp gemSSEResponse
 		if err := json.Unmarshal([]byte(data), &resp); err != nil {
-			ch <- StreamEvent{Type: EventError, Error: fmt.Errorf("gemini: failed to parse SSE chunk: %w", err)}
+			trySend(ctx, ch, StreamEvent{Type: EventError, Error: fmt.Errorf("gemini: failed to parse SSE chunk: %w", err)})
 			return
 		}
 
 		// Emit message_start on first chunk.
 		if !started {
 			started = true
-			ch <- StreamEvent{Type: EventMessageStart}
+			if !trySend(ctx, ch, StreamEvent{Type: EventMessageStart}) {
+				return
+			}
 		}
 
 		// Track usage.
@@ -468,64 +470,74 @@ func (p *GeminiProvider) readSSEStream(ctx context.Context, body io.ReadCloser, 
 				// Generate a tool call ID since Gemini doesn't provide one.
 				toolID := nextToolCallID("gemini_call")
 
-				ch <- StreamEvent{
+				if !trySend(ctx, ch, StreamEvent{
 					Type:       EventToolUseStart,
 					ToolCallID: toolID,
 					ToolName:   part.FunctionCall.Name,
+				}) {
+					return
 				}
 
 				// Emit the full args as a single delta.
 				if part.FunctionCall.Args != nil {
 					argsJSON, err := json.Marshal(part.FunctionCall.Args)
 					if err != nil {
-						ch <- StreamEvent{Type: EventError, Error: fmt.Errorf("gemini: failed to marshal tool call arguments: %w", err)}
+						trySend(ctx, ch, StreamEvent{Type: EventError, Error: fmt.Errorf("gemini: failed to marshal tool call arguments: %w", err)})
 						return
 					}
-					ch <- StreamEvent{
+					if !trySend(ctx, ch, StreamEvent{
 						Type:         EventToolUseDelta,
 						ToolCallID:   toolID,
 						ToolName:     part.FunctionCall.Name,
 						PartialInput: string(argsJSON),
+					}) {
+						return
 					}
 				}
 
-				ch <- StreamEvent{
+				if !trySend(ctx, ch, StreamEvent{
 					Type:       EventToolUseEnd,
 					ToolCallID: toolID,
 					ToolName:   part.FunctionCall.Name,
+				}) {
+					return
 				}
 				continue
 			}
 
 			if part.Text != "" {
 				if part.Thought != nil && *part.Thought {
-					ch <- StreamEvent{Type: EventThinkingDelta, Delta: part.Text}
+					if !trySend(ctx, ch, StreamEvent{Type: EventThinkingDelta, Delta: part.Text}) {
+						return
+					}
 				} else {
-					ch <- StreamEvent{Type: EventTextDelta, Delta: part.Text}
+					if !trySend(ctx, ch, StreamEvent{Type: EventTextDelta, Delta: part.Text}) {
+						return
+					}
 				}
 			}
 		}
 
 		// Check for finish reason.
 		if candidate.FinishReason != "" && candidate.FinishReason != "FINISH_REASON_UNSPECIFIED" {
-			ch <- StreamEvent{
+			trySend(ctx, ch, StreamEvent{
 				Type:  EventMessageEnd,
 				Usage: &usage,
-			}
+			})
 			return
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
-		ch <- StreamEvent{Type: EventError, Error: fmt.Errorf("gemini: stream read error: %w", err)}
+		trySend(ctx, ch, StreamEvent{Type: EventError, Error: fmt.Errorf("gemini: stream read error: %w", err)})
 		return
 	}
 
 	// If we got here without a finish reason, still end gracefully.
 	if started {
-		ch <- StreamEvent{
+		trySend(ctx, ch, StreamEvent{
 			Type:  EventMessageEnd,
 			Usage: &usage,
-		}
+		})
 	}
 }
