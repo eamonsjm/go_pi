@@ -498,6 +498,7 @@ func (p *AnthropicProvider) readSSEStream(ctx context.Context, body io.ReadClose
 	var (
 		eventType string
 		usage     Usage
+		started   bool
 		blocks    = make(map[int]*blockState)
 	)
 
@@ -530,6 +531,7 @@ func (p *AnthropicProvider) readSSEStream(ctx context.Context, body io.ReadClose
 				trySend(ctx, ch, StreamEvent{Type: EventError, Error: fmt.Errorf("anthropic: failed to parse message_start: %w", err)})
 				return
 			}
+			started = true
 			usage.InputTokens += d.Message.Usage.InputTokens
 			usage.CacheRead += d.Message.Usage.CacheReadInputTokens
 			usage.CacheWrite += d.Message.Usage.CacheCreationInputTokens
@@ -662,5 +664,14 @@ func (p *AnthropicProvider) readSSEStream(ctx context.Context, body io.ReadClose
 
 	if err := scanner.Err(); err != nil {
 		trySend(ctx, ch, StreamEvent{Type: EventError, Error: fmt.Errorf("anthropic: stream read error: %w", err)})
+		return
+	}
+
+	// If we got here without a message_stop, still end gracefully.
+	if started {
+		trySend(ctx, ch, StreamEvent{
+			Type:  EventMessageEnd,
+			Usage: &usage,
+		})
 	}
 }
