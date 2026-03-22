@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"sync"
 )
 
 // Store manages persisted authentication credentials for all providers.
@@ -15,8 +14,7 @@ import (
 type Store struct {
 	path     string                 // path to auth.json
 	entries  map[string]*Credential // provider ID → credential
-	lockFile *os.File               // held while locked; nil when unlocked (unix)
-	mu       sync.Mutex             // per-instance mutex for locking (windows)
+	lockFile *os.File               // held while locked; nil when unlocked
 }
 
 // NewStore creates a Store backed by the given file path.
@@ -143,7 +141,7 @@ func (s *Store) Providers() []string {
 
 // Lock and Unlock are implemented in platform-specific files:
 // - store_unix.go: Uses syscall.Flock for file-based locking
-// - store_windows.go: Uses sync.Mutex for in-process locking
+// - store_windows.go: Uses LockFileEx for file-based locking
 
 // WithLock executes fn while holding an exclusive file lock on the auth store.
 // This prevents concurrent processes from racing on token refresh.
