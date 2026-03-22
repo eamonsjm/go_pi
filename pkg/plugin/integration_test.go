@@ -93,7 +93,7 @@ func startIntegrationPlugin(t *testing.T, binPath, mode string) *PluginProcess {
 		timeouts:    DefaultTimeoutConfig(),
 	}
 
-	go p.readLoop()
+	p.startReadLoop()
 
 	t.Cleanup(func() {
 		p.Stop()
@@ -413,7 +413,7 @@ func TestIntegration_InitTimeout(t *testing.T) {
 		timeouts:    DefaultTimeoutConfig(),
 	}
 
-	go p.readLoop()
+	p.startReadLoop()
 
 	t.Cleanup(func() {
 		p.Stop()

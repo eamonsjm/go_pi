@@ -607,7 +607,7 @@ func startTestPlugin(t *testing.T, mode string) *PluginProcess {
 		timeouts:    DefaultTimeoutConfig(),
 	}
 
-	go p.readLoop()
+	p.startReadLoop()
 
 	t.Cleanup(func() {
 		p.Stop()
