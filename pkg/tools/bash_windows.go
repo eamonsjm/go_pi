@@ -3,6 +3,7 @@
 package tools
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 )
@@ -19,7 +20,7 @@ func configureProcessGroup(cmd *exec.Cmd) {
 func killProcessGroup(pid int) error {
 	proc, err := os.FindProcess(pid)
 	if err != nil {
-		return err
+		return fmt.Errorf("find process %d: %w", pid, err)
 	}
 	return proc.Kill()
 }
