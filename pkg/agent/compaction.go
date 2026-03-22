@@ -98,7 +98,17 @@ func (a *AgentLoop) Compact(ctx context.Context, instructions string) error {
 	)
 
 	a.mu.Lock()
-	a.messages = []ai.Message{compactedMsg}
+	// Preserve messages appended (via appendMessage) during the compaction window.
+	// Since appendMessage only appends, any entries beyond the snapshot length are new.
+	if newLen := len(a.messages); newLen > len(msgs) {
+		appended := cloneMessages(a.messages[len(msgs):])
+		result := make([]ai.Message, 0, 1+len(appended))
+		result = append(result, compactedMsg)
+		result = append(result, appended...)
+		a.messages = result
+	} else {
+		a.messages = []ai.Message{compactedMsg}
+	}
 	a.mu.Unlock()
 
 	a.emit(ctx, AgentEvent{
@@ -191,6 +201,11 @@ func (a *AgentLoop) autoCompact(ctx context.Context) error {
 	newMsgs = append(newMsgs, recentMsgs...)
 
 	a.mu.Lock()
+	// Preserve messages appended (via appendMessage) during the compaction window.
+	if newLen := len(a.messages); newLen > len(msgs) {
+		appended := cloneMessages(a.messages[len(msgs):])
+		newMsgs = append(newMsgs, appended...)
+	}
 	a.messages = newMsgs
 	a.lastInputTokens = 0 // Reset so we don't re-trigger immediately.
 	a.mu.Unlock()
