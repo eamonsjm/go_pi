@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"time"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
@@ -981,15 +982,20 @@ func thinkingFromString(s string) ai.ThinkingLevel {
 // wrapLongString inserts newlines into a string that has no natural break
 // points (like URLs) so it fits within the given width.
 func wrapLongString(s string, width int) string {
-	if width <= 0 || len(s) <= width {
+	if width <= 0 || utf8.RuneCountInString(s) <= width {
 		return s
 	}
 	var result []byte
-	for i, b := range []byte(s) {
-		if i > 0 && i%width == 0 {
+	col := 0
+	for i := 0; i < len(s); {
+		_, size := utf8.DecodeRuneInString(s[i:])
+		if col > 0 && col >= width {
 			result = append(result, '\n')
+			col = 0
 		}
-		result = append(result, b)
+		result = append(result, s[i:i+size]...)
+		col++
+		i += size
 	}
 	return string(result)
 }
