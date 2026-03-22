@@ -17,8 +17,8 @@ import (
 
 // RunJSONStream runs the agent in JSON event stream mode. It reads a prompt
 // from args (or stdin if args is empty), runs the agent, and writes each event
-// as a newline-delimited JSON object to stdout.
-func RunJSONStream(agentLoop *agent.AgentLoop, prompt string) {
+// as a newline-delimited JSON object to stdout. It returns an exit code.
+func RunJSONStream(agentLoop *agent.AgentLoop, prompt string) int {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -50,24 +50,26 @@ func RunJSONStream(agentLoop *agent.AgentLoop, prompt string) {
 			if err := scanner.Err(); err != nil {
 				data, mErr := json.Marshal(Event{Type: "error", Error: fmt.Sprintf("reading stdin: %v", err)})
 				if mErr != nil {
-					log.Fatalf("jsonstream: failed to marshal error event: %v", mErr)
+					log.Printf("jsonstream: failed to marshal error event: %v", mErr)
+					return 1
 				}
 				if _, wErr := fmt.Fprintf(os.Stdout, "%s\n", data); wErr != nil {
 					log.Printf("jsonstream: failed to write error: %v", wErr)
 				}
-				os.Exit(1)
+				return 1
 			}
 			prompt = sb.String()
 		}
 		if prompt == "" {
 			data, mErr := json.Marshal(Event{Type: "error", Error: "no prompt provided"})
 			if mErr != nil {
-				log.Fatalf("jsonstream: failed to marshal error event: %v", mErr)
+				log.Printf("jsonstream: failed to marshal error event: %v", mErr)
+				return 1
 			}
 			if _, err := fmt.Fprintf(os.Stdout, "%s\n", data); err != nil {
 				log.Printf("jsonstream: failed to write error: %v", err)
 			}
-			os.Exit(1)
+			return 1
 		}
 	}
 
@@ -126,4 +128,9 @@ loop:
 			log.Printf("jsonstream: failed to write error: %v", err)
 		}
 	}
+
+	if sawError || promptErr != nil {
+		return 1
+	}
+	return 0
 }
