@@ -80,6 +80,9 @@ func NewRTKCommand(cfg *config.Config, metrics *tools.Metrics) *SlashCommand {
 			case "toggle":
 				return rtkToggle(cfg)
 			case "export":
+				if cfg.RTK == nil {
+					return rtkError("RTK not configured")
+				}
 				path := cfg.RTK.ExportPath
 				if len(parts) > 1 {
 					path = strings.TrimSpace(parts[1])
