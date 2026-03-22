@@ -265,7 +265,7 @@ func (m *Manager) AppendEntry(entry Entry) error {
 	defer m.mu.Unlock()
 
 	if m.current == "" {
-		return fmt.Errorf("no active session")
+		return ErrNoActiveSession
 	}
 
 	// Link to active branch if no explicit parent.
@@ -580,7 +580,7 @@ func (m *Manager) ForkAt(entryID string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("entry %s not found in session", entryID)
+	return &EntryNotFoundError{EntryID: entryID}
 }
 
 // SwitchBranch changes the active branch to the one identified by the given
