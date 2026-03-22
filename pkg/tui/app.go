@@ -104,21 +104,56 @@ type App struct {
 	program *tea.Program
 }
 
+// AppOption configures an App during construction.
+type AppOption func(*appConfig)
+
+type appConfig struct {
+	authStore     *auth.Store
+	initialPrompt string
+	hasUI         bool
+}
+
+// WithAppAuthStore injects an auth.Store that is shared with the ModelSelector.
+func WithAppAuthStore(s *auth.Store) AppOption {
+	return func(c *appConfig) { c.authStore = s }
+}
+
+// WithAppInitialPrompt sets a prompt to be auto-submitted after initialisation.
+func WithAppInitialPrompt(prompt string) AppOption {
+	return func(c *appConfig) { c.initialPrompt = prompt }
+}
+
+// WithAppHasUI sets whether the TUI runs in interactive mode.
+func WithAppHasUI(hasUI bool) AppOption {
+	return func(c *appConfig) { c.hasUI = hasUI }
+}
+
 // NewApp creates a fully initialised App ready to be passed to tea.NewProgram.
-func NewApp() *App {
+func NewApp(opts ...AppOption) *App {
+	cfg := &appConfig{}
+	for _, o := range opts {
+		o(cfg)
+	}
+
 	reg := NewCommandRegistry()
-	editor := NewEditor()
-	editor.SetCommands(reg)
+	editor := NewEditor(WithEditorCommands(reg))
 	kb := LoadKeybindings()
+
+	var msOpts []ModelSelectorOption
+	if cfg.authStore != nil {
+		msOpts = append(msOpts, WithAuthStore(cfg.authStore))
+	}
 
 	app := &App{
 		chat:          NewChatView(),
 		editor:        editor,
 		header:        NewHeader(),
 		footer:        NewFooter(),
-		modelSelector: NewModelSelector(),
+		modelSelector: NewModelSelector(msOpts...),
 		commands:      reg,
 		keybindings:   kb,
+		initialPrompt: cfg.initialPrompt,
+		hasUI:         cfg.hasUI,
 	}
 
 	// Register the /model command, reusing the selector's auth store.

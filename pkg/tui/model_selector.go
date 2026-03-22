@@ -102,20 +102,52 @@ type ModelSelector struct {
 	providerMode bool               // if true, navigating providers; if false, navigating models
 }
 
+// ModelSelectorOption configures a ModelSelector during construction.
+type ModelSelectorOption func(*modelSelectorConfig)
+
+type modelSelectorConfig struct {
+	authStore *auth.Store
+	models    []ModelOption
+}
+
+// WithAuthStore injects an existing auth.Store instead of creating a new one.
+func WithAuthStore(s *auth.Store) ModelSelectorOption {
+	return func(c *modelSelectorConfig) { c.authStore = s }
+}
+
+// WithModels overrides the default model list.
+func WithModels(models []ModelOption) ModelSelectorOption {
+	return func(c *modelSelectorConfig) { c.models = models }
+}
+
 // NewModelSelector creates a ModelSelector pre-populated with common models.
-func NewModelSelector() *ModelSelector {
-	authStore, err := auth.NewStore("") // Use default path
-	if err == nil {
-		_ = authStore.Load() // Load credentials (ignore errors, just proceed)
+func NewModelSelector(opts ...ModelSelectorOption) *ModelSelector {
+	cfg := &modelSelectorConfig{}
+	for _, o := range opts {
+		o(cfg)
+	}
+
+	authStore := cfg.authStore
+	if authStore == nil {
+		var err error
+		authStore, err = auth.NewStore("") // Use default path
+		if err == nil {
+			_ = authStore.Load() // Load credentials (ignore errors, just proceed)
+		}
+	}
+
+	models := cfg.models
+	if models == nil {
+		models = make([]ModelOption, len(defaultModels))
+		copy(models, defaultModels)
 	}
 
 	ms := &ModelSelector{
-		models:       make([]ModelOption, len(defaultModels)),
+		models:       models,
 		modelsByProv: make(map[string][]int),
 		authStatus:   make(map[string]bool),
 		authStore:    authStore,
 	}
-	copy(ms.models, defaultModels)
 
 	// Build provider list and model indices
 	seenProviders := make(map[string]bool)
