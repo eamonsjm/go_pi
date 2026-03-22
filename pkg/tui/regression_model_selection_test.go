@@ -16,7 +16,7 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestModelSelectorFlow(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.SetSize(100, 30)
 
 	if ms.Visible() {
@@ -36,7 +36,7 @@ func TestModelSelectorFlow(t *testing.T) {
 }
 
 func TestModelSelectorNavigation(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.SetSize(100, 30)
 	ms.Show()
 
@@ -75,7 +75,7 @@ func TestModelSelectorNavigation(t *testing.T) {
 }
 
 func TestModelSelectorFiltering(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.SetSize(100, 30)
 	ms.Show()
 
@@ -110,7 +110,7 @@ func TestModelSelectorFiltering(t *testing.T) {
 }
 
 func TestModelSelectorBackspaceClear(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.SetSize(100, 30)
 	ms.Show()
 
@@ -133,7 +133,7 @@ func TestModelSelectorBackspaceClear(t *testing.T) {
 }
 
 func TestModelSelectorSelection(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.SetSize(100, 30)
 	ms.Show()
 
@@ -168,7 +168,7 @@ func TestModelSelectorSelection(t *testing.T) {
 }
 
 func TestModelSelectorEscape(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.SetSize(100, 30)
 	ms.Show()
 
@@ -192,7 +192,7 @@ func TestModelSelectorEscape(t *testing.T) {
 }
 
 func TestModelSelectorView(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.SetSize(80, 20)
 
 	// Hidden view should be empty.
@@ -292,7 +292,7 @@ func TestAppModelChangeNotification_MultipleModels(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestModelSelectorProviderSwitchTab(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.Show()
 
 	if len(ms.providers) < 2 {
@@ -320,7 +320,7 @@ func TestModelSelectorProviderSwitchTab(t *testing.T) {
 }
 
 func TestModelSelectorProviderSwitchTabWraps(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.Show()
 
 	providerCount := len(ms.providers)
@@ -339,7 +339,7 @@ func TestModelSelectorProviderSwitchTabWraps(t *testing.T) {
 }
 
 func TestModelSelectorProviderSwitchShiftTab(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.Show()
 
 	if len(ms.providers) < 2 {
@@ -356,7 +356,7 @@ func TestModelSelectorProviderSwitchShiftTab(t *testing.T) {
 }
 
 func TestModelSelectorProviderSwitchLeftRight(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.Show()
 
 	if len(ms.providers) < 2 {
@@ -390,7 +390,7 @@ func TestModelSelectorProviderSwitchLeftRight(t *testing.T) {
 }
 
 func TestModelSelectorProviderSwitchNumberKeys(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.Show()
 
 	if len(ms.providers) < 2 {
@@ -411,7 +411,7 @@ func TestModelSelectorProviderSwitchNumberKeys(t *testing.T) {
 }
 
 func TestModelSelectorProviderSwitchResetsModelCursor(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.Show()
 
 	if len(ms.providers) < 2 {

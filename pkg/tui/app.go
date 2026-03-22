@@ -111,18 +111,24 @@ func NewApp() *App {
 	editor.SetCommands(reg)
 	kb := LoadKeybindings()
 
+	// Create the auth checker once for both the selector and the model command.
+	var checker AuthChecker
+	if store, err := auth.NewStore(""); err == nil {
+		_ = store.Load()
+		checker = store
+	}
+
 	app := &App{
 		chat:          NewChatView(),
 		editor:        editor,
 		header:        NewHeader(),
 		footer:        NewFooter(),
-		modelSelector: NewModelSelector(),
+		modelSelector: NewModelSelector(checker),
 		commands:      reg,
 		keybindings:   kb,
 	}
 
-	// Register the /model command, reusing the selector's auth store.
-	modelCmd := RegisterModelCommand(app.modelSelector.authStore)
+	modelCmd := RegisterModelCommand(checker)
 	reg.Register(&modelCmd)
 
 	return app
@@ -270,8 +276,8 @@ func (a *App) RegisterBuiltinCommands(ctx context.Context, agentLoop *agent.Agen
 		func() ai.Usage { return a.sessionUsage },
 	))
 	a.RegisterCommand(NewNameCommand(sessionMgr, a.header, a.chat))
-	a.RegisterCommand(NewForkCommand(ctx, agentLoop, sessionMgr, a.chat, a.header))
-	a.RegisterCommand(NewTreeCommand(agentLoop, sessionMgr, a.chat, a.header))
+	a.RegisterCommand(NewForkCommand(agentLoop.SetMessages, sessionMgr, a.chat))
+	a.RegisterCommand(NewTreeCommand(agentLoop.SetMessages, sessionMgr, a.chat, a.header.SetSession))
 	a.RegisterCommand(NewCopyCommand(sessionMgr))
 	a.RegisterCommand(NewExportCommand(sessionMgr))
 	a.RegisterCommand(NewShareCommand(sessionMgr))

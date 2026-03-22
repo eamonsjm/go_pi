@@ -8,7 +8,7 @@ import (
 )
 
 func TestModelSelector_NewModelSelector(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	if ms.visible {
 		t.Error("expected not visible initially")
 	}
@@ -21,7 +21,7 @@ func TestModelSelector_NewModelSelector(t *testing.T) {
 }
 
 func TestModelSelector_ShowHide(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 
 	ms.Show()
 	if !ms.Visible() {
@@ -41,7 +41,7 @@ func TestModelSelector_ShowHide(t *testing.T) {
 }
 
 func TestModelSelector_SetSize(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.SetSize(100, 50)
 	if ms.width != 100 || ms.height != 50 {
 		t.Errorf("expected 100x50, got %dx%d", ms.width, ms.height)
@@ -49,7 +49,7 @@ func TestModelSelector_SetSize(t *testing.T) {
 }
 
 func TestModelSelector_ResetFilter(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.resetFilter()
 	if len(ms.filtered) != len(ms.models) {
 		t.Errorf("resetFilter should include all models")
@@ -62,7 +62,7 @@ func TestModelSelector_ResetFilter(t *testing.T) {
 }
 
 func TestModelSelector_ApplyFilter(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 
 	ms.filter = "opus"
 	ms.applyFilter()
@@ -80,7 +80,7 @@ func TestModelSelector_ApplyFilter(t *testing.T) {
 }
 
 func TestModelSelector_ApplyFilter_CaseInsensitive(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 
 	ms.filter = "SONNET"
 	ms.applyFilter()
@@ -90,7 +90,7 @@ func TestModelSelector_ApplyFilter_CaseInsensitive(t *testing.T) {
 }
 
 func TestModelSelector_ApplyFilter_NoMatch(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 
 	ms.filter = "xyznonexistent"
 	ms.applyFilter()
@@ -100,7 +100,7 @@ func TestModelSelector_ApplyFilter_NoMatch(t *testing.T) {
 }
 
 func TestModelSelector_ApplyFilter_EmptyResetsAll(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.filter = "opus"
 	ms.applyFilter()
 
@@ -115,7 +115,7 @@ func TestModelSelector_ApplyFilter_EmptyResetsAll(t *testing.T) {
 }
 
 func TestModelSelector_ApplyFilter_CursorClamp(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.cursor = 7 // last default model
 
 	ms.filter = "opus"
@@ -127,7 +127,7 @@ func TestModelSelector_ApplyFilter_CursorClamp(t *testing.T) {
 }
 
 func TestModelSelector_Update_NotVisible(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.visible = false
 
 	cmd := ms.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -137,7 +137,7 @@ func TestModelSelector_Update_NotVisible(t *testing.T) {
 }
 
 func TestModelSelector_Update_Escape(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.Show()
 
 	cmd := ms.Update(tea.KeyMsg{Type: tea.KeyEscape})
@@ -154,7 +154,7 @@ func TestModelSelector_Update_Escape(t *testing.T) {
 }
 
 func TestModelSelector_Update_Enter(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.Show()
 
 	cmd := ms.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -176,7 +176,7 @@ func TestModelSelector_Update_Enter(t *testing.T) {
 }
 
 func TestModelSelector_Update_Enter_EmptyFilter(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.Show()
 	ms.filter = "xyznonexistent"
 	ms.applyFilter() // should produce 0 matches
@@ -188,7 +188,7 @@ func TestModelSelector_Update_Enter_EmptyFilter(t *testing.T) {
 }
 
 func TestModelSelector_Update_Navigation(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.Show()
 
 	// Move down.
@@ -218,7 +218,7 @@ func TestModelSelector_Update_Navigation(t *testing.T) {
 }
 
 func TestModelSelector_Update_DownClamp(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.Show()
 
 	// Move to last item.
@@ -231,7 +231,7 @@ func TestModelSelector_Update_DownClamp(t *testing.T) {
 }
 
 func TestModelSelector_Update_TypeFilter(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.Show()
 	before := len(ms.filtered)
 
@@ -249,7 +249,7 @@ func TestModelSelector_Update_TypeFilter(t *testing.T) {
 }
 
 func TestModelSelector_Update_Backspace(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.Show()
 	ms.filter = "gpt"
 	ms.applyFilter()
@@ -266,7 +266,7 @@ func TestModelSelector_Update_Backspace(t *testing.T) {
 }
 
 func TestModelSelector_Update_BackspaceEmpty(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.Show()
 	ms.filter = ""
 
@@ -277,7 +277,7 @@ func TestModelSelector_Update_BackspaceEmpty(t *testing.T) {
 }
 
 func TestModelSelector_View_NotVisible(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.visible = false
 	if v := ms.View(); v != "" {
 		t.Errorf("expected empty View when not visible, got %q", v)
@@ -285,7 +285,7 @@ func TestModelSelector_View_NotVisible(t *testing.T) {
 }
 
 func TestModelSelector_View_Visible(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.Show()
 	ms.SetSize(80, 40)
 	view := ms.View()
@@ -454,7 +454,7 @@ func TestModelSelector_Enter_EmptyModelsList(t *testing.T) {
 }
 
 func TestModelSelector_Navigation_EmptyFiltered(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.Show()
 	ms.filter = "xyznonexistent"
 	ms.applyFilter()
@@ -468,7 +468,7 @@ func TestModelSelector_Navigation_EmptyFiltered(t *testing.T) {
 }
 
 func TestModelSelector_VeryLongFilter(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.Show()
 
 	// Type a very long filter string.
@@ -492,7 +492,7 @@ func TestModelSelector_VeryLongFilter(t *testing.T) {
 }
 
 func TestModelSelector_SpecialCharsInFilter(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.Show()
 
 	// Type special characters that might cause issues in string matching.
@@ -506,7 +506,7 @@ func TestModelSelector_SpecialCharsInFilter(t *testing.T) {
 }
 
 func TestModelSelector_View_1x1(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.Show()
 	ms.SetSize(1, 1)
 	// View with extreme size should not panic.
@@ -517,7 +517,7 @@ func TestModelSelector_View_1x1(t *testing.T) {
 }
 
 func TestModelSelector_View_ZeroSize(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.Show()
 	ms.SetSize(0, 0)
 	// View with zero dimensions should not panic.
@@ -525,7 +525,7 @@ func TestModelSelector_View_ZeroSize(t *testing.T) {
 }
 
 func TestModelSelector_BackspaceAfterFullClear(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.Show()
 
 	// Type one char then delete it, then backspace again on empty.
@@ -545,7 +545,7 @@ func TestModelSelector_BackspaceAfterFullClear(t *testing.T) {
 }
 
 func TestModelSelector_RapidShowHide(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	for i := 0; i < 20; i++ {
 		ms.Show()
 		ms.Hide()
@@ -617,7 +617,7 @@ func TestFuzzyMatchModels_CaseInsensitive(t *testing.T) {
 }
 
 func TestModelSelector_ShowWithFilter(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.ShowWithFilter("opus")
 
 	if !ms.Visible() {
@@ -641,7 +641,7 @@ func TestModelSelector_ShowWithFilter(t *testing.T) {
 }
 
 func TestModelSelector_ShowWithFilter_Empty(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.ShowWithFilter("")
 
 	if !ms.Visible() {
@@ -728,7 +728,7 @@ func TestRegisterModelCommand_CaseInsensitiveMatch(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestModelSelector_ProviderSwitching_Tab(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.Show()
 
 	if ms.providerIdx != 0 {
@@ -763,7 +763,7 @@ func TestModelSelector_ProviderSwitching_Tab(t *testing.T) {
 }
 
 func TestModelSelector_ProviderSwitching_ShiftTab(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.Show()
 
 	// Shift+Tab from first provider should wrap to last.
@@ -787,7 +787,7 @@ func TestModelSelector_ProviderSwitching_ShiftTab(t *testing.T) {
 }
 
 func TestModelSelector_ProviderSwitching_LeftRight(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.Show()
 
 	// Right arrow advances provider.
@@ -818,7 +818,7 @@ func TestModelSelector_ProviderSwitching_LeftRight(t *testing.T) {
 }
 
 func TestModelSelector_ProviderSwitching_NumberKeys(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.Show()
 
 	// Press '2' to jump to second provider.
@@ -853,7 +853,7 @@ func TestModelSelector_ProviderSwitching_NumberKeys(t *testing.T) {
 }
 
 func TestModelSelector_ProviderSwitching_ResetsCursor(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.Show()
 
 	// Move cursor down in first provider.
@@ -871,7 +871,7 @@ func TestModelSelector_ProviderSwitching_ResetsCursor(t *testing.T) {
 }
 
 func TestModelSelector_ProviderSwitching_ModelsMatchProvider(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.Show()
 
 	// Check each provider's filtered list.
@@ -896,7 +896,7 @@ func TestModelSelector_ProviderSwitching_ModelsMatchProvider(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestModelSelector_AuthStatus_Initialized(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	// authStatus map should have an entry for each provider.
 	for _, provider := range ms.providers {
 		if _, exists := ms.authStatus[provider]; !exists {
@@ -906,7 +906,7 @@ func TestModelSelector_AuthStatus_Initialized(t *testing.T) {
 }
 
 func TestModelSelector_View_ProviderTabsWithAuth(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.Show()
 	ms.SetSize(120, 40)
 	view := ms.View()
@@ -926,7 +926,7 @@ func TestModelSelector_View_ProviderTabsWithAuth(t *testing.T) {
 }
 
 func TestModelSelector_View_AuthIndicatorPerProvider(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.Show()
 	ms.SetSize(120, 40)
 	view := ms.View()
@@ -943,7 +943,7 @@ func TestModelSelector_View_AuthIndicatorPerProvider(t *testing.T) {
 }
 
 func TestModelSelector_View_CurrentProviderHighlighted(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.Show()
 	ms.SetSize(120, 40)
 
@@ -960,7 +960,7 @@ func TestModelSelector_View_CurrentProviderHighlighted(t *testing.T) {
 }
 
 func TestModelSelector_View_ModelList_MatchesProvider(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.Show()
 	ms.SetSize(120, 40)
 
@@ -991,7 +991,7 @@ func TestModelSelector_View_ModelList_MatchesProvider(t *testing.T) {
 }
 
 func TestModelSelector_View_FilterPrompt(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.Show()
 	ms.SetSize(120, 40)
 
@@ -1008,7 +1008,7 @@ func TestModelSelector_View_FilterPrompt(t *testing.T) {
 }
 
 func TestModelSelector_View_NoMatchMessage(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.Show()
 	ms.SetSize(120, 40)
 
@@ -1025,7 +1025,7 @@ func TestModelSelector_View_NoMatchMessage(t *testing.T) {
 }
 
 func TestModelSelector_View_HelpText(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.Show()
 	ms.SetSize(200, 40) // wide enough to avoid truncation
 
@@ -1045,7 +1045,7 @@ func TestModelSelector_View_HelpText(t *testing.T) {
 }
 
 func TestModelSelector_View_CursorIndicator(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.Show()
 	ms.SetSize(120, 40)
 
@@ -1057,7 +1057,7 @@ func TestModelSelector_View_CursorIndicator(t *testing.T) {
 }
 
 func TestModelSelector_View_SelectedModelShowsDetail(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.Show()
 	ms.SetSize(120, 40)
 
@@ -1077,7 +1077,7 @@ func TestModelSelector_View_SelectedModelShowsDetail(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestModelSelector_FilterWithProviderSwitch(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.Show()
 
 	// Type a filter in the first provider.
@@ -1101,7 +1101,7 @@ func TestModelSelector_FilterWithProviderSwitch(t *testing.T) {
 }
 
 func TestModelSelector_Enter_SelectsFromCurrentProvider(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.Show()
 
 	// Switch to "openai" provider.
@@ -1129,7 +1129,7 @@ func TestModelSelector_Enter_SelectsFromCurrentProvider(t *testing.T) {
 }
 
 func TestModelSelector_Enter_SelectsFromGemini(t *testing.T) {
-	ms := NewModelSelector()
+	ms := NewModelSelector(nil)
 	ms.Show()
 
 	// Switch to "gemini" provider.
