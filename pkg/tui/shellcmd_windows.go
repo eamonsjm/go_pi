@@ -18,7 +18,7 @@ func killShellProcessGroup(pid int) error {
 	}
 	proc, err := os.FindProcess(pid)
 	if err != nil {
-		return err
+		return fmt.Errorf("find process %d: %w", pid, err)
 	}
 	return proc.Kill()
 }
