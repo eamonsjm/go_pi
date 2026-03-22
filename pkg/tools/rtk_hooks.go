@@ -39,11 +39,18 @@ func (r *HookRegistry) Register(h Hook) {
 	r.hooks = append(r.hooks, h)
 }
 
-// Before fires all registered "before" hooks.
-func (r *HookRegistry) Before(ctx context.Context, toolName string, params map[string]any) error {
+// Before fires all registered "before" hooks. A panicking hook is caught and
+// returned as an error instead of crashing the agent process.
+func (r *HookRegistry) Before(ctx context.Context, toolName string, params map[string]any) (retErr error) {
 	r.mu.Lock()
 	hooks := r.hooks
 	r.mu.Unlock()
+
+	defer func() {
+		if r := recover(); r != nil {
+			retErr = fmt.Errorf("before-hook %q panicked: %v", toolName, r)
+		}
+	}()
 
 	for _, h := range hooks {
 		if err := h.BeforeExecute(ctx, toolName, params); err != nil {
@@ -53,16 +60,28 @@ func (r *HookRegistry) Before(ctx context.Context, toolName string, params map[s
 	return nil
 }
 
-// After fires all registered "after" hooks, chaining result modifications.
-func (r *HookRegistry) After(ctx context.Context, toolName string, params map[string]any, result string, err error) (string, error) {
+// After fires all registered "after" hooks, chaining result modifications. A
+// panicking hook is caught and returned as an error instead of crashing the
+// agent process.
+func (r *HookRegistry) After(ctx context.Context, toolName string, params map[string]any, result string, err error) (retResult string, retErr error) {
 	r.mu.Lock()
 	hooks := r.hooks
 	r.mu.Unlock()
 
+	retResult = result
+	retErr = err
+
+	defer func() {
+		if r := recover(); r != nil {
+			retResult = ""
+			retErr = fmt.Errorf("after-hook %q panicked: %v", toolName, r)
+		}
+	}()
+
 	for _, h := range hooks {
-		result, err = h.AfterExecute(ctx, toolName, params, result, err)
+		retResult, retErr = h.AfterExecute(ctx, toolName, params, retResult, retErr)
 	}
-	return result, err
+	return retResult, retErr
 }
 
 // ANSIStripper removes ANSI escape sequences from output.
