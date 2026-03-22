@@ -27,6 +27,27 @@ type Credential struct {
 	ExpiresAt    int64          `json:"expires_at,omitempty"`    // Unix ms when access token expires
 }
 
+// String implements fmt.Stringer. It returns a human-readable representation
+// that redacts sensitive fields (Key, RefreshToken, AccessToken), showing only
+// whether each is set. This prevents accidental secret leakage via %v or %+v.
+func (c Credential) String() string {
+	return fmt.Sprintf("Credential{Type:%s Key:%s RefreshToken:%s AccessToken:%s ExpiresAt:%d}",
+		c.Type, redact(c.Key), redact(c.RefreshToken), redact(c.AccessToken), c.ExpiresAt)
+}
+
+// GoString implements fmt.GoStringer for %#v formatting.
+func (c Credential) GoString() string {
+	return c.String()
+}
+
+// redact returns "[set]" or "[empty]" for a secret field value.
+func redact(s string) string {
+	if s != "" {
+		return "[set]"
+	}
+	return "[empty]"
+}
+
 // IsExpired reports whether an OAuth credential's access token has expired.
 // Includes a 5-minute buffer to avoid edge-case failures.
 func (c *Credential) IsExpired() bool {
