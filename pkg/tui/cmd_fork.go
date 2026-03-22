@@ -1,15 +1,24 @@
 package tui
 
 import (
-	"context"
 	"fmt"
 	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/ejm/go_pi/pkg/agent"
+	"github.com/ejm/go_pi/pkg/ai"
 	"github.com/ejm/go_pi/pkg/session"
 )
+
+// forkSession is the subset of *session.Manager used by the fork command.
+type forkSession interface {
+	CurrentID() string
+	GetUserEntries() []session.Entry
+	GetEntries() []session.Entry
+	ForkAt(id string) error
+	GetMessages() []ai.Message
+	GetBranches() []session.BranchInfo
+}
 
 // NewForkCommand creates the /fork command which branches the conversation
 // from a previous message.
@@ -18,19 +27,19 @@ import (
 //   - /fork        — fork from the last user message (re-ask with different input)
 //   - /fork <n>    — fork from the nth user message (1 = first, -1 = last)
 //   - /fork <id>   — fork from a specific entry ID
-func NewForkCommand(ctx context.Context, agentLoop *agent.AgentLoop, sessionMgr *session.Manager, chatView *ChatView, header *Header) *SlashCommand {
+func NewForkCommand(setMessages func([]ai.Message), sess forkSession, chatView *ChatView) *SlashCommand {
 	return &SlashCommand{
 		Name:        "fork",
 		Description: "Branch the conversation from a previous message",
 		Execute: func(args string) tea.Cmd {
 			args = strings.TrimSpace(args)
 
-			if sessionMgr.CurrentID() == "" {
+			if sess.CurrentID() == "" {
 				chatView.AddSystemMessage("No active session to fork.")
 				return nil
 			}
 
-			userEntries := sessionMgr.GetUserEntries()
+			userEntries := sess.GetUserEntries()
 			if len(userEntries) == 0 {
 				chatView.AddSystemMessage("No user messages to fork from.")
 				return nil
@@ -54,7 +63,7 @@ func NewForkCommand(ctx context.Context, agentLoop *agent.AgentLoop, sessionMgr 
 				forkEntry = userEntries[n-1]
 			} else {
 				// Try as entry ID or prefix.
-				entries := sessionMgr.GetEntries()
+				entries := sess.GetEntries()
 				found := false
 				for _, e := range entries {
 					if e.ID == args || strings.HasPrefix(e.ID, args) {
@@ -78,20 +87,20 @@ func NewForkCommand(ctx context.Context, agentLoop *agent.AgentLoop, sessionMgr 
 			}
 
 			// Set the fork point.
-			if err := sessionMgr.ForkAt(forkPointID); err != nil {
+			if err := sess.ForkAt(forkPointID); err != nil {
 				chatView.AddSystemMessage(fmt.Sprintf("Fork failed: %v", err))
 				return nil
 			}
 
 			// Restore messages for the new branch point into the agent loop.
-			msgs := sessionMgr.GetMessages()
-			agentLoop.SetMessages(msgs)
+			msgs := sess.GetMessages()
+			setMessages(msgs)
 
 			// Rebuild the chat view.
 			chatView.ClearBlocks()
 			rebuildChatFromMessages(chatView, msgs)
 
-			branches := sessionMgr.GetBranches()
+			branches := sess.GetBranches()
 			chatView.AddSystemMessage(fmt.Sprintf(
 				"Forked at message %s — now on a new branch (%d total branches).\nType your message to continue on this branch.",
 				shortID(forkPointID), len(branches)))

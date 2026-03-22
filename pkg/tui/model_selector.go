@@ -7,9 +7,13 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-
-	"github.com/ejm/go_pi/pkg/auth"
 )
+
+// AuthChecker reports whether credentials exist for a given provider.
+// *auth.Store satisfies this interface.
+type AuthChecker interface {
+	HasCredential(provider string) bool
+}
 
 // ---------------------------------------------------------------------------
 // Messages emitted by the model selector
@@ -101,7 +105,7 @@ type ModelSelector struct {
 	width        int
 	height       int
 	filter       string             // current search text
-	authStore    *auth.Store        // for checking auth status
+	authChecker  AuthChecker        // for checking auth status (nil-safe)
 	providerMode bool               // if true, navigating providers; if false, navigating models
 }
 
@@ -109,13 +113,13 @@ type ModelSelector struct {
 type ModelSelectorOption func(*modelSelectorConfig)
 
 type modelSelectorConfig struct {
-	authStore *auth.Store
-	models    []ModelOption
+	authChecker AuthChecker
+	models      []ModelOption
 }
 
-// WithAuthStore injects an existing auth.Store instead of creating a new one.
-func WithAuthStore(s *auth.Store) ModelSelectorOption {
-	return func(c *modelSelectorConfig) { c.authStore = s }
+// WithAuthChecker injects an AuthChecker for per-provider auth indicators.
+func WithAuthChecker(c AuthChecker) ModelSelectorOption {
+	return func(cfg *modelSelectorConfig) { cfg.authChecker = c }
 }
 
 // WithModels overrides the default model list.
@@ -124,42 +128,34 @@ func WithModels(models []ModelOption) ModelSelectorOption {
 }
 
 // NewModelSelector creates a ModelSelector pre-populated with common models.
+// Use WithAuthChecker to supply per-provider auth indicators; omit to skip.
 func NewModelSelector(opts ...ModelSelectorOption) *ModelSelector {
 	cfg := &modelSelectorConfig{}
 	for _, o := range opts {
 		o(cfg)
 	}
 
-	authStore := cfg.authStore
-	if authStore == nil {
-		var err error
-		authStore, err = auth.NewStore("") // Use default path
-		if err == nil {
-			_ = authStore.Load() // Load credentials (ignore errors, just proceed)
-		}
-	}
-
+	defaults := getDefaultModels()
 	models := cfg.models
 	if models == nil {
-		models = make([]ModelOption, len(defaultModels))
-		copy(models, defaultModels)
+		models = make([]ModelOption, len(defaults))
+		copy(models, defaults)
 	}
 
 	ms := &ModelSelector{
 		models:       models,
 		modelsByProv: make(map[string][]int),
 		authStatus:   make(map[string]bool),
-		authStore:    authStore,
+		authChecker:  cfg.authChecker,
 	}
 
-	// Build provider list and model indices
+	// Build provider list and model indices.
 	seenProviders := make(map[string]bool)
 	for i, opt := range ms.models {
 		if !seenProviders[opt.Provider] {
 			ms.providers = append(ms.providers, opt.Provider)
 			seenProviders[opt.Provider] = true
-			// Check if authenticated
-			ms.authStatus[opt.Provider] = ms.authStore != nil && ms.authStore.Get(opt.Provider) != nil
+			ms.authStatus[opt.Provider] = cfg.authChecker != nil && cfg.authChecker.HasCredential(opt.Provider)
 		}
 		ms.modelsByProv[opt.Provider] = append(ms.modelsByProv[opt.Provider], i)
 	}
@@ -523,10 +519,9 @@ func fuzzyMatchModels(query string) []ModelOption {
 // ---------------------------------------------------------------------------
 
 // RegisterModelCommand returns a SlashCommand for /model that can be registered
-// with the command infrastructure. It accepts a pre-loaded auth.Store so that
-// model switches reuse the existing credentials instead of reading from disk
-// on every invocation. If store is nil, auth checks are skipped gracefully.
-func RegisterModelCommand(store *auth.Store) SlashCommand {
+// with the command infrastructure. The checker is used to verify auth before
+// switching models; pass nil to skip auth checks gracefully.
+func RegisterModelCommand(checker AuthChecker) SlashCommand {
 	return SlashCommand{
 		Name:        "model",
 		Description: "Switch the AI model. Usage: /model [model-name]",
@@ -540,7 +535,7 @@ func RegisterModelCommand(store *auth.Store) SlashCommand {
 			// 1. Exact match on model ID (case-insensitive).
 			for _, opt := range getDefaultModels() {
 				if strings.EqualFold(opt.Model, args) {
-					return modelSwitchWithAuthCheck(store, opt)
+					return modelSwitchWithAuthCheck(checker, opt)
 				}
 			}
 
@@ -561,7 +556,7 @@ func RegisterModelCommand(store *auth.Store) SlashCommand {
 
 			case 1:
 				// Single fuzzy match — switch directly (with auth check).
-				return modelSwitchWithAuthCheck(store, matches[0])
+				return modelSwitchWithAuthCheck(checker, matches[0])
 
 			default:
 				// Multiple matches — show selector pre-filtered.
@@ -575,15 +570,14 @@ func RegisterModelCommand(store *auth.Store) SlashCommand {
 // modelSwitchWithAuthCheck returns a tea.Cmd that verifies the user is
 // authenticated to the model's provider before emitting modelSelectedMsg.
 // If not authenticated, it returns an error prompting the user to log in.
-// It reuses the provided auth.Store rather than creating a new one each time.
-func modelSwitchWithAuthCheck(store *auth.Store, opt ModelOption) tea.Cmd {
+func modelSwitchWithAuthCheck(checker AuthChecker, opt ModelOption) tea.Cmd {
 	return func() tea.Msg {
-		if store == nil {
+		if checker == nil {
 			// Can't check auth — proceed anyway.
 			return modelSelectedMsg{provider: opt.Provider, model: opt.Model}
 		}
 
-		if store.Get(opt.Provider) == nil {
+		if !checker.HasCredential(opt.Provider) {
 			return CommandResultMsg{
 				Text: fmt.Sprintf(
 					"Not authenticated to %s. Run /login %s first, then retry /model %s",

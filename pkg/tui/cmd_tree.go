@@ -6,9 +6,18 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/ejm/go_pi/pkg/agent"
+	"github.com/ejm/go_pi/pkg/ai"
 	"github.com/ejm/go_pi/pkg/session"
 )
+
+// treeSession is the subset of *session.Manager used by the tree command.
+type treeSession interface {
+	CurrentID() string
+	GetBranches() []session.BranchInfo
+	FormatTree() string
+	SwitchBranch(leafID string) error
+	GetMessages() []ai.Message
+}
 
 // NewTreeCommand creates the /tree command which displays the session's
 // branch structure and allows switching between branches.
@@ -16,21 +25,21 @@ import (
 // Usage:
 //   - /tree        — show the branch tree
 //   - /tree <n>    — switch to branch number n
-func NewTreeCommand(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, chatView *ChatView, header *Header) *SlashCommand {
+func NewTreeCommand(setMessages func([]ai.Message), sess treeSession, chatView *ChatView, setSession func(string)) *SlashCommand {
 	return &SlashCommand{
 		Name:        "tree",
 		Description: "Show or navigate the session branch tree",
 		Execute: func(args string) tea.Cmd {
 			args = strings.TrimSpace(args)
 
-			if sessionMgr.CurrentID() == "" {
+			if sess.CurrentID() == "" {
 				chatView.AddSystemMessage("No active session.")
 				return nil
 			}
 
 			// No arguments: display tree.
 			if args == "" {
-				tree := sessionMgr.FormatTree()
+				tree := sess.FormatTree()
 				chatView.AddSystemMessage(tree)
 				return nil
 			}
@@ -42,7 +51,7 @@ func NewTreeCommand(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cha
 				return nil
 			}
 
-			branches := sessionMgr.GetBranches()
+			branches := sess.GetBranches()
 			if len(branches) == 0 {
 				chatView.AddSystemMessage("No branches in session.")
 				return nil
@@ -59,14 +68,14 @@ func NewTreeCommand(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cha
 			}
 
 			// Switch to the target branch.
-			if err := sessionMgr.SwitchBranch(target.LeafID); err != nil {
+			if err := sess.SwitchBranch(target.LeafID); err != nil {
 				chatView.AddSystemMessage(fmt.Sprintf("Switch failed: %v", err))
 				return nil
 			}
 
 			// Restore messages for the new branch into the agent loop.
-			msgs := sessionMgr.GetMessages()
-			agentLoop.SetMessages(msgs)
+			msgs := sess.GetMessages()
+			setMessages(msgs)
 
 			// Rebuild the chat view.
 			chatView.ClearBlocks()
@@ -80,7 +89,7 @@ func NewTreeCommand(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cha
 				"Switched to branch %d: %s (%d messages)",
 				n, preview, len(msgs)))
 
-			header.SetSession(shortID(sessionMgr.CurrentID()))
+			setSession(shortID(sess.CurrentID()))
 
 			return nil
 		},

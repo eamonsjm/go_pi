@@ -119,6 +119,11 @@ func (s *Store) Get(provider string) *Credential {
 	return s.entries[provider]
 }
 
+// HasCredential reports whether credentials are stored for a provider.
+func (s *Store) HasCredential(provider string) bool {
+	return s.entries[provider] != nil
+}
+
 // Set stores a credential for a provider (in memory; call Save to persist).
 func (s *Store) Set(provider string, cred *Credential) {
 	s.entries[provider] = cred
