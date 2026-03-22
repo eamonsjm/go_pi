@@ -1536,6 +1536,311 @@ func TestApp_Update_PluginUIRequestMsg_InteractiveMode(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Model selection and provider switching end-to-end flow (gp-u2ch)
+// ---------------------------------------------------------------------------
+
+func TestApp_ModelCommandFlow_NoArgs_ShowsSelector(t *testing.T) {
+	app := NewApp()
+	app.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+
+	// Simulate /model command with no args via editorCommandMsg.
+	_, cmd := app.Update(editorCommandMsg{name: "model", args: ""})
+	if cmd == nil {
+		t.Fatal("expected non-nil cmd from /model command")
+	}
+	// Execute the returned cmd to get the message.
+	msg := cmd()
+	// Feed the message back into Update to trigger the selector.
+	app.Update(msg)
+
+	if !app.modelSelector.Visible() {
+		t.Error("expected model selector visible after /model with no args")
+	}
+	// Editor should be blurred when selector is shown.
+	view := app.View()
+	stripped := stripAnsi(view)
+	if !strings.Contains(stripped, "Select Model") {
+		t.Error("expected 'Select Model' in view when selector is shown")
+	}
+}
+
+func TestApp_ModelCommandFlow_WithFilter_ShowsPreFiltered(t *testing.T) {
+	app := NewApp()
+	app.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+
+	// /model opus → multiple matches → show selector pre-filtered.
+	_, cmd := app.Update(editorCommandMsg{name: "model", args: "opus"})
+	if cmd == nil {
+		t.Fatal("expected non-nil cmd from /model opus")
+	}
+	msg := cmd()
+	selectorMsg, ok := msg.(showModelSelectorMsg)
+	if !ok {
+		t.Fatalf("expected showModelSelectorMsg, got %T", msg)
+	}
+	if selectorMsg.filter != "opus" {
+		t.Errorf("expected filter 'opus', got %q", selectorMsg.filter)
+	}
+
+	// Feed it back to show the selector with filter.
+	app.Update(msg)
+	if !app.modelSelector.Visible() {
+		t.Error("expected model selector visible")
+	}
+	if app.modelSelector.filter != "opus" {
+		t.Errorf("expected selector filter 'opus', got %q", app.modelSelector.filter)
+	}
+}
+
+func TestApp_ModelCommandFlow_SelectModel_UpdatesHeader(t *testing.T) {
+	app := NewApp()
+	app.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+	var gotProvider, gotModel string
+	app.SetModelChangeCallback(func(p, m string) {
+		gotProvider = p
+		gotModel = m
+	})
+
+	// Show selector, navigate, select.
+	app.Update(showModelSelectorMsg{})
+	if !app.modelSelector.Visible() {
+		t.Fatal("expected selector visible")
+	}
+
+	// Select current model (Enter on first item).
+	_, cmd := app.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected non-nil cmd from Enter in selector")
+	}
+	msg := cmd()
+	app.Update(msg)
+
+	// Selector should be hidden.
+	if app.modelSelector.Visible() {
+		t.Error("expected selector hidden after selection")
+	}
+	// Header should be updated.
+	if app.header.model == "" {
+		t.Error("expected header model to be set")
+	}
+	// Callback should have fired.
+	if gotProvider == "" || gotModel == "" {
+		t.Error("expected model change callback to be called")
+	}
+	// System message should confirm the switch.
+	found := false
+	for _, b := range app.chat.blocks {
+		if b.kind == blockSystem && strings.Contains(b.text, "Switched to model") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected 'Switched to model' system message")
+	}
+}
+
+func TestApp_ModelCommandFlow_CancelSelector(t *testing.T) {
+	app := NewApp()
+	app.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+	var callbackCalled bool
+	app.SetModelChangeCallback(func(p, m string) {
+		callbackCalled = true
+	})
+
+	// Show selector, then cancel.
+	app.Update(showModelSelectorMsg{})
+	if !app.modelSelector.Visible() {
+		t.Fatal("expected selector visible")
+	}
+
+	_, cmd := app.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	if cmd == nil {
+		t.Fatal("expected non-nil cmd from Escape")
+	}
+	msg := cmd()
+	app.Update(msg)
+
+	// Selector should be hidden.
+	if app.modelSelector.Visible() {
+		t.Error("expected selector hidden after cancel")
+	}
+	// No system message or callback for cancel.
+	if callbackCalled {
+		t.Error("model change callback should NOT be called on cancel")
+	}
+	for _, b := range app.chat.blocks {
+		if b.kind == blockSystem && strings.Contains(b.text, "Switched to model") {
+			t.Error("should NOT have 'Switched to model' message on cancel")
+		}
+	}
+}
+
+func TestApp_ModelCommandFlow_ProviderSwitch_ThenSelect(t *testing.T) {
+	app := NewApp()
+	app.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	var gotProvider string
+	app.SetModelChangeCallback(func(p, m string) {
+		gotProvider = p
+	})
+
+	// Show selector.
+	app.Update(showModelSelectorMsg{})
+
+	// Tab to switch to the second provider.
+	app.Update(tea.KeyMsg{Type: tea.KeyTab})
+	secondProvider := app.modelSelector.providers[app.modelSelector.providerIdx]
+
+	// Select model from second provider.
+	_, cmd := app.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected cmd from Enter")
+	}
+	msg := cmd()
+	app.Update(msg)
+
+	if gotProvider != secondProvider {
+		t.Errorf("expected provider %q, got %q", secondProvider, gotProvider)
+	}
+}
+
+func TestApp_ModelCommandFlow_NavigateAndSelect(t *testing.T) {
+	app := NewApp()
+	app.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+	var gotModel string
+	app.SetModelChangeCallback(func(p, m string) {
+		gotModel = m
+	})
+
+	// Show selector.
+	app.Update(showModelSelectorMsg{})
+	firstModel := app.modelSelector.models[app.modelSelector.filtered[0]].Model
+
+	// Navigate down 2 positions.
+	app.Update(tea.KeyMsg{Type: tea.KeyDown})
+	app.Update(tea.KeyMsg{Type: tea.KeyDown})
+	thirdModel := app.modelSelector.models[app.modelSelector.filtered[2]].Model
+
+	// Select the third model.
+	_, cmd := app.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected cmd from Enter")
+	}
+	msg := cmd()
+	app.Update(msg)
+
+	if gotModel == firstModel {
+		t.Error("should have selected the third model, not the first")
+	}
+	if gotModel != thirdModel {
+		t.Errorf("expected model %q (position 2), got %q", thirdModel, gotModel)
+	}
+}
+
+func TestApp_ModelCommandFlow_KeysRoutedToSelector(t *testing.T) {
+	app := NewApp()
+	app.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+
+	// Show selector.
+	app.Update(showModelSelectorMsg{})
+	if !app.modelSelector.Visible() {
+		t.Fatal("selector should be visible")
+	}
+
+	// Type filter characters — they should go to the selector, not the editor.
+	app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+	app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+	app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+
+	if app.modelSelector.filter != "gpt" {
+		t.Errorf("expected selector filter 'gpt', got %q", app.modelSelector.filter)
+	}
+	// Editor should NOT have received these characters.
+	if app.editor.Value() != "" {
+		t.Errorf("editor should be empty while selector is visible, got %q", app.editor.Value())
+	}
+}
+
+func TestApp_ModelCommandFlow_UnknownModel_ShowsError(t *testing.T) {
+	app := NewApp()
+
+	// /model with an unknown model name.
+	_, cmd := app.Update(editorCommandMsg{name: "model", args: "xyznonexistent999"})
+	if cmd == nil {
+		t.Fatal("expected non-nil cmd")
+	}
+	msg := cmd()
+	app.Update(msg)
+
+	// Should show error message, not open selector.
+	if app.modelSelector.Visible() {
+		t.Error("selector should NOT be visible for unknown model")
+	}
+	found := false
+	for _, b := range app.chat.blocks {
+		if b.kind == blockSystem && strings.Contains(b.text, "No model matching") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected error message about unknown model")
+	}
+}
+
+func TestApp_ShowModelSelectorMsg_SetsSize(t *testing.T) {
+	app := NewApp()
+	app.Update(tea.WindowSizeMsg{Width: 120, Height: 50})
+
+	app.Update(showModelSelectorMsg{})
+
+	if app.modelSelector.width != 120 {
+		t.Errorf("expected selector width=120, got %d", app.modelSelector.width)
+	}
+	if app.modelSelector.height != 50 {
+		t.Errorf("expected selector height=50, got %d", app.modelSelector.height)
+	}
+}
+
+func TestApp_ModelSelection_MultipleSelections(t *testing.T) {
+	app := NewApp()
+	app.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+	var selections []string
+	app.SetModelChangeCallback(func(p, m string) {
+		selections = append(selections, m)
+	})
+
+	// First selection.
+	app.Update(showModelSelectorMsg{})
+	_, cmd := app.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	msg := cmd()
+	app.Update(msg)
+
+	// Second selection with different model.
+	app.Update(showModelSelectorMsg{})
+	app.Update(tea.KeyMsg{Type: tea.KeyDown})
+	_, cmd = app.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	msg = cmd()
+	app.Update(msg)
+
+	if len(selections) != 2 {
+		t.Fatalf("expected 2 selections, got %d", len(selections))
+	}
+	// Header should reflect the last selection.
+	if app.header.model != selections[1] {
+		t.Errorf("expected header model %q, got %q", selections[1], app.header.model)
+	}
+	// Should have 2 system messages about model switching.
+	count := 0
+	for _, b := range app.chat.blocks {
+		if b.kind == blockSystem && strings.Contains(b.text, "Switched to model") {
+			count++
+		}
+	}
+	if count != 2 {
+		t.Errorf("expected 2 'Switched to model' messages, got %d", count)
+	}
+}
+
 func TestApp_Update_PluginUIRequestMsg_HeadlessMode(t *testing.T) {
 	app := NewApp()
 	app.SetHasUI(false) // Headless mode

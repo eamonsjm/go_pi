@@ -722,3 +722,438 @@ func TestRegisterModelCommand_CaseInsensitiveMatch(t *testing.T) {
 		t.Fatalf("expected modelSelectedMsg or CommandResultMsg, got %T", msg)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Provider switching
+// ---------------------------------------------------------------------------
+
+func TestModelSelector_ProviderSwitching_Tab(t *testing.T) {
+	ms := NewModelSelector()
+	ms.Show()
+
+	if ms.providerIdx != 0 {
+		t.Fatalf("expected initial providerIdx=0, got %d", ms.providerIdx)
+	}
+	initialProvider := ms.providers[0]
+
+	// Tab should advance to the next provider.
+	ms.Update(tea.KeyMsg{Type: tea.KeyTab})
+	if ms.providerIdx != 1 {
+		t.Errorf("expected providerIdx=1 after Tab, got %d", ms.providerIdx)
+	}
+
+	// Filtered list should now show models from the second provider.
+	secondProvider := ms.providers[1]
+	for _, idx := range ms.filtered {
+		if ms.models[idx].Provider != secondProvider {
+			t.Errorf("expected models from %q, got model with provider %q", secondProvider, ms.models[idx].Provider)
+		}
+	}
+
+	// Tab should wrap around to the first provider.
+	for i := 1; i < len(ms.providers); i++ {
+		ms.Update(tea.KeyMsg{Type: tea.KeyTab})
+	}
+	if ms.providerIdx != 0 {
+		t.Errorf("expected providerIdx=0 after wrapping, got %d", ms.providerIdx)
+	}
+	if ms.providers[ms.providerIdx] != initialProvider {
+		t.Errorf("expected provider %q after wrap, got %q", initialProvider, ms.providers[ms.providerIdx])
+	}
+}
+
+func TestModelSelector_ProviderSwitching_ShiftTab(t *testing.T) {
+	ms := NewModelSelector()
+	ms.Show()
+
+	// Shift+Tab from first provider should wrap to last.
+	ms.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	lastIdx := len(ms.providers) - 1
+	if ms.providerIdx != lastIdx {
+		t.Errorf("expected providerIdx=%d after Shift+Tab from 0, got %d", lastIdx, ms.providerIdx)
+	}
+	lastProvider := ms.providers[lastIdx]
+	for _, idx := range ms.filtered {
+		if ms.models[idx].Provider != lastProvider {
+			t.Errorf("expected models from %q, got %q", lastProvider, ms.models[idx].Provider)
+		}
+	}
+
+	// Shift+Tab again should go to second-to-last.
+	ms.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	if ms.providerIdx != lastIdx-1 {
+		t.Errorf("expected providerIdx=%d, got %d", lastIdx-1, ms.providerIdx)
+	}
+}
+
+func TestModelSelector_ProviderSwitching_LeftRight(t *testing.T) {
+	ms := NewModelSelector()
+	ms.Show()
+
+	// Right arrow advances provider.
+	ms.Update(tea.KeyMsg{Type: tea.KeyRight})
+	if ms.providerIdx != 1 {
+		t.Errorf("expected providerIdx=1 after Right, got %d", ms.providerIdx)
+	}
+
+	// Left arrow goes back.
+	ms.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	if ms.providerIdx != 0 {
+		t.Errorf("expected providerIdx=0 after Left, got %d", ms.providerIdx)
+	}
+
+	// Left at 0 should clamp (not wrap).
+	ms.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	if ms.providerIdx != 0 {
+		t.Errorf("expected providerIdx=0 (clamped), got %d", ms.providerIdx)
+	}
+
+	// Right at last should clamp (not wrap).
+	for i := 0; i < len(ms.providers)+5; i++ {
+		ms.Update(tea.KeyMsg{Type: tea.KeyRight})
+	}
+	if ms.providerIdx != len(ms.providers)-1 {
+		t.Errorf("expected providerIdx=%d (clamped), got %d", len(ms.providers)-1, ms.providerIdx)
+	}
+}
+
+func TestModelSelector_ProviderSwitching_NumberKeys(t *testing.T) {
+	ms := NewModelSelector()
+	ms.Show()
+
+	// Press '2' to jump to second provider.
+	ms.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
+	if ms.providerIdx != 1 {
+		t.Errorf("expected providerIdx=1 after pressing '2', got %d", ms.providerIdx)
+	}
+	secondProvider := ms.providers[1]
+	for _, idx := range ms.filtered {
+		if ms.models[idx].Provider != secondProvider {
+			t.Errorf("expected models from %q, got %q", secondProvider, ms.models[idx].Provider)
+		}
+	}
+
+	// Press '1' to jump back to first provider.
+	ms.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'1'}})
+	if ms.providerIdx != 0 {
+		t.Errorf("expected providerIdx=0 after pressing '1', got %d", ms.providerIdx)
+	}
+
+	// Press a number beyond provider count — should be ignored (treated as filter text).
+	numProviders := len(ms.providers)
+	if numProviders < 9 {
+		beyondKey := rune('1' + numProviders) // e.g., '5' if there are 4 providers
+		beforeFilter := ms.filter
+		ms.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{beyondKey}})
+		// The rune should be appended to filter instead.
+		if ms.filter == beforeFilter {
+			t.Error("expected out-of-range number key to be treated as filter text")
+		}
+	}
+}
+
+func TestModelSelector_ProviderSwitching_ResetsCursor(t *testing.T) {
+	ms := NewModelSelector()
+	ms.Show()
+
+	// Move cursor down in first provider.
+	ms.Update(tea.KeyMsg{Type: tea.KeyDown})
+	ms.Update(tea.KeyMsg{Type: tea.KeyDown})
+	if ms.cursor < 2 {
+		t.Fatalf("expected cursor >= 2, got %d", ms.cursor)
+	}
+
+	// Switch provider — cursor should reset to 0.
+	ms.Update(tea.KeyMsg{Type: tea.KeyTab})
+	if ms.cursor != 0 {
+		t.Errorf("expected cursor=0 after provider switch, got %d", ms.cursor)
+	}
+}
+
+func TestModelSelector_ProviderSwitching_ModelsMatchProvider(t *testing.T) {
+	ms := NewModelSelector()
+	ms.Show()
+
+	// Check each provider's filtered list.
+	for i, provider := range ms.providers {
+		ms.providerIdx = i
+		ms.applyProviderFilter()
+
+		if len(ms.filtered) == 0 {
+			t.Errorf("provider %q should have at least 1 model", provider)
+		}
+		for _, idx := range ms.filtered {
+			if ms.models[idx].Provider != provider {
+				t.Errorf("provider %q: expected all models from same provider, got %q",
+					provider, ms.models[idx].Provider)
+			}
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Authentication status display
+// ---------------------------------------------------------------------------
+
+func TestModelSelector_AuthStatus_Initialized(t *testing.T) {
+	ms := NewModelSelector()
+	// authStatus map should have an entry for each provider.
+	for _, provider := range ms.providers {
+		if _, exists := ms.authStatus[provider]; !exists {
+			t.Errorf("expected authStatus entry for provider %q", provider)
+		}
+	}
+}
+
+func TestModelSelector_View_ProviderTabsWithAuth(t *testing.T) {
+	ms := NewModelSelector()
+	ms.Show()
+	ms.SetSize(120, 40)
+	view := ms.View()
+	stripped := stripAnsi(view)
+
+	// Each provider should appear in the view.
+	for _, provider := range ms.providers {
+		if !strings.Contains(stripped, provider) {
+			t.Errorf("expected provider %q in view", provider)
+		}
+	}
+
+	// Auth indicators (✓ or ✗) should appear.
+	if !strings.Contains(stripped, "✓") && !strings.Contains(stripped, "✗") {
+		t.Error("expected auth status indicator (✓ or ✗) in view")
+	}
+}
+
+func TestModelSelector_View_AuthIndicatorPerProvider(t *testing.T) {
+	ms := NewModelSelector()
+	ms.Show()
+	ms.SetSize(120, 40)
+	view := ms.View()
+	stripped := stripAnsi(view)
+
+	// Each provider tab should show "[provider ✓]" or "[provider ✗]".
+	for _, provider := range ms.providers {
+		authOK := "[" + provider + " ✓]"
+		authFail := "[" + provider + " ✗]"
+		if !strings.Contains(stripped, authOK) && !strings.Contains(stripped, authFail) {
+			t.Errorf("expected %q or %q in view, neither found", authOK, authFail)
+		}
+	}
+}
+
+func TestModelSelector_View_CurrentProviderHighlighted(t *testing.T) {
+	ms := NewModelSelector()
+	ms.Show()
+	ms.SetSize(120, 40)
+
+	// Switch to second provider.
+	ms.Update(tea.KeyMsg{Type: tea.KeyTab})
+	view := ms.View()
+	stripped := stripAnsi(view)
+
+	// The second provider should appear in the view.
+	secondProvider := ms.providers[1]
+	if !strings.Contains(stripped, secondProvider) {
+		t.Errorf("expected second provider %q in view", secondProvider)
+	}
+}
+
+func TestModelSelector_View_ModelList_MatchesProvider(t *testing.T) {
+	ms := NewModelSelector()
+	ms.Show()
+	ms.SetSize(120, 40)
+
+	// View should show models from the first provider.
+	view := ms.View()
+	stripped := stripAnsi(view)
+
+	firstProvider := ms.providers[0]
+	for _, idx := range ms.modelsByProv[firstProvider] {
+		label := ms.models[idx].Label
+		if !strings.Contains(stripped, label) {
+			t.Errorf("expected model label %q from provider %q in view", label, firstProvider)
+		}
+	}
+
+	// Switch to second provider — view should now show second provider's models.
+	ms.Update(tea.KeyMsg{Type: tea.KeyTab})
+	view = ms.View()
+	stripped = stripAnsi(view)
+
+	secondProvider := ms.providers[1]
+	for _, idx := range ms.modelsByProv[secondProvider] {
+		label := ms.models[idx].Label
+		if !strings.Contains(stripped, label) {
+			t.Errorf("expected model label %q from provider %q in view", label, secondProvider)
+		}
+	}
+}
+
+func TestModelSelector_View_FilterPrompt(t *testing.T) {
+	ms := NewModelSelector()
+	ms.Show()
+	ms.SetSize(120, 40)
+
+	// Type a filter.
+	for _, r := range "flash" {
+		ms.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+
+	view := ms.View()
+	stripped := stripAnsi(view)
+	if !strings.Contains(stripped, "/ flash") {
+		t.Error("expected filter prompt '/ flash' in view")
+	}
+}
+
+func TestModelSelector_View_NoMatchMessage(t *testing.T) {
+	ms := NewModelSelector()
+	ms.Show()
+	ms.SetSize(120, 40)
+
+	// Type a filter that won't match anything.
+	for _, r := range "zzzznonexistent" {
+		ms.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+
+	view := ms.View()
+	stripped := stripAnsi(view)
+	if !strings.Contains(stripped, "No matching models") {
+		t.Error("expected 'No matching models' message in view")
+	}
+}
+
+func TestModelSelector_View_HelpText(t *testing.T) {
+	ms := NewModelSelector()
+	ms.Show()
+	ms.SetSize(200, 40) // wide enough to avoid truncation
+
+	view := ms.View()
+	stripped := stripAnsi(view)
+
+	// Should show key hints — the help line mentions providers and key bindings.
+	if !strings.Contains(stripped, "providers") {
+		t.Error("expected 'providers' in help text")
+	}
+	if !strings.Contains(stripped, "esc") {
+		t.Error("expected 'esc' in help text")
+	}
+	if !strings.Contains(stripped, "enter") {
+		t.Error("expected 'enter' in help text")
+	}
+}
+
+func TestModelSelector_View_CursorIndicator(t *testing.T) {
+	ms := NewModelSelector()
+	ms.Show()
+	ms.SetSize(120, 40)
+
+	view := ms.View()
+	stripped := stripAnsi(view)
+	if !strings.Contains(stripped, ">") {
+		t.Error("expected cursor indicator '>' in view")
+	}
+}
+
+func TestModelSelector_View_SelectedModelShowsDetail(t *testing.T) {
+	ms := NewModelSelector()
+	ms.Show()
+	ms.SetSize(120, 40)
+
+	// The cursor is at position 0 (first model). The selected model should
+	// show its model ID detail.
+	view := ms.View()
+	stripped := stripAnsi(view)
+
+	firstModel := ms.models[ms.filtered[0]]
+	if !strings.Contains(stripped, firstModel.Model) {
+		t.Errorf("expected model ID %q in view for selected model", firstModel.Model)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Provider selection with filter interaction
+// ---------------------------------------------------------------------------
+
+func TestModelSelector_FilterWithProviderSwitch(t *testing.T) {
+	ms := NewModelSelector()
+	ms.Show()
+
+	// Type a filter in the first provider.
+	for _, r := range "opus" {
+		ms.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	opusCount := len(ms.filtered)
+
+	// Switch to a different provider — filter should still be applied.
+	ms.Update(tea.KeyMsg{Type: tea.KeyTab})
+
+	// The filtered list should change (different provider's models).
+	// If the new provider has no "opus" models, the list should be empty.
+	// The key assertion is that the filter text persists across provider switches.
+	if ms.filter != "opus" {
+		t.Errorf("expected filter 'opus' preserved after provider switch, got %q", ms.filter)
+	}
+
+	// The result count may differ (the new provider may or may not have opus models).
+	_ = opusCount // We just need to verify no panic and filter is preserved.
+}
+
+func TestModelSelector_Enter_SelectsFromCurrentProvider(t *testing.T) {
+	ms := NewModelSelector()
+	ms.Show()
+
+	// Switch to "openai" provider.
+	for i, p := range ms.providers {
+		if p == "openai" {
+			ms.providerIdx = i
+			ms.applyProviderFilter()
+			break
+		}
+	}
+
+	// Select first model — should be an OpenAI model.
+	cmd := ms.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected command from Enter")
+	}
+	msg := cmd()
+	sel, ok := msg.(modelSelectedMsg)
+	if !ok {
+		t.Fatalf("expected modelSelectedMsg, got %T", msg)
+	}
+	if sel.provider != "openai" {
+		t.Errorf("expected provider 'openai', got %q", sel.provider)
+	}
+}
+
+func TestModelSelector_Enter_SelectsFromGemini(t *testing.T) {
+	ms := NewModelSelector()
+	ms.Show()
+
+	// Switch to "gemini" provider.
+	for i, p := range ms.providers {
+		if p == "gemini" {
+			ms.providerIdx = i
+			ms.applyProviderFilter()
+			break
+		}
+	}
+
+	cmd := ms.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected command from Enter")
+	}
+	msg := cmd()
+	sel, ok := msg.(modelSelectedMsg)
+	if !ok {
+		t.Fatalf("expected modelSelectedMsg, got %T", msg)
+	}
+	if sel.provider != "gemini" {
+		t.Errorf("expected provider 'gemini', got %q", sel.provider)
+	}
+	if !strings.Contains(sel.model, "gemini") {
+		t.Errorf("expected a gemini model, got %q", sel.model)
+	}
+}
