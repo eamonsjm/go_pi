@@ -53,10 +53,19 @@ func (c *Credential) ResolveKey() (string, error) {
 	return resolveKeyValue(c.Key)
 }
 
+// commandEntry holds the cached result of a single !command execution.
+// sync.Once ensures at most one goroutine executes the command; all others
+// block until the result is available.
+type commandEntry struct {
+	once   sync.Once
+	result string
+	err    error
+}
+
 // commandCache caches results of !command key values within a process.
 var (
 	commandCacheMu sync.Mutex
-	commandCache   = map[string]string{}
+	commandCache   = map[string]*commandEntry{}
 )
 
 // resolveKeyValue interprets a key value string:
@@ -109,21 +118,21 @@ func resolveCommand(cmd string) (string, error) {
 	}
 
 	commandCacheMu.Lock()
-	if cached, ok := commandCache[cmd]; ok {
-		commandCacheMu.Unlock()
-		return cached, nil
+	entry, ok := commandCache[cmd]
+	if !ok {
+		entry = &commandEntry{}
+		commandCache[cmd] = entry
 	}
 	commandCacheMu.Unlock()
 
-	out, err := exec.Command("sh", "-c", cmd).Output()
-	if err != nil {
-		return "", fmt.Errorf("key command %q: %w", cmd, err)
-	}
-	result := strings.TrimSpace(string(out))
+	entry.once.Do(func() {
+		out, err := exec.Command("sh", "-c", cmd).Output()
+		if err != nil {
+			entry.err = fmt.Errorf("key command %q: %w", cmd, err)
+			return
+		}
+		entry.result = strings.TrimSpace(string(out))
+	})
 
-	commandCacheMu.Lock()
-	commandCache[cmd] = result
-	commandCacheMu.Unlock()
-
-	return result, nil
+	return entry.result, entry.err
 }
