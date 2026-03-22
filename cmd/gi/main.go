@@ -26,6 +26,10 @@ import (
 )
 
 func main() {
+	os.Exit(run())
+}
+
+func run() int {
 	// Flag variables (use 'Flag' suffix to avoid conflicts with later variable names)
 	var modelVal string
 	var providerVal string
@@ -207,7 +211,8 @@ func main() {
 	// Print mode requires a working provider
 	if *printFlag != "" {
 		if providerErr != nil {
-			log.Fatalf("Cannot use print mode: %v", providerErr)
+			log.Printf("Cannot use print mode: %v", providerErr)
+			return 1
 		}
 		agentLoop := makeAgentLoop(provider, registry, cfg, skillRegistry)
 		sessionMgr.NewSession()
@@ -216,29 +221,31 @@ func main() {
 			prompt = initialPrompt + "\n\n" + prompt
 		}
 		if code := runPrintMode(agentLoop, sessionMgr, prompt); code != 0 {
-			os.Exit(code)
+			return code
 		}
-		return
+		return 0
 	}
 
 	// JSON event stream mode
 	if *jsonFlag {
 		if providerErr != nil {
-			log.Fatalf("Cannot use JSON mode: %v", providerErr)
+			log.Printf("Cannot use JSON mode: %v", providerErr)
+			return 1
 		}
 		agentLoop := makeAgentLoop(provider, registry, cfg, skillRegistry)
 		rpc.RunJSONStream(agentLoop, initialPrompt)
-		return
+		return 0
 	}
 
 	// JSON-RPC 2.0 mode
 	if *rpcFlag {
 		if providerErr != nil {
-			log.Fatalf("Cannot use RPC mode: %v", providerErr)
+			log.Printf("Cannot use RPC mode: %v", providerErr)
+			return 1
 		}
 		agentLoop := makeAgentLoop(provider, registry, cfg, skillRegistry)
 		rpc.RunRPC(agentLoop)
-		return
+		return 0
 	}
 
 	// Create agent loop - may be nil provider if no API key configured
@@ -268,7 +275,8 @@ func main() {
 	if *sessionFlag != "" {
 		// Explicit --session flag: load the specified session.
 		if err := sessionMgr.LoadSession(context.Background(), *sessionFlag); err != nil {
-			log.Fatalf("Failed to load session: %v", err)
+			log.Printf("Failed to load session: %v", err)
+			return 1
 		}
 		restoredMsgs = sessionMgr.GetMessages()
 		restoredSessionID = sessionMgr.CurrentID()
@@ -292,7 +300,7 @@ func main() {
 		}
 	}
 
-	runInteractive(agentLoop, sessionMgr, cfg, providerErr, pluginMgr, authStore, authResolver, skillRegistry, restoredSessionID, restoredMsgs, initialPrompt)
+	return runInteractive(agentLoop, sessionMgr, cfg, providerErr, pluginMgr, authStore, authResolver, skillRegistry, restoredSessionID, restoredMsgs, initialPrompt)
 }
 
 // setupAuth creates the auth store and resolver with registered OAuth providers.
@@ -516,7 +524,7 @@ func makeAgentLoop(provider ai.Provider, registry *tools.Registry, cfg *config.C
 	)
 }
 
-func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg *config.Config, providerErr error, pluginMgr *plugin.Manager, authStore *auth.Store, authResolver *auth.Resolver, skillReg *skill.Registry, restoredSessionID string, restoredMsgs []ai.Message, initialPrompt string) {
+func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg *config.Config, providerErr error, pluginMgr *plugin.Manager, authStore *auth.Store, authResolver *auth.Resolver, skillReg *skill.Registry, restoredSessionID string, restoredMsgs []ai.Message, initialPrompt string) int {
 	// Create the application lifecycle context. This is cancelled when
 	// runInteractive returns, ensuring all background operations (such as
 	// compaction) are stopped when the user quits.
@@ -749,9 +757,10 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 	if _, err := p.Run(); err != nil {
 		close(pluginDone)
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 	close(pluginDone)
+	return 0
 }
 
 // processFileArgs processes CLI positional arguments, expanding @filepath
