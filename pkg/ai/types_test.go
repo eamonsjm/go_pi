@@ -204,6 +204,28 @@ func TestEnsureContent_NonNilUnchanged(t *testing.T) {
 	}
 }
 
+func TestMessage_GetText_NilContent(t *testing.T) {
+	msg := Message{Role: RoleAssistant} // Content is nil
+	if got := msg.GetText(); got != "" {
+		t.Errorf("GetText() on nil Content = %q, want empty string", got)
+	}
+}
+
+func TestMessage_GetToolCalls_NilContent(t *testing.T) {
+	msg := Message{Role: RoleAssistant} // Content is nil
+	calls := msg.GetToolCalls()
+	if calls != nil {
+		t.Errorf("GetToolCalls() on nil Content = %v, want nil", calls)
+	}
+}
+
+func TestMessage_GetThinking_NilContent(t *testing.T) {
+	msg := Message{Role: RoleAssistant} // Content is nil
+	if got := msg.GetThinking(); got != "" {
+		t.Errorf("GetThinking() on nil Content = %q, want empty string", got)
+	}
+}
+
 func TestNewRichToolResultMessage_WithError(t *testing.T) {
 	blocks := []ContentBlock{
 		{Type: ContentTypeText, Text: "error occurred"},
