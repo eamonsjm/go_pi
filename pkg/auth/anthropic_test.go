@@ -103,9 +103,15 @@ func TestAnthropicOAuth_StartAuthFlow(t *testing.T) {
 	if q.Get("code") != "true" {
 		t.Errorf("code param = %q, want true", q.Get("code"))
 	}
-	// State should equal the PKCE verifier.
-	if q.Get("state") != session.PKCE.Verifier {
-		t.Errorf("state = %q, want PKCE verifier %q", q.Get("state"), session.PKCE.Verifier)
+	// State must be a separate random value, NOT the PKCE verifier.
+	if q.Get("state") == session.PKCE.Verifier {
+		t.Error("state must not equal PKCE verifier — exposes verifier in URL")
+	}
+	if q.Get("state") != session.State {
+		t.Errorf("state = %q, want session.State %q", q.Get("state"), session.State)
+	}
+	if session.State == "" {
+		t.Error("session.State is empty")
 	}
 	if q.Get("redirect_uri") != defaultAnthropicRedirectURI {
 		t.Errorf("redirect_uri = %q", q.Get("redirect_uri"))
@@ -156,9 +162,9 @@ func TestAnthropicOAuth_ExchangeCode(t *testing.T) {
 		if req.State == "" {
 			t.Error("missing state")
 		}
-		// State should equal code_verifier.
-		if req.State != req.CodeVerifier {
-			t.Errorf("state %q != code_verifier %q", req.State, req.CodeVerifier)
+		// State must NOT equal code_verifier — they are independent parameters.
+		if req.State == req.CodeVerifier {
+			t.Error("state must not equal code_verifier")
 		}
 		json.NewEncoder(w).Encode(tokenResponse{
 			AccessToken:  "access-123",
