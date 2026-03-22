@@ -121,6 +121,14 @@ func excerptAround(text string, start, end int) string {
 		ctxEnd = len(text)
 	}
 
+	// Align to valid rune boundaries to avoid slicing multi-byte UTF-8 characters.
+	for ctxStart < len(text) && !utf8.RuneStart(text[ctxStart]) {
+		ctxStart++
+	}
+	for ctxEnd < len(text) && !utf8.RuneStart(text[ctxEnd]) {
+		ctxEnd++
+	}
+
 	excerpt := text[ctxStart:ctxEnd]
 
 	// Track match position within the excerpt so newline trimming

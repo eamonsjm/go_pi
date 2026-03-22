@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/ejm/go_pi/pkg/ai"
 )
@@ -292,6 +293,42 @@ func TestExcerptAround(t *testing.T) {
 	}
 	if len(excerpt) > 80 {
 		t.Error("excerpt should be at most 80 characters")
+	}
+}
+
+func TestExcerptAround_UTF8(t *testing.T) {
+	// Multi-byte prefix: each CJK character is 3 bytes. 10 CJK chars = 30 bytes.
+	// ctxStart = start - 20 would land at byte 10, inside the 4th character (bytes 9-11).
+	// The fix should align forward to byte 12 (start of 5th character).
+	prefix := "日本語漢字中文韓国語" // 10 CJK chars = 30 bytes
+	secret := "AKIAIOSFODNN7EXAMPLE"
+	text := prefix + secret + "suffix"
+	start := len(prefix)       // byte 30
+	end := start + len(secret) // byte 50
+
+	excerpt := excerptAround(text, start, end)
+	if excerpt == "" {
+		t.Fatal("excerpt should not be empty")
+	}
+	if !utf8.ValidString(excerpt) {
+		t.Errorf("excerpt contains invalid UTF-8: %q", excerpt)
+	}
+}
+
+func TestExcerptAround_UTF8Suffix(t *testing.T) {
+	// Multi-byte suffix: end + 20 can land inside a CJK character.
+	secret := "AKIAIOSFODNN7EXAMPLE"
+	suffix := "日本語漢字中文韓国語"
+	text := secret + suffix
+	start := 0
+	end := len(secret)
+
+	excerpt := excerptAround(text, start, end)
+	if excerpt == "" {
+		t.Fatal("excerpt should not be empty")
+	}
+	if !utf8.ValidString(excerpt) {
+		t.Errorf("excerpt contains invalid UTF-8: %q", excerpt)
 	}
 }
 
