@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -32,6 +33,19 @@ func newTestProcess(name, jsonl string) *PluginProcess {
 		healthy:     true,
 	}
 }
+
+// errWriteCloser is an io.WriteCloser whose Write always returns an error.
+type errWriteCloser struct {
+	err error
+}
+
+func (w *errWriteCloser) Write(p []byte) (int, error) { return 0, w.err }
+func (w *errWriteCloser) Close() error                { return nil }
+
+// nopWriteCloser wraps an io.Writer with a no-op Close method.
+type nopWriteCloser struct{ io.Writer }
+
+func (nopWriteCloser) Close() error { return nil }
 
 func TestReadLoop_CriticalMessagesDelivered(t *testing.T) {
 	input := `{"type":"capabilities","tools":[]}` + "\n" +
@@ -1867,5 +1881,371 @@ func TestReadLoop_PanicRecovery(t *testing.T) {
 	}
 	if _, ok := <-p.heartbeatCh; ok {
 		t.Error("heartbeatCh not closed after panic recovery")
+	}
+}
+
+// --- Error path tests (pipe/start/send/respawn/timeout) ---
+
+func TestStartPlugin_InvalidBinary(t *testing.T) {
+	p, err := startPlugin("bad-plugin", "/nonexistent/binary/that/does/not/exist")
+	if err == nil {
+		t.Fatal("expected error for invalid binary")
+	}
+	if p != nil {
+		t.Error("expected nil process on error")
+	}
+	if !strings.Contains(err.Error(), "starting plugin") {
+		t.Errorf("error = %q, want containing 'starting plugin'", err.Error())
+	}
+}
+
+func TestSend_MarshalError(t *testing.T) {
+	p := &PluginProcess{
+		name:  "marshal-err",
+		stdin: &errWriteCloser{err: nil}, // won't reach Write
+	}
+	err := p.Send(HostMessage{
+		Type:   "tool_call",
+		Params: map[string]any{"bad": make(chan int)},
+	})
+	if err == nil {
+		t.Fatal("expected marshal error")
+	}
+	if !strings.Contains(err.Error(), "marshaling message") {
+		t.Errorf("error = %q, want containing 'marshaling message'", err.Error())
+	}
+}
+
+func TestSend_WriteError(t *testing.T) {
+	p := &PluginProcess{
+		name:  "write-err",
+		stdin: &errWriteCloser{err: fmt.Errorf("broken pipe")},
+	}
+	err := p.Send(HostMessage{Type: "heartbeat"})
+	if err == nil {
+		t.Fatal("expected write error")
+	}
+	if !strings.Contains(err.Error(), "writing to stdin") {
+		t.Errorf("error = %q, want containing 'writing to stdin'", err.Error())
+	}
+}
+
+func TestWaitResponse_ContextCancelled(t *testing.T) {
+	p := &PluginProcess{
+		name:       "ctx-cancel",
+		responseCh: make(chan PluginMessage),
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately
+
+	_, err := p.waitResponse(ctx, 5*time.Second)
+	if err == nil {
+		t.Fatal("expected context cancellation error")
+	}
+	if !strings.Contains(err.Error(), "context canceled") {
+		t.Errorf("error = %q, want containing 'context canceled'", err.Error())
+	}
+}
+
+func TestInitialize_UnexpectedResponseType(t *testing.T) {
+	responseCh := make(chan PluginMessage, 1)
+	responseCh <- PluginMessage{Type: "tool_result", Content: "wrong"}
+
+	p := &PluginProcess{
+		name:       "bad-init",
+		stdin:      nopWriteCloser{io.Discard},
+		responseCh: responseCh,
+		timeouts:   DefaultTimeoutConfig(),
+	}
+
+	err := p.Initialize(context.Background(), PluginConfig{})
+	if err == nil {
+		t.Fatal("expected error for unexpected response type")
+	}
+	if !strings.Contains(err.Error(), "expected capabilities") {
+		t.Errorf("error = %q, want containing 'expected capabilities'", err.Error())
+	}
+}
+
+func TestExecuteTool_UnexpectedResponseType(t *testing.T) {
+	responseCh := make(chan PluginMessage, 1)
+	responseCh <- PluginMessage{Type: "command_result", Text: "wrong"}
+
+	p := &PluginProcess{
+		name:       "bad-tool",
+		stdin:      nopWriteCloser{io.Discard},
+		responseCh: responseCh,
+		timeouts:   DefaultTimeoutConfig(),
+	}
+
+	_, isErr, err := p.ExecuteTool(context.Background(), "id", "name", nil)
+	if err == nil {
+		t.Fatal("expected error for unexpected response type")
+	}
+	if !isErr {
+		t.Error("isError = false, want true")
+	}
+	if !strings.Contains(err.Error(), "expected tool_result") {
+		t.Errorf("error = %q, want containing 'expected tool_result'", err.Error())
+	}
+}
+
+func TestExecuteCommand_UnexpectedResponseType(t *testing.T) {
+	responseCh := make(chan PluginMessage, 1)
+	responseCh <- PluginMessage{Type: "tool_result", Content: "wrong"}
+
+	p := &PluginProcess{
+		name:       "bad-cmd",
+		stdin:      nopWriteCloser{io.Discard},
+		responseCh: responseCh,
+		timeouts:   DefaultTimeoutConfig(),
+	}
+
+	_, isErr, err := p.ExecuteCommand(context.Background(), "name", "args")
+	if err == nil {
+		t.Fatal("expected error for unexpected response type")
+	}
+	if !isErr {
+		t.Error("isError = false, want true")
+	}
+	if !strings.Contains(err.Error(), "expected command_result") {
+		t.Errorf("error = %q, want containing 'expected command_result'", err.Error())
+	}
+}
+
+func TestReadLoop_UIRequestDroppedWhenFull(t *testing.T) {
+	var lines string
+	for i := 0; i < 5; i++ {
+		lines += fmt.Sprintf(`{"type":"ui_request","id":"req%d","ui_type":"input"}`, i) + "\n"
+	}
+
+	scanner := bufio.NewScanner(strings.NewReader(lines))
+	scanner.Buffer(make([]byte, maxScannerBuffer), maxScannerBuffer)
+	p := &PluginProcess{
+		name:        "test-drop-ui",
+		scanner:     scanner,
+		injectCh:    make(chan PluginMessage, 64),
+		responseCh:  make(chan PluginMessage, 16),
+		uiRequestCh: make(chan PluginMessage, 2), // small buffer
+		heartbeatCh: make(chan PluginMessage, 4),
+		healthy:     true,
+	}
+
+	done := make(chan struct{})
+	go func() {
+		p.readLoop()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("readLoop blocked on full uiRequestCh — goroutine would leak")
+	}
+
+	var count int
+	for range p.uiRequestCh {
+		count++
+	}
+	if count > 2 {
+		t.Fatalf("expected at most 2 ui_request messages (buffer size), got %d", count)
+	}
+	if count == 0 {
+		t.Fatal("expected at least some ui_request messages to be delivered")
+	}
+}
+
+func TestReadLoop_HeartbeatAckDroppedWhenFull(t *testing.T) {
+	var lines string
+	for i := 0; i < 5; i++ {
+		lines += `{"type":"heartbeat_ack","status":{"memory_bytes":42}}` + "\n"
+	}
+
+	scanner := bufio.NewScanner(strings.NewReader(lines))
+	scanner.Buffer(make([]byte, maxScannerBuffer), maxScannerBuffer)
+	p := &PluginProcess{
+		name:        "test-drop-hb",
+		scanner:     scanner,
+		injectCh:    make(chan PluginMessage, 64),
+		responseCh:  make(chan PluginMessage, 16),
+		uiRequestCh: make(chan PluginMessage, 16),
+		heartbeatCh: make(chan PluginMessage, 1), // small buffer
+		healthy:     true,
+	}
+
+	done := make(chan struct{})
+	go func() {
+		p.readLoop()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("readLoop blocked on full heartbeatCh — goroutine would leak")
+	}
+
+	var count int
+	for range p.heartbeatCh {
+		count++
+	}
+	if count > 1 {
+		t.Fatalf("expected at most 1 heartbeat_ack message (buffer size), got %d", count)
+	}
+	if count == 0 {
+		t.Fatal("expected at least some heartbeat_ack messages to be delivered")
+	}
+}
+
+func TestHeartbeat_SendFailure(t *testing.T) {
+	p := &PluginProcess{
+		name:        "hb-send-fail",
+		stdin:       &errWriteCloser{err: fmt.Errorf("broken pipe")},
+		heartbeatCh: make(chan PluginMessage, 4),
+		healthy:     true,
+	}
+
+	_, err := p.Heartbeat(context.Background())
+	if err == nil {
+		t.Fatal("expected error from heartbeat send failure")
+	}
+	if p.Healthy() {
+		t.Error("Healthy() = true after heartbeat send failure, want false")
+	}
+}
+
+func TestHeartbeat_ProcessExitedDuringWait(t *testing.T) {
+	heartbeatCh := make(chan PluginMessage)
+	close(heartbeatCh)
+
+	p := &PluginProcess{
+		name:        "hb-exit",
+		stdin:       nopWriteCloser{io.Discard},
+		heartbeatCh: heartbeatCh,
+		healthy:     true,
+	}
+
+	_, err := p.Heartbeat(context.Background())
+	if err == nil {
+		t.Fatal("expected error from closed heartbeat channel")
+	}
+	if !strings.Contains(err.Error(), "process exited") {
+		t.Errorf("error = %q, want containing 'process exited'", err.Error())
+	}
+	if p.Healthy() {
+		t.Error("Healthy() = true after channel closed, want false")
+	}
+}
+
+func TestWaitUIRequest_Timeout(t *testing.T) {
+	p := &PluginProcess{
+		name:        "ui-timeout",
+		uiRequestCh: make(chan PluginMessage),
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	_, err := p.WaitUIRequest(ctx)
+	if err == nil {
+		t.Fatal("expected timeout error")
+	}
+	if !isTimeout(err) {
+		t.Errorf("expected timeoutError, got: %v", err)
+	}
+}
+
+func TestWaitUIRequest_ChannelClosed(t *testing.T) {
+	uiRequestCh := make(chan PluginMessage)
+	close(uiRequestCh)
+
+	p := &PluginProcess{
+		name:        "ui-closed",
+		uiRequestCh: uiRequestCh,
+	}
+
+	_, err := p.WaitUIRequest(context.Background())
+	if err == nil {
+		t.Fatal("expected error from closed channel")
+	}
+	if !strings.Contains(err.Error(), "process exited") {
+		t.Errorf("error = %q, want containing 'process exited'", err.Error())
+	}
+}
+
+func TestRespondToUIRequest_ClosedProcess(t *testing.T) {
+	p := &PluginProcess{
+		name:   "ui-resp-closed",
+		closed: true,
+	}
+
+	err := p.RespondToUIRequest("req1", "value", false, "")
+	if err == nil {
+		t.Fatal("expected error from responding to closed process")
+	}
+	if !strings.Contains(err.Error(), "sending UI response") {
+		t.Errorf("error = %q, want containing 'sending UI response'", err.Error())
+	}
+}
+
+func TestHandleTimeout_Supervised(t *testing.T) {
+	p := startTestPlugin(t, "hang_on_tool")
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+
+	// Mark as supervised without starting the full supervisor goroutine.
+	p.mu.Lock()
+	p.supervised = true
+	p.mu.Unlock()
+
+	// handleTimeout in supervised mode should kill the process.
+	p.handleTimeout("tool_call", "test-tool", 1*time.Second)
+
+	// Give the kill a moment to take effect.
+	time.Sleep(100 * time.Millisecond)
+
+	// Reset supervised so cleanup in t.Cleanup (Stop) doesn't panic
+	// trying to close nil stopCh.
+	p.mu.Lock()
+	p.supervised = false
+	p.mu.Unlock()
+}
+
+func TestHandleTimeout_Unsupervised(t *testing.T) {
+	p := startTestPlugin(t, "hang_on_tool")
+	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+
+	// Unsupervised is the default — handleTimeout kills the process directly.
+	p.handleTimeout("tool_call", "test-tool", 1*time.Second)
+
+	// Give the kill a moment to take effect.
+	time.Sleep(100 * time.Millisecond)
+}
+
+func TestHandleTimeout_NilProcess(t *testing.T) {
+	// handleTimeout should not panic when cmd.Process is nil.
+	p := &PluginProcess{
+		name: "nil-process",
+		cmd:  &exec.Cmd{}, // cmd set but Process is nil
+	}
+	// Should not panic.
+	p.handleTimeout("tool_call", "test", 1*time.Second)
+}
+
+func TestSendEvent_ClosedProcess(t *testing.T) {
+	p := &PluginProcess{
+		name:   "event-closed",
+		closed: true,
+	}
+
+	err := p.SendEvent(EventPayload{Type: "test_event"})
+	if err == nil {
+		t.Fatal("expected error from SendEvent on closed process")
+	}
+	if !strings.Contains(err.Error(), "process closed") {
+		t.Errorf("error = %q, want containing 'process closed'", err.Error())
 	}
 }
