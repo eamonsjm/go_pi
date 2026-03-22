@@ -996,3 +996,88 @@ func TestRichToolCallWithError(t *testing.T) {
 		t.Errorf("expected error content, got %q", cb.Content)
 	}
 }
+
+// --- panicking tool mocks ---------------------------------------------------
+
+type panicTool struct {
+	name string
+}
+
+func (t *panicTool) Name() string        { return t.name }
+func (t *panicTool) Description() string { return "panics on execute" }
+func (t *panicTool) Schema() any         { return nil }
+func (t *panicTool) Execute(_ context.Context, _ map[string]any) (string, error) {
+	panic("nil map access")
+}
+
+type panicRichTool struct {
+	name string
+}
+
+func (t *panicRichTool) Name() string        { return t.name }
+func (t *panicRichTool) Description() string { return "panics on execute" }
+func (t *panicRichTool) Schema() any         { return nil }
+func (t *panicRichTool) Execute(_ context.Context, _ map[string]any) (string, error) {
+	panic("should not be called")
+}
+func (t *panicRichTool) ExecuteRich(_ context.Context, _ map[string]any) ([]ai.ContentBlock, error) {
+	panic("index out of range")
+}
+
+func TestToolPanicReturnsError(t *testing.T) {
+	provider := &mockProvider{
+		streamFn: toolThenText("panic_tool", "tc-1", `{}`, "recovered"),
+	}
+	reg := tools.NewRegistry()
+	reg.Register(&panicTool{name: "panic_tool"})
+	a := NewAgentLoop(provider, reg)
+
+	ch := a.Events()
+	go func() {
+		if err := a.Prompt(context.Background(), "call panicking tool"); err != nil {
+			t.Errorf("Prompt returned error: %v", err)
+		}
+	}()
+
+	events := drainEvents(ch, 2*time.Second)
+
+	for _, ev := range events {
+		if ev.Type == EventToolExecEnd {
+			if !ev.ToolError {
+				t.Error("expected ToolError=true for panicking tool")
+			}
+			if !strings.Contains(ev.ToolResult, "tool panicked") {
+				t.Errorf("expected panic error message, got %q", ev.ToolResult)
+			}
+		}
+	}
+}
+
+func TestRichToolPanicReturnsError(t *testing.T) {
+	provider := &mockProvider{
+		streamFn: toolThenText("panic_rich", "tc-1", `{}`, "recovered"),
+	}
+	reg := tools.NewRegistry()
+	reg.Register(&panicRichTool{name: "panic_rich"})
+	a := NewAgentLoop(provider, reg)
+
+	ch := a.Events()
+	go func() {
+		if err := a.Prompt(context.Background(), "call panicking rich tool"); err != nil {
+			t.Errorf("Prompt returned error: %v", err)
+		}
+	}()
+
+	events := drainEvents(ch, 2*time.Second)
+
+	for _, ev := range events {
+		if ev.Type == EventToolExecEnd {
+			if !ev.ToolError {
+				t.Error("expected ToolError=true for panicking rich tool")
+			}
+			if !strings.Contains(ev.ToolResult, "tool panicked") {
+				t.Errorf("expected panic error message, got %q", ev.ToolResult)
+			}
+		}
+	}
+}

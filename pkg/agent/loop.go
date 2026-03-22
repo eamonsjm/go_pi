@@ -496,7 +496,7 @@ func (a *AgentLoop) executeTool(ctx context.Context, tc ai.ContentBlock) ai.Mess
 
 	// Check if tool supports rich (multi-block) results.
 	if richTool, ok := tool.(tools.RichTool); ok {
-		blocks, err := richTool.ExecuteRich(ctx, params)
+		blocks, err := safeExecuteRich(ctx, richTool, params)
 		isError := err != nil
 		var resultText string
 		if isError {
@@ -531,7 +531,7 @@ func (a *AgentLoop) executeTool(ctx context.Context, tc ai.ContentBlock) ai.Mess
 		return ai.NewRichToolResultMessage(tc.ToolUseID, blocks, false)
 	}
 
-	result, err := tool.Execute(ctx, params)
+	result, err := safeExecute(ctx, tool, params)
 	isError := err != nil
 	if isError {
 		result = err.Error()
@@ -563,6 +563,29 @@ func (a *AgentLoop) executeTool(ctx context.Context, tc ai.ContentBlock) ai.Mess
 		ToolError:  isError,
 	})
 	return ai.NewToolResultMessage(tc.ToolUseID, result, isError)
+}
+
+// safeExecute calls tool.Execute inside a deferred recover so that a panicking
+// tool returns an error instead of crashing the agent process.
+func safeExecute(ctx context.Context, tool tools.Tool, params map[string]any) (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			result = ""
+			err = fmt.Errorf("tool panicked: %v", r)
+		}
+	}()
+	return tool.Execute(ctx, params)
+}
+
+// safeExecuteRich is the panic-safe wrapper for RichTool.ExecuteRich.
+func safeExecuteRich(ctx context.Context, tool tools.RichTool, params map[string]any) (blocks []ai.ContentBlock, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			blocks = nil
+			err = fmt.Errorf("tool panicked: %v", r)
+		}
+	}()
+	return tool.ExecuteRich(ctx, params)
 }
 
 // addSteeringSkipResults adds error tool results for any tool calls that were
