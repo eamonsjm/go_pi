@@ -63,7 +63,9 @@ func main() {
 	registry := tools.NewRegistry()
 	registry.Register(&WeatherTool{})
 
-	s, err := sdk.NewSession(
+	ctx := context.Background()
+
+	s, err := sdk.NewSession(ctx,
 		sdk.WithAPIKey("anthropic", apiKey),
 		sdk.WithTools(registry),
 		sdk.WithSystemPrompt("You are a helpful weather assistant. Use the get_weather tool to answer questions about weather."),
@@ -72,8 +74,6 @@ func main() {
 		log.Fatal(err)
 	}
 	defer func() { _ = s.Close() }()
-
-	ctx := context.Background()
 	events := s.Events()
 
 	errCh := make(chan error, 1)

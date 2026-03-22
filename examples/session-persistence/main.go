@@ -63,7 +63,7 @@ func main() {
 
 	// Create a new session
 	fmt.Println("Creating new session...")
-	s, err := sdk.NewSession(
+	s, err := sdk.NewSession(ctx,
 		sdk.WithAPIKey("anthropic", apiKey),
 		sdk.WithSessionDir(sessionDir),
 		sdk.WithSystemPrompt("You are a helpful assistant for learning Go programming."),

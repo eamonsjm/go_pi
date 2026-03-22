@@ -38,7 +38,10 @@ func main() {
 	registry.Register(&tools.GlobTool{})
 	registry.Register(&tools.GrepTool{})
 
-	s, err := sdk.NewSession(
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	s, err := sdk.NewSession(ctx,
 		sdk.WithAPIKey("anthropic", apiKey),
 		sdk.WithTools(registry),
 		sdk.WithWorkingDir("."),
@@ -58,9 +61,6 @@ When asked to perform tasks, use the available tools to:
 		log.Fatal(err)
 	}
 	defer func() { _ = s.Close() }()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	// Handle Ctrl+C
 	sigCh := make(chan os.Signal, 1)

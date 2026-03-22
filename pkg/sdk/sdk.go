@@ -6,7 +6,8 @@
 //
 // Basic usage:
 //
-//	s, err := sdk.NewSession(sdk.WithAPIKey("anthropic", "sk-..."))
+//	ctx := context.Background()
+//	s, err := sdk.NewSession(ctx, sdk.WithAPIKey("anthropic", "sk-..."))
 //	if err != nil {
 //	    log.Fatal(err)
 //	}
@@ -200,8 +201,11 @@ func WithMessages(msgs []ai.Message) SessionOption {
 }
 
 // NewSession creates a new agent session with the given options.
+// The context is used during provider initialization (e.g. for AWS credential
+// resolution with the Bedrock provider) and can be used to set a timeout or
+// cancel provider setup.
 // At minimum, either WithAPIKey or WithProvider must be specified.
-func NewSession(opts ...SessionOption) (*Session, error) {
+func NewSession(ctx context.Context, opts ...SessionOption) (*Session, error) {
 	cfg := &SessionConfig{
 		MaxTokens:     8192,
 		ThinkingLevel: ai.ThinkingOff,
@@ -211,7 +215,7 @@ func NewSession(opts ...SessionOption) (*Session, error) {
 	}
 
 	// Resolve provider.
-	provider, err := resolveProvider(context.Background(), cfg)
+	provider, err := resolveProvider(ctx, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("sdk: %w", err)
 	}

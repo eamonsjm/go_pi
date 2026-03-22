@@ -45,7 +45,7 @@ func runModelComparison(ctx context.Context, provider, model, prompt string) {
 		return
 	}
 
-	s, err := sdk.NewSession(
+	s, err := sdk.NewSession(ctx,
 		sdk.WithAPIKey(provider, apiKey),
 		sdk.WithModel(model),
 		sdk.WithSystemPrompt("You are a helpful assistant. Be concise and direct."),

@@ -410,7 +410,9 @@ func main() {
 	registry := tools.NewRegistry()
 	registry.Register(&MyCustomTool{})
 
-	s, err := sdk.NewSession(
+	ctx := context.Background()
+
+	s, err := sdk.NewSession(ctx,
 		sdk.WithAPIKey("anthropic", "sk-..."),
 		sdk.WithTools(registry),
 		sdk.WithModel("claude-sonnet-4-20250514"),
@@ -420,9 +422,6 @@ func main() {
 		panic(err)
 	}
 	defer s.Close()
-
-	// Run agent
-	ctx := context.Background()
 	events := s.Events()
 
 	go func() {
@@ -475,13 +474,13 @@ func (t *MyCustomTool) Execute(ctx context.Context, params map[string]any) (stri
 Create a specialized agent with custom tools for a specific domain (data analysis, code review, etc.):
 
 ```go
-func newDataAnalysisSession() (*sdk.Session, error) {
+func newDataAnalysisSession(ctx context.Context) (*sdk.Session, error) {
 	registry := tools.NewRegistry()
 	registry.Register(&SQLQueryTool{})
 	registry.Register(&DataVizTool{})
 	registry.Register(&StatisticalAnalysisTool{})
 
-	return sdk.NewSession(
+	return sdk.NewSession(ctx,
 		sdk.WithTools(registry),
 		sdk.WithSystemPrompt("You are a data analyst..."),
 	)

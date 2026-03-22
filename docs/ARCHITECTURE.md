@@ -176,7 +176,7 @@ JSON-RPC 2.0 interface for programmatic access.
 SDK for building Go programs that use Gi as a library.
 
 **Key concepts:**
-- Session creation - `sdk.NewSession()` initializes an agent with tools
+- Session creation - `sdk.NewSession(ctx, ...)` initializes an agent with tools
 - Tool injection - Pass custom tool registry
 - Event consumption - Programmatic access to agent events
 - Provider configuration - API key, model, thinking level

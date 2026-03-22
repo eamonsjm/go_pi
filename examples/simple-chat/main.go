@@ -30,7 +30,10 @@ func main() {
 		log.Fatal("ANTHROPIC_API_KEY environment variable is required")
 	}
 
-	s, err := sdk.NewSession(
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	s, err := sdk.NewSession(ctx,
 		sdk.WithAPIKey("anthropic", apiKey),
 		sdk.WithSystemPrompt("You are a helpful coding assistant. Be concise."),
 	)
@@ -38,9 +41,6 @@ func main() {
 		log.Fatal(err)
 	}
 	defer func() { _ = s.Close() }()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	// Handle Ctrl+C.
 	sigCh := make(chan os.Signal, 1)

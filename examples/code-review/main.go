@@ -44,7 +44,9 @@ func main() {
 	registry.Register(&tools.GlobTool{})
 	registry.Register(&tools.GrepTool{})
 
-	s, err := sdk.NewSession(
+	ctx := context.Background()
+
+	s, err := sdk.NewSession(ctx,
 		sdk.WithAPIKey("anthropic", apiKey),
 		sdk.WithModel("claude-sonnet-4-20250514"),
 		sdk.WithTools(registry),
@@ -54,8 +56,6 @@ func main() {
 		log.Fatal(err)
 	}
 	defer func() { _ = s.Close() }()
-
-	ctx := context.Background()
 	events := s.Events()
 
 	prompt := fmt.Sprintf("Review this file (%s):\n\n```\n%s\n```", filePath, strings.TrimSpace(string(data)))

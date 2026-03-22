@@ -29,7 +29,7 @@ func (m *mockProvider) Stream(_ context.Context, _ ai.StreamRequest) (<-chan ai.
 
 func TestNewSessionWithProvider(t *testing.T) {
 	mock := &mockProvider{response: "Hello from mock!"}
-	s, err := NewSession(
+	s, err := NewSession(context.Background(),
 		WithProvider(mock),
 		WithModel("test-model"),
 		WithSystemPrompt("You are a test assistant."),
@@ -55,7 +55,7 @@ func TestNewSessionWithProvider(t *testing.T) {
 
 func TestSessionPromptAndEvents(t *testing.T) {
 	mock := &mockProvider{response: "The answer is 42."}
-	s, err := NewSession(
+	s, err := NewSession(context.Background(),
 		WithProvider(mock),
 		WithModel("test-model"),
 		WithSessionDir(t.TempDir()),
@@ -128,7 +128,7 @@ func TestSessionWithCustomTools(t *testing.T) {
 	// Don't register defaults — custom registry with no tools.
 
 	mock := &mockProvider{response: "No tools available."}
-	s, err := NewSession(
+	s, err := NewSession(context.Background(),
 		WithProvider(mock),
 		WithModel("test-model"),
 		WithTools(registry),
@@ -146,7 +146,7 @@ func TestSessionWithCustomTools(t *testing.T) {
 }
 
 func TestNewSessionNoProvider(t *testing.T) {
-	_, err := NewSession(
+	_, err := NewSession(context.Background(),
 		WithModel("test-model"),
 		WithSessionDir(t.TempDir()),
 	)
@@ -160,7 +160,7 @@ func TestSessionResume(t *testing.T) {
 	mock := &mockProvider{response: "First response."}
 
 	// Create first session.
-	s1, err := NewSession(
+	s1, err := NewSession(context.Background(),
 		WithProvider(mock),
 		WithModel("test-model"),
 		WithSessionDir(tmpDir),
@@ -180,7 +180,7 @@ func TestSessionResume(t *testing.T) {
 
 	// Create a new session and resume.
 	mock2 := &mockProvider{response: "Second response."}
-	s2, err := NewSession(
+	s2, err := NewSession(context.Background(),
 		WithProvider(mock2),
 		WithModel("test-model"),
 		WithSessionDir(tmpDir),
@@ -202,7 +202,7 @@ func TestSessionResume(t *testing.T) {
 
 func TestSessionSetters(t *testing.T) {
 	mock := &mockProvider{response: "ok"}
-	s, err := NewSession(
+	s, err := NewSession(context.Background(),
 		WithProvider(mock),
 		WithModel("initial-model"),
 		WithSessionDir(t.TempDir()),

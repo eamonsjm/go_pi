@@ -37,7 +37,10 @@ func main() {
 - Be constructive and helpful in your feedback
 - Focus on the most important issues first`
 
-	s, err := sdk.NewSession(
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	s, err := sdk.NewSession(ctx,
 		sdk.WithAPIKey("anthropic", apiKey),
 		sdk.WithSystemPrompt(codeReviewPrompt),
 	)
@@ -45,9 +48,6 @@ func main() {
 		log.Fatal(err)
 	}
 	defer func() { _ = s.Close() }()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	// Handle Ctrl+C
 	sigCh := make(chan os.Signal, 1)
