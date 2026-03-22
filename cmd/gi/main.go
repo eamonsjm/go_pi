@@ -649,7 +649,7 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 			go func() {
 				// Save user message to session
 				msg := ai.NewTextMessage(ai.RoleUser, text)
-				if err := sessionMgr.SaveMessage(msg); err != nil {
+				if err := sessionMgr.SaveMessage(ctx, msg); err != nil {
 					log.Printf("Failed to save user message: %v", err)
 				}
 
@@ -667,7 +667,7 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 
 					// Save assistant and tool_result messages to session
 					if (event.Type == agent.EventTurnEnd || event.Type == agent.EventToolResult) && event.Message != nil {
-						if err := sessionMgr.SaveMessage(*event.Message); err != nil {
+						if err := sessionMgr.SaveMessage(ctx, *event.Message); err != nil {
 							log.Printf("Failed to save message: %v", err)
 						}
 					}

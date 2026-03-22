@@ -37,10 +37,10 @@ func TestSaveMessageAndGetMessages(t *testing.T) {
 	userMsg := ai.NewTextMessage(ai.RoleUser, "hello")
 	assistantMsg := ai.NewTextMessage(ai.RoleAssistant, "hi there")
 
-	if err := m.SaveMessage(userMsg); err != nil {
+	if err := m.SaveMessage(context.Background(),userMsg); err != nil {
 		t.Fatalf("SaveMessage(user): %v", err)
 	}
-	if err := m.SaveMessage(assistantMsg); err != nil {
+	if err := m.SaveMessage(context.Background(),assistantMsg); err != nil {
 		t.Fatalf("SaveMessage(assistant): %v", err)
 	}
 
@@ -79,7 +79,7 @@ func TestAppendEntryWritesToDisk(t *testing.T) {
 		},
 	}
 
-	if err := m.AppendEntry(entry); err != nil {
+	if err := m.AppendEntry(context.Background(),entry); err != nil {
 		t.Fatalf("AppendEntry: %v", err)
 	}
 
@@ -102,7 +102,7 @@ func TestAppendEntryWritesToDisk(t *testing.T) {
 func TestAppendEntryNoActiveSession(t *testing.T) {
 	m := NewManager(t.TempDir())
 	// No NewSession called.
-	err := m.AppendEntry(Entry{ID: "x", Type: "message"})
+	err := m.AppendEntry(context.Background(),Entry{ID: "x", Type: "message"})
 	if err == nil {
 		t.Error("expected error when no active session")
 	}
@@ -114,10 +114,10 @@ func TestLoadSession(t *testing.T) {
 	// Create and populate a session.
 	m1 := NewManager(dir)
 	id := m1.NewSession()
-	if err := m1.SaveMessage(ai.NewTextMessage(ai.RoleUser, "saved message")); err != nil {
+	if err := m1.SaveMessage(context.Background(),ai.NewTextMessage(ai.RoleUser, "saved message")); err != nil {
 		t.Fatalf("SaveMessage: %v", err)
 	}
-	if err := m1.SaveMessage(ai.NewTextMessage(ai.RoleAssistant, "saved reply")); err != nil {
+	if err := m1.SaveMessage(context.Background(),ai.NewTextMessage(ai.RoleAssistant, "saved reply")); err != nil {
 		t.Fatalf("SaveMessage: %v", err)
 	}
 
@@ -157,7 +157,7 @@ func TestListSessions(t *testing.T) {
 
 	// Create two sessions with entries.
 	id1 := m.NewSession()
-	if err := m.SaveMessage(ai.NewTextMessage(ai.RoleUser, "session 1")); err != nil {
+	if err := m.SaveMessage(context.Background(),ai.NewTextMessage(ai.RoleUser, "session 1")); err != nil {
 		t.Fatalf("SaveMessage: %v", err)
 	}
 
@@ -165,7 +165,7 @@ func TestListSessions(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 
 	id2 := m.NewSession()
-	if err := m.SaveMessage(ai.NewTextMessage(ai.RoleUser, "session 2")); err != nil {
+	if err := m.SaveMessage(context.Background(),ai.NewTextMessage(ai.RoleUser, "session 2")); err != nil {
 		t.Fatalf("SaveMessage: %v", err)
 	}
 
@@ -209,7 +209,7 @@ func TestLatestSessionID(t *testing.T) {
 
 	// Create first session.
 	m.NewSession()
-	if err := m.SaveMessage(ai.NewTextMessage(ai.RoleUser, "first")); err != nil {
+	if err := m.SaveMessage(context.Background(),ai.NewTextMessage(ai.RoleUser, "first")); err != nil {
 		t.Fatalf("SaveMessage: %v", err)
 	}
 
@@ -217,7 +217,7 @@ func TestLatestSessionID(t *testing.T) {
 
 	// Create second session — should be the latest.
 	id2 := m.NewSession()
-	if err := m.SaveMessage(ai.NewTextMessage(ai.RoleUser, "second")); err != nil {
+	if err := m.SaveMessage(context.Background(),ai.NewTextMessage(ai.RoleUser, "second")); err != nil {
 		t.Fatalf("SaveMessage: %v", err)
 	}
 
@@ -231,13 +231,13 @@ func TestListSessionsPreview(t *testing.T) {
 	m := NewManager(dir)
 
 	m.NewSession()
-	if err := m.SaveMessage(ai.NewTextMessage(ai.RoleUser, "hello world")); err != nil {
+	if err := m.SaveMessage(context.Background(),ai.NewTextMessage(ai.RoleUser, "hello world")); err != nil {
 		t.Fatalf("SaveMessage: %v", err)
 	}
-	if err := m.SaveMessage(ai.NewTextMessage(ai.RoleAssistant, "hi there")); err != nil {
+	if err := m.SaveMessage(context.Background(),ai.NewTextMessage(ai.RoleAssistant, "hi there")); err != nil {
 		t.Fatalf("SaveMessage: %v", err)
 	}
-	if err := m.SaveMessage(ai.NewTextMessage(ai.RoleUser, "tell me more\nwith multiple lines")); err != nil {
+	if err := m.SaveMessage(context.Background(),ai.NewTextMessage(ai.RoleUser, "tell me more\nwith multiple lines")); err != nil {
 		t.Fatalf("SaveMessage: %v", err)
 	}
 
@@ -256,12 +256,12 @@ func TestMultipleSessions(t *testing.T) {
 	m := NewManager(dir)
 
 	id1 := m.NewSession()
-	if err := m.SaveMessage(ai.NewTextMessage(ai.RoleUser, "msg in session 1")); err != nil {
+	if err := m.SaveMessage(context.Background(),ai.NewTextMessage(ai.RoleUser, "msg in session 1")); err != nil {
 		t.Fatalf("SaveMessage: %v", err)
 	}
 
 	id2 := m.NewSession()
-	if err := m.SaveMessage(ai.NewTextMessage(ai.RoleUser, "msg in session 2")); err != nil {
+	if err := m.SaveMessage(context.Background(),ai.NewTextMessage(ai.RoleUser, "msg in session 2")); err != nil {
 		t.Fatalf("SaveMessage: %v", err)
 	}
 
@@ -304,7 +304,7 @@ func TestNonMessageEntriesSkipped(t *testing.T) {
 	m.NewSession()
 
 	// Append a non-message entry.
-	if err := m.AppendEntry(Entry{
+	if err := m.AppendEntry(context.Background(),Entry{
 		ID:        "info-1",
 		Timestamp: time.Now().UTC(),
 		Type:      "info",
@@ -314,7 +314,7 @@ func TestNonMessageEntriesSkipped(t *testing.T) {
 	}
 
 	// Append a message entry.
-	if err := m.SaveMessage(ai.NewTextMessage(ai.RoleUser, "hello")); err != nil {
+	if err := m.SaveMessage(context.Background(),ai.NewTextMessage(ai.RoleUser, "hello")); err != nil {
 		t.Fatalf("SaveMessage: %v", err)
 	}
 
@@ -354,7 +354,7 @@ func TestConcurrentAppendEntry(t *testing.T) {
 						Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: fmt.Sprintf("msg-%d-%d", gid, i)}},
 					},
 				}
-				if err := m.AppendEntry(entry); err != nil {
+				if err := m.AppendEntry(context.Background(),entry); err != nil {
 					errs <- err
 				}
 			}
@@ -400,7 +400,7 @@ func TestConcurrentSaveMessage(t *testing.T) {
 			defer wg.Done()
 			for i := 0; i < msgsPerGoroutine; i++ {
 				msg := ai.NewTextMessage(ai.RoleUser, fmt.Sprintf("concurrent-%d-%d", gid, i))
-				if err := m.SaveMessage(msg); err != nil {
+				if err := m.SaveMessage(context.Background(),msg); err != nil {
 					errs <- err
 				}
 			}
@@ -443,7 +443,7 @@ func TestListSessionsDuringConcurrentWrites(t *testing.T) {
 	m.NewSession()
 
 	// Seed one entry so the session file exists on disk before concurrent reads.
-	if err := m.SaveMessage(ai.NewTextMessage(ai.RoleUser, "seed")); err != nil {
+	if err := m.SaveMessage(context.Background(),ai.NewTextMessage(ai.RoleUser, "seed")); err != nil {
 		t.Fatalf("seed SaveMessage: %v", err)
 	}
 
@@ -462,7 +462,7 @@ func TestListSessionsDuringConcurrentWrites(t *testing.T) {
 			defer wg.Done()
 			for i := 0; i < writesPerWriter; i++ {
 				msg := ai.NewTextMessage(ai.RoleUser, fmt.Sprintf("w%d-%d", wid, i))
-				if err := m.SaveMessage(msg); err != nil {
+				if err := m.SaveMessage(context.Background(),msg); err != nil {
 					writeErrs <- err
 				}
 			}
@@ -510,7 +510,7 @@ func TestConcurrentGetMessagesDuringAppend(t *testing.T) {
 			defer wg.Done()
 			for i := 0; i < writesPerWriter; i++ {
 				msg := ai.NewTextMessage(ai.RoleUser, fmt.Sprintf("r%d-%d", wid, i))
-				_ = m.SaveMessage(msg)
+				_ = m.SaveMessage(context.Background(),msg)
 			}
 		}(w)
 	}
@@ -551,7 +551,7 @@ func TestConcurrentAppendEntryDataIntegrity(t *testing.T) {
 			defer wg.Done()
 			for i := 0; i < entriesPerGoroutine; i++ {
 				msg := ai.NewTextMessage(ai.RoleUser, fmt.Sprintf("integrity-%d-%d", gid, i))
-				_ = m.SaveMessage(msg)
+				_ = m.SaveMessage(context.Background(),msg)
 			}
 		}(g)
 	}
@@ -728,7 +728,7 @@ func TestRepairOrphanedToolUse_ViaGetMessages(t *testing.T) {
 	id := m.NewSession()
 
 	// Save user message.
-	if err := m.SaveMessage(ai.NewTextMessage(ai.RoleUser, "run this")); err != nil {
+	if err := m.SaveMessage(context.Background(),ai.NewTextMessage(ai.RoleUser, "run this")); err != nil {
 		t.Fatalf("SaveMessage: %v", err)
 	}
 	// Save assistant message with tool_use.
@@ -738,7 +738,7 @@ func TestRepairOrphanedToolUse_ViaGetMessages(t *testing.T) {
 			{Type: ai.ContentTypeToolUse, ToolUseID: "tu-orphan", ToolName: "bash", Input: map[string]any{"cmd": "ls"}},
 		},
 	}
-	if err := m.SaveMessage(assistantMsg); err != nil {
+	if err := m.SaveMessage(context.Background(),assistantMsg); err != nil {
 		t.Fatalf("SaveMessage: %v", err)
 	}
 	// No tool_result saved — simulates user quit mid-execution.
@@ -869,7 +869,7 @@ func TestForkAt(t *testing.T) {
 
 	// Add linear entries.
 	for _, id := range []string{"e1", "e2", "e3"} {
-		err := m.AppendEntry(Entry{
+		err := m.AppendEntry(context.Background(),Entry{
 			ID:        id,
 			Timestamp: time.Now().UTC(),
 			Type:      "message",
@@ -894,7 +894,7 @@ func TestForkAt(t *testing.T) {
 	}
 
 	// New entry on forked branch.
-	err := m.AppendEntry(Entry{
+	err := m.AppendEntry(context.Background(),Entry{
 		ID:        "e4",
 		Timestamp: time.Now().UTC(),
 		Type:      "message",
@@ -923,16 +923,16 @@ func TestGetBranches(t *testing.T) {
 	m.NewSession()
 
 	// Build a tree: e1 -> e2 -> e3 (main), e2 -> e4 (fork)
-	m.AppendEntry(Entry{ID: "e1", Timestamp: time.Now().UTC(), Type: "message",
+	m.AppendEntry(context.Background(),Entry{ID: "e1", Timestamp: time.Now().UTC(), Type: "message",
 		Data: MessageData{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "start"}}}})
-	m.AppendEntry(Entry{ID: "e2", Timestamp: time.Now().UTC(), Type: "message",
+	m.AppendEntry(context.Background(),Entry{ID: "e2", Timestamp: time.Now().UTC(), Type: "message",
 		Data: MessageData{Role: ai.RoleAssistant, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "response"}}}})
-	m.AppendEntry(Entry{ID: "e3", Timestamp: time.Now().UTC(), Type: "message",
+	m.AppendEntry(context.Background(),Entry{ID: "e3", Timestamp: time.Now().UTC(), Type: "message",
 		Data: MessageData{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "continue main"}}}})
 
 	// Fork at e2.
 	m.ForkAt("e2")
-	m.AppendEntry(Entry{ID: "e4", Timestamp: time.Now().UTC(), Type: "message",
+	m.AppendEntry(context.Background(),Entry{ID: "e4", Timestamp: time.Now().UTC(), Type: "message",
 		Data: MessageData{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "fork path"}}}})
 
 	branches := m.GetBranches()
@@ -957,14 +957,14 @@ func TestSwitchBranch(t *testing.T) {
 	m := NewManager(dir)
 	m.NewSession()
 
-	m.AppendEntry(Entry{ID: "e1", Timestamp: time.Now().UTC(), Type: "message",
+	m.AppendEntry(context.Background(),Entry{ID: "e1", Timestamp: time.Now().UTC(), Type: "message",
 		Data: MessageData{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "root"}}}})
-	m.AppendEntry(Entry{ID: "e2", Timestamp: time.Now().UTC(), Type: "message",
+	m.AppendEntry(context.Background(),Entry{ID: "e2", Timestamp: time.Now().UTC(), Type: "message",
 		Data: MessageData{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "main"}}}})
 
 	// Fork from e1.
 	m.ForkAt("e1")
-	m.AppendEntry(Entry{ID: "e3", Timestamp: time.Now().UTC(), Type: "message",
+	m.AppendEntry(context.Background(),Entry{ID: "e3", Timestamp: time.Now().UTC(), Type: "message",
 		Data: MessageData{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "alt"}}}})
 
 	// We're on e3 branch now. Switch to e2 branch.
@@ -993,18 +993,18 @@ func TestHasBranches(t *testing.T) {
 	m := NewManager(dir)
 	m.NewSession()
 
-	m.AppendEntry(Entry{ID: "e1", Timestamp: time.Now().UTC(), Type: "message",
+	m.AppendEntry(context.Background(),Entry{ID: "e1", Timestamp: time.Now().UTC(), Type: "message",
 		Data: MessageData{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "a"}}}})
 
 	if m.HasBranches() {
 		t.Error("linear session should not have branches")
 	}
 
-	m.AppendEntry(Entry{ID: "e2", Timestamp: time.Now().UTC(), Type: "message",
+	m.AppendEntry(context.Background(),Entry{ID: "e2", Timestamp: time.Now().UTC(), Type: "message",
 		Data: MessageData{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "b"}}}})
 
 	m.ForkAt("e1")
-	m.AppendEntry(Entry{ID: "e3", Timestamp: time.Now().UTC(), Type: "message",
+	m.AppendEntry(context.Background(),Entry{ID: "e3", Timestamp: time.Now().UTC(), Type: "message",
 		Data: MessageData{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "c"}}}})
 
 	if !m.HasBranches() {
@@ -1018,12 +1018,12 @@ func TestLoadSessionPreservesTree(t *testing.T) {
 	id := m.NewSession()
 
 	// Build tree and reload.
-	m.AppendEntry(Entry{ID: "e1", Timestamp: time.Now().UTC(), Type: "message",
+	m.AppendEntry(context.Background(),Entry{ID: "e1", Timestamp: time.Now().UTC(), Type: "message",
 		Data: MessageData{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "root"}}}})
-	m.AppendEntry(Entry{ID: "e2", Timestamp: time.Now().UTC(), Type: "message",
+	m.AppendEntry(context.Background(),Entry{ID: "e2", Timestamp: time.Now().UTC(), Type: "message",
 		Data: MessageData{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "main"}}}})
 	m.ForkAt("e1")
-	m.AppendEntry(Entry{ID: "e3", Timestamp: time.Now().UTC(), Type: "message",
+	m.AppendEntry(context.Background(),Entry{ID: "e3", Timestamp: time.Now().UTC(), Type: "message",
 		Data: MessageData{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "fork"}}}})
 
 	// Reload in fresh manager — last entry is e3 so active branch should be e3.
@@ -1051,13 +1051,13 @@ func TestGetBranchMessages(t *testing.T) {
 	m := NewManager(dir)
 	m.NewSession()
 
-	m.AppendEntry(Entry{ID: "e1", Timestamp: time.Now().UTC(), Type: "message",
+	m.AppendEntry(context.Background(),Entry{ID: "e1", Timestamp: time.Now().UTC(), Type: "message",
 		Data: MessageData{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "root"}}}})
-	m.AppendEntry(Entry{ID: "e2", Timestamp: time.Now().UTC(), Type: "message",
+	m.AppendEntry(context.Background(),Entry{ID: "e2", Timestamp: time.Now().UTC(), Type: "message",
 		Data: MessageData{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "main"}}}})
 
 	m.ForkAt("e1")
-	m.AppendEntry(Entry{ID: "e3", Timestamp: time.Now().UTC(), Type: "message",
+	m.AppendEntry(context.Background(),Entry{ID: "e3", Timestamp: time.Now().UTC(), Type: "message",
 		Data: MessageData{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "alt"}}}})
 
 	// Get main branch messages.
@@ -1085,7 +1085,7 @@ func TestFormatTree(t *testing.T) {
 	m.NewSession()
 
 	// Linear session — no tree.
-	m.AppendEntry(Entry{ID: "e1", Timestamp: time.Now().UTC(), Type: "message",
+	m.AppendEntry(context.Background(),Entry{ID: "e1", Timestamp: time.Now().UTC(), Type: "message",
 		Data: MessageData{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "hello"}}}})
 	tree := m.FormatTree()
 	if !strings.Contains(tree, "linear") {
@@ -1093,10 +1093,10 @@ func TestFormatTree(t *testing.T) {
 	}
 
 	// Add a branch.
-	m.AppendEntry(Entry{ID: "e2", Timestamp: time.Now().UTC(), Type: "message",
+	m.AppendEntry(context.Background(),Entry{ID: "e2", Timestamp: time.Now().UTC(), Type: "message",
 		Data: MessageData{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "main path"}}}})
 	m.ForkAt("e1")
-	m.AppendEntry(Entry{ID: "e3", Timestamp: time.Now().UTC(), Type: "message",
+	m.AppendEntry(context.Background(),Entry{ID: "e3", Timestamp: time.Now().UTC(), Type: "message",
 		Data: MessageData{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "fork path"}}}})
 
 	tree = m.FormatTree()
@@ -1113,11 +1113,11 @@ func TestGetUserEntries(t *testing.T) {
 	m := NewManager(dir)
 	m.NewSession()
 
-	m.AppendEntry(Entry{ID: "e1", Timestamp: time.Now().UTC(), Type: "message",
+	m.AppendEntry(context.Background(),Entry{ID: "e1", Timestamp: time.Now().UTC(), Type: "message",
 		Data: MessageData{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "q1"}}}})
-	m.AppendEntry(Entry{ID: "e2", Timestamp: time.Now().UTC(), Type: "message",
+	m.AppendEntry(context.Background(),Entry{ID: "e2", Timestamp: time.Now().UTC(), Type: "message",
 		Data: MessageData{Role: ai.RoleAssistant, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "a1"}}}})
-	m.AppendEntry(Entry{ID: "e3", Timestamp: time.Now().UTC(), Type: "message",
+	m.AppendEntry(context.Background(),Entry{ID: "e3", Timestamp: time.Now().UTC(), Type: "message",
 		Data: MessageData{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "q2"}}}})
 
 	userEntries := m.GetUserEntries()
@@ -1134,8 +1134,8 @@ func TestAppendEntryAutoSetsParentID(t *testing.T) {
 	m := NewManager(dir)
 	m.NewSession()
 
-	m.AppendEntry(Entry{ID: "e1", Timestamp: time.Now().UTC(), Type: "info"})
-	m.AppendEntry(Entry{ID: "e2", Timestamp: time.Now().UTC(), Type: "info"})
+	m.AppendEntry(context.Background(),Entry{ID: "e1", Timestamp: time.Now().UTC(), Type: "info"})
+	m.AppendEntry(context.Background(),Entry{ID: "e2", Timestamp: time.Now().UTC(), Type: "info"})
 
 	entries := m.GetEntries()
 	if entries[0].ParentID != "" {
@@ -1151,12 +1151,12 @@ func TestListSessionsShowsBranches(t *testing.T) {
 	m := NewManager(dir)
 	m.NewSession()
 
-	m.AppendEntry(Entry{ID: "e1", Timestamp: time.Now().UTC(), Type: "message",
+	m.AppendEntry(context.Background(),Entry{ID: "e1", Timestamp: time.Now().UTC(), Type: "message",
 		Data: MessageData{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "a"}}}})
-	m.AppendEntry(Entry{ID: "e2", Timestamp: time.Now().UTC(), Type: "message",
+	m.AppendEntry(context.Background(),Entry{ID: "e2", Timestamp: time.Now().UTC(), Type: "message",
 		Data: MessageData{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "b"}}}})
 	m.ForkAt("e1")
-	m.AppendEntry(Entry{ID: "e3", Timestamp: time.Now().UTC(), Type: "message",
+	m.AppendEntry(context.Background(),Entry{ID: "e3", Timestamp: time.Now().UTC(), Type: "message",
 		Data: MessageData{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "c"}}}})
 
 	sessions, _ := m.ListSessions(context.Background())
@@ -1217,7 +1217,7 @@ func TestSaveMessage_DedupAssistantToolUse(t *testing.T) {
 	id := m.NewSession()
 
 	// Save user message.
-	m.SaveMessage(ai.NewTextMessage(ai.RoleUser, "write a file"))
+	m.SaveMessage(context.Background(),ai.NewTextMessage(ai.RoleUser, "write a file"))
 
 	// Save assistant message with text + tool_use.
 	original := ai.Message{
@@ -1228,12 +1228,12 @@ func TestSaveMessage_DedupAssistantToolUse(t *testing.T) {
 				Input: map[string]any{"path": "/tmp/foo.md", "content": "hello world"}},
 		},
 	}
-	if err := m.SaveMessage(original); err != nil {
+	if err := m.SaveMessage(context.Background(),original); err != nil {
 		t.Fatalf("SaveMessage(original): %v", err)
 	}
 
 	// Save tool_result for original.
-	m.SaveMessage(ai.NewToolResultMessage("tu-A", "File written", false))
+	m.SaveMessage(context.Background(),ai.NewToolResultMessage("tu-A", "File written", false))
 
 	// Save duplicate assistant message — same tool name and input, different ID.
 	dup := ai.Message{
@@ -1243,12 +1243,12 @@ func TestSaveMessage_DedupAssistantToolUse(t *testing.T) {
 				Input: map[string]any{"path": "/tmp/foo.md", "content": "hello world"}},
 		},
 	}
-	if err := m.SaveMessage(dup); err != nil {
+	if err := m.SaveMessage(context.Background(),dup); err != nil {
 		t.Fatalf("SaveMessage(dup): %v", err)
 	}
 
 	// The duplicate's tool_result should also be skipped.
-	m.SaveMessage(ai.NewToolResultMessage("tu-B", "File written", false))
+	m.SaveMessage(context.Background(),ai.NewToolResultMessage("tu-B", "File written", false))
 
 	// Verify: only 3 entries on disk (user, assistant, tool_result for tu-A).
 	path := filepath.Join(dir, id+".jsonl")
@@ -1269,7 +1269,7 @@ func TestSaveMessage_DedupMultipleToolUse(t *testing.T) {
 	m := NewManager(dir)
 	m.NewSession()
 
-	m.SaveMessage(ai.NewTextMessage(ai.RoleUser, "do two things"))
+	m.SaveMessage(context.Background(),ai.NewTextMessage(ai.RoleUser, "do two things"))
 
 	// Original with two tool_use blocks.
 	original := ai.Message{
@@ -1281,7 +1281,7 @@ func TestSaveMessage_DedupMultipleToolUse(t *testing.T) {
 				Input: map[string]any{"path": "/b"}},
 		},
 	}
-	m.SaveMessage(original)
+	m.SaveMessage(context.Background(),original)
 
 	// Duplicate with same names and inputs, different IDs.
 	dup := ai.Message{
@@ -1293,11 +1293,11 @@ func TestSaveMessage_DedupMultipleToolUse(t *testing.T) {
 				Input: map[string]any{"path": "/b"}},
 		},
 	}
-	m.SaveMessage(dup)
+	m.SaveMessage(context.Background(),dup)
 
 	// Both tool_results for the dup should be skipped.
-	m.SaveMessage(ai.NewToolResultMessage("tu-3", "content-a", false))
-	m.SaveMessage(ai.NewToolResultMessage("tu-4", "content-b", false))
+	m.SaveMessage(context.Background(),ai.NewToolResultMessage("tu-3", "content-a", false))
+	m.SaveMessage(context.Background(),ai.NewToolResultMessage("tu-4", "content-b", false))
 
 	entries := m.GetEntries()
 	if len(entries) != 2 { // user + original assistant
@@ -1310,7 +1310,7 @@ func TestSaveMessage_NoDedupDifferentInput(t *testing.T) {
 	m := NewManager(dir)
 	m.NewSession()
 
-	m.SaveMessage(ai.NewTextMessage(ai.RoleUser, "write a file"))
+	m.SaveMessage(context.Background(),ai.NewTextMessage(ai.RoleUser, "write a file"))
 
 	original := ai.Message{
 		Role: ai.RoleAssistant,
@@ -1319,7 +1319,7 @@ func TestSaveMessage_NoDedupDifferentInput(t *testing.T) {
 				Input: map[string]any{"path": "/tmp/foo.md", "content": "version 1"}},
 		},
 	}
-	m.SaveMessage(original)
+	m.SaveMessage(context.Background(),original)
 
 	// Different input — should NOT be deduped.
 	different := ai.Message{
@@ -1329,7 +1329,7 @@ func TestSaveMessage_NoDedupDifferentInput(t *testing.T) {
 				Input: map[string]any{"path": "/tmp/foo.md", "content": "version 2"}},
 		},
 	}
-	m.SaveMessage(different)
+	m.SaveMessage(context.Background(),different)
 
 	entries := m.GetEntries()
 	if len(entries) != 3 { // user + original + different
@@ -1342,7 +1342,7 @@ func TestSaveMessage_NoDedupDifferentToolName(t *testing.T) {
 	m := NewManager(dir)
 	m.NewSession()
 
-	m.SaveMessage(ai.NewTextMessage(ai.RoleUser, "do something"))
+	m.SaveMessage(context.Background(),ai.NewTextMessage(ai.RoleUser, "do something"))
 
 	original := ai.Message{
 		Role: ai.RoleAssistant,
@@ -1351,7 +1351,7 @@ func TestSaveMessage_NoDedupDifferentToolName(t *testing.T) {
 				Input: map[string]any{"path": "/tmp/foo.md"}},
 		},
 	}
-	m.SaveMessage(original)
+	m.SaveMessage(context.Background(),original)
 
 	// Same input but different tool name — should NOT be deduped.
 	different := ai.Message{
@@ -1361,7 +1361,7 @@ func TestSaveMessage_NoDedupDifferentToolName(t *testing.T) {
 				Input: map[string]any{"path": "/tmp/foo.md"}},
 		},
 	}
-	m.SaveMessage(different)
+	m.SaveMessage(context.Background(),different)
 
 	entries := m.GetEntries()
 	if len(entries) != 3 {
@@ -1375,9 +1375,9 @@ func TestSaveMessage_NoDedupTextOnly(t *testing.T) {
 	m.NewSession()
 
 	// Text-only assistant messages should never be deduped, even if identical.
-	m.SaveMessage(ai.NewTextMessage(ai.RoleUser, "hello"))
-	m.SaveMessage(ai.NewTextMessage(ai.RoleAssistant, "hi"))
-	m.SaveMessage(ai.NewTextMessage(ai.RoleAssistant, "hi"))
+	m.SaveMessage(context.Background(),ai.NewTextMessage(ai.RoleUser, "hello"))
+	m.SaveMessage(context.Background(),ai.NewTextMessage(ai.RoleAssistant, "hi"))
+	m.SaveMessage(context.Background(),ai.NewTextMessage(ai.RoleAssistant, "hi"))
 
 	entries := m.GetEntries()
 	if len(entries) != 3 {
@@ -1390,7 +1390,7 @@ func TestSaveMessage_NoDedupDifferentCount(t *testing.T) {
 	m := NewManager(dir)
 	m.NewSession()
 
-	m.SaveMessage(ai.NewTextMessage(ai.RoleUser, "do things"))
+	m.SaveMessage(context.Background(),ai.NewTextMessage(ai.RoleUser, "do things"))
 
 	// Original with one tool_use.
 	original := ai.Message{
@@ -1400,7 +1400,7 @@ func TestSaveMessage_NoDedupDifferentCount(t *testing.T) {
 				Input: map[string]any{"path": "/a"}},
 		},
 	}
-	m.SaveMessage(original)
+	m.SaveMessage(context.Background(),original)
 
 	// New message with two tool_use blocks (one matching, one new).
 	different := ai.Message{
@@ -1412,7 +1412,7 @@ func TestSaveMessage_NoDedupDifferentCount(t *testing.T) {
 				Input: map[string]any{"path": "/b"}},
 		},
 	}
-	m.SaveMessage(different)
+	m.SaveMessage(context.Background(),different)
 
 	entries := m.GetEntries()
 	if len(entries) != 3 {
@@ -1425,7 +1425,7 @@ func TestSaveMessage_DedupToolResultNotSkippedForNonDup(t *testing.T) {
 	m := NewManager(dir)
 	m.NewSession()
 
-	m.SaveMessage(ai.NewTextMessage(ai.RoleUser, "run"))
+	m.SaveMessage(context.Background(),ai.NewTextMessage(ai.RoleUser, "run"))
 
 	assistant := ai.Message{
 		Role: ai.RoleAssistant,
@@ -1434,10 +1434,10 @@ func TestSaveMessage_DedupToolResultNotSkippedForNonDup(t *testing.T) {
 				Input: map[string]any{"cmd": "ls"}},
 		},
 	}
-	m.SaveMessage(assistant)
+	m.SaveMessage(context.Background(),assistant)
 
 	// Normal tool_result — should be saved (not in skipped set).
-	m.SaveMessage(ai.NewToolResultMessage("tu-1", "file1 file2", false))
+	m.SaveMessage(context.Background(),ai.NewToolResultMessage("tu-1", "file1 file2", false))
 
 	entries := m.GetEntries()
 	if len(entries) != 3 {
@@ -1559,13 +1559,13 @@ func TestCollectUserPrompts_Basic(t *testing.T) {
 	// Create two sessions with user messages.
 	id1 := m.NewSession()
 	_ = id1
-	_ = m.SaveMessage(ai.Message{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "first prompt"}}})
-	_ = m.SaveMessage(ai.Message{Role: ai.RoleAssistant, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "response"}}})
-	_ = m.SaveMessage(ai.Message{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "second prompt"}}})
+	_ = m.SaveMessage(context.Background(),ai.Message{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "first prompt"}}})
+	_ = m.SaveMessage(context.Background(),ai.Message{Role: ai.RoleAssistant, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "response"}}})
+	_ = m.SaveMessage(context.Background(),ai.Message{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "second prompt"}}})
 
 	id2 := m.NewSession()
 	_ = id2
-	_ = m.SaveMessage(ai.Message{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "third prompt"}}})
+	_ = m.SaveMessage(context.Background(),ai.Message{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "third prompt"}}})
 
 	prompts := m.CollectUserPrompts(context.Background(),100)
 	if len(prompts) != 3 {
@@ -1583,9 +1583,9 @@ func TestCollectUserPrompts_Deduplicates(t *testing.T) {
 	m := NewManager(dir)
 
 	m.NewSession()
-	_ = m.SaveMessage(ai.Message{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "duplicate"}}})
-	_ = m.SaveMessage(ai.Message{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "duplicate"}}})
-	_ = m.SaveMessage(ai.Message{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "unique"}}})
+	_ = m.SaveMessage(context.Background(),ai.Message{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "duplicate"}}})
+	_ = m.SaveMessage(context.Background(),ai.Message{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "duplicate"}}})
+	_ = m.SaveMessage(context.Background(),ai.Message{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: "unique"}}})
 
 	prompts := m.CollectUserPrompts(context.Background(),100)
 	if len(prompts) != 2 {
@@ -1599,7 +1599,7 @@ func TestCollectUserPrompts_RespectsMax(t *testing.T) {
 	m.NewSession()
 
 	for i := 0; i < 20; i++ {
-		_ = m.SaveMessage(ai.Message{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: fmt.Sprintf("prompt %d", i)}}})
+		_ = m.SaveMessage(context.Background(),ai.Message{Role: ai.RoleUser, Content: []ai.ContentBlock{{Type: ai.ContentTypeText, Text: fmt.Sprintf("prompt %d", i)}}})
 	}
 
 	prompts := m.CollectUserPrompts(context.Background(),5)

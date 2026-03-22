@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -44,8 +45,8 @@ func TestNewExportCommand_ExplicitPath(t *testing.T) {
 	dir := t.TempDir()
 	mgr := session.NewManager(dir)
 	mgr.NewSession()
-	mgr.SaveMessage(ai.NewTextMessage(ai.RoleUser, "hello"))
-	mgr.SaveMessage(ai.NewTextMessage(ai.RoleAssistant, "hi there"))
+	mgr.SaveMessage(context.Background(),ai.NewTextMessage(ai.RoleUser, "hello"))
+	mgr.SaveMessage(context.Background(),ai.NewTextMessage(ai.RoleAssistant, "hi there"))
 
 	outPath := filepath.Join(dir, "test-export.html")
 	cmd := NewExportCommand(mgr)

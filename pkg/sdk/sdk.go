@@ -281,7 +281,7 @@ func (s *Session) Prompt(ctx context.Context, text string) error {
 	beforeCount := len(s.loop.Messages())
 
 	// Persist user message.
-	if err := s.sessionMgr.SaveMessage(ai.NewTextMessage(ai.RoleUser, text)); err != nil {
+	if err := s.sessionMgr.SaveMessage(ctx, ai.NewTextMessage(ai.RoleUser, text)); err != nil {
 		return fmt.Errorf("sdk prompt: save user message: %w", err)
 	}
 
@@ -293,7 +293,7 @@ func (s *Session) Prompt(ctx context.Context, text string) error {
 	var saveErr error
 	allMsgs := s.loop.Messages()
 	for i := beforeCount + 1; i < len(allMsgs); i++ {
-		if saveErr = s.sessionMgr.SaveMessage(allMsgs[i]); saveErr != nil {
+		if saveErr = s.sessionMgr.SaveMessage(ctx, allMsgs[i]); saveErr != nil {
 			saveErr = fmt.Errorf("sdk prompt: save generated message: %w", saveErr)
 			break
 		}
