@@ -41,16 +41,16 @@ func TestNewExportCommand_NoSession(t *testing.T) {
 	}
 }
 
-func TestNewExportCommand_ExplicitPath(t *testing.T) {
+func TestNewExportCommand_ExplicitFilename(t *testing.T) {
 	dir := t.TempDir()
 	mgr := session.NewManager(dir)
 	mgr.NewSession()
-	mgr.SaveMessage(context.Background(),ai.NewTextMessage(ai.RoleUser, "hello"))
-	mgr.SaveMessage(context.Background(),ai.NewTextMessage(ai.RoleAssistant, "hi there"))
+	mgr.SaveMessage(context.Background(), ai.NewTextMessage(ai.RoleUser, "hello"))
+	mgr.SaveMessage(context.Background(), ai.NewTextMessage(ai.RoleAssistant, "hi there"))
 
-	outPath := filepath.Join(dir, "test-export.html")
+	// Passing a filename writes to ~/.gi/exports/<filename>.
 	cmd := NewExportCommand(mgr)
-	teaCmd := cmd.Execute(outPath)
+	teaCmd := cmd.Execute("test-export.html")
 	msg := teaCmd()
 
 	result, ok := msg.(CommandResultMsg)
@@ -61,12 +61,16 @@ func TestNewExportCommand_ExplicitPath(t *testing.T) {
 		t.Fatalf("unexpected error: %s", result.Text)
 	}
 
+	// The file should be written inside the exports directory.
+	home, _ := os.UserHomeDir()
+	outPath := filepath.Join(home, ".gi", "exports", "test-export.html")
 	data, err := os.ReadFile(outPath)
 	if err != nil {
 		t.Fatalf("failed to read exported file: %v", err)
 	}
-	html := string(data)
+	t.Cleanup(func() { os.Remove(outPath) })
 
+	html := string(data)
 	if !strings.Contains(html, "<!DOCTYPE html>") {
 		t.Error("export should be valid HTML")
 	}
@@ -75,6 +79,45 @@ func TestNewExportCommand_ExplicitPath(t *testing.T) {
 	}
 	if !strings.Contains(html, "hi there") {
 		t.Error("export should contain assistant message")
+	}
+}
+
+func TestNewExportCommand_PathTraversalBlocked(t *testing.T) {
+	dir := t.TempDir()
+	mgr := session.NewManager(dir)
+	mgr.NewSession()
+	mgr.SaveMessage(context.Background(), ai.NewTextMessage(ai.RoleUser, "hello"))
+
+	tests := []struct {
+		name string
+		arg  string
+	}{
+		{"dot-dot slash", "../../etc/evil.html"},
+		{"absolute path", "/tmp/evil.html"},
+		{"nested traversal", "foo/../../bar.html"},
+	}
+
+	cmd := NewExportCommand(mgr)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			teaCmd := cmd.Execute(tt.arg)
+			msg := teaCmd()
+			result, ok := msg.(CommandResultMsg)
+			if !ok {
+				t.Fatalf("expected CommandResultMsg, got %T", msg)
+			}
+			// filepath.Base strips traversal, so these should succeed
+			// but write to the exports dir, not the traversal target.
+			if result.IsError {
+				return // also acceptable — blocked outright
+			}
+			// If it succeeded, verify the file was NOT written outside exports dir.
+			home, _ := os.UserHomeDir()
+			exportDir := filepath.Join(home, ".gi", "exports")
+			if !strings.HasPrefix(result.Text, "Exported session to "+exportDir) {
+				t.Errorf("file written outside exports dir: %s", result.Text)
+			}
+		})
 	}
 }
 
