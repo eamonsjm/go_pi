@@ -626,6 +626,7 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 	}
 
 	p := tea.NewProgram(app, tea.WithAltScreen())
+	app.SetProgram(p)
 
 	// Create a map of plugin processes for UI response handling
 	pluginsByName := make(map[string]*plugin.PluginProcess)

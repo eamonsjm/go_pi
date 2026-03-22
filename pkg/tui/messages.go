@@ -77,3 +77,21 @@ type PluginUIResponseMsg struct {
 	Closed     bool   // True if user closed without responding
 	Error      string // Error message if dialog failed
 }
+
+// setModelMsg routes a model name change through the Bubble Tea message loop
+// so that App.SetModel is safe to call from any goroutine.
+type setModelMsg struct {
+	name string
+}
+
+// setThinkingMsg routes a thinking level change through the Bubble Tea message
+// loop so that App.SetThinking is safe to call from any goroutine.
+type setThinkingMsg struct {
+	level string
+}
+
+// setSessionMsg routes a session name change through the Bubble Tea message
+// loop so that App.SetSession is safe to call from any goroutine.
+type setSessionMsg struct {
+	name string
+}

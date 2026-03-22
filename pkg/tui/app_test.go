@@ -69,6 +69,35 @@ func TestApp_SetSession(t *testing.T) {
 	}
 }
 
+// Test that setModelMsg/setThinkingMsg/setSessionMsg are handled by Update,
+// which is the code path used when a tea.Program is set.
+func TestApp_SetModelMsg(t *testing.T) {
+	app := NewApp()
+	app.width, app.height = 80, 24
+	app.Update(setModelMsg{name: "gpt-4o"})
+	if app.header.model != "gpt-4o" {
+		t.Errorf("expected gpt-4o, got %q", app.header.model)
+	}
+}
+
+func TestApp_SetThinkingMsg(t *testing.T) {
+	app := NewApp()
+	app.width, app.height = 80, 24
+	app.Update(setThinkingMsg{level: "high"})
+	if app.header.thinkingLevel != ai.ThinkingHigh {
+		t.Errorf("expected ThinkingHigh, got %q", app.header.thinkingLevel)
+	}
+}
+
+func TestApp_SetSessionMsg(t *testing.T) {
+	app := NewApp()
+	app.width, app.height = 80, 24
+	app.Update(setSessionMsg{name: "my-session"})
+	if app.header.sessionName != "my-session" {
+		t.Errorf("expected 'my-session', got %q", app.header.sessionName)
+	}
+}
+
 func TestApp_RegisterCommand(t *testing.T) {
 	app := NewApp()
 	app.RegisterCommand(&SlashCommand{Name: "test", Description: "test cmd"})

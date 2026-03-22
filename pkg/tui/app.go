@@ -94,6 +94,13 @@ type App struct {
 	uiRequestPending *PluginUIRequestMsg
 	onUIResponse     func(*PluginUIResponseMsg)
 	hasUI            bool // true when in interactive mode, false in print/RPC mode
+
+	// program is set after tea.NewProgram is created so that public setters
+	// (SetModel, SetThinking, SetSession) route mutations through the Bubble
+	// Tea message loop instead of writing directly to Header fields. This
+	// prevents data races when these methods are called from external
+	// goroutines while View() reads the same fields on the main goroutine.
+	program *tea.Program
 }
 
 // NewApp creates a fully initialised App ready to be passed to tea.NewProgram.
@@ -142,18 +149,43 @@ func (a *App) SetHasUI(hasUI bool) {
 	a.hasUI = hasUI
 }
 
-// SetModel updates the model name shown in the header.
+// SetProgram stores a reference to the running tea.Program so that subsequent
+// calls to SetModel, SetThinking, and SetSession are routed through the
+// Bubble Tea message loop, making them safe to call from any goroutine.
+// Call this immediately after tea.NewProgram and before Run().
+func (a *App) SetProgram(p *tea.Program) {
+	a.program = p
+}
+
+// SetModel updates the model name shown in the header. If a tea.Program has
+// been set via SetProgram, the change is routed through the message loop so
+// it is safe to call from any goroutine. Otherwise the header is mutated
+// directly (safe only before Program.Run).
 func (a *App) SetModel(name string) {
+	if a.program != nil {
+		a.program.Send(setModelMsg{name: name})
+		return
+	}
 	a.header.SetModel(name)
 }
 
-// SetThinking updates the thinking level indicator.
+// SetThinking updates the thinking level indicator. Goroutine-safe when a
+// tea.Program has been set via SetProgram.
 func (a *App) SetThinking(level string) {
+	if a.program != nil {
+		a.program.Send(setThinkingMsg{level: level})
+		return
+	}
 	a.header.SetThinking(thinkingFromString(level))
 }
 
-// SetSession updates the session name in the header.
+// SetSession updates the session name in the header. Goroutine-safe when a
+// tea.Program has been set via SetProgram.
 func (a *App) SetSession(name string) {
+	if a.program != nil {
+		a.program.Send(setSessionMsg{name: name})
+		return
+	}
 	a.header.SetSession(name)
 }
 
@@ -521,6 +553,19 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case themeChangedMsg:
 		a.chat.AddSystemMessage(fmt.Sprintf("Switched to theme: %s", msg.name))
+		return a, nil
+
+	// ---- Goroutine-safe header mutations routed through Send() ----
+	case setModelMsg:
+		a.header.SetModel(msg.name)
+		return a, nil
+
+	case setThinkingMsg:
+		a.header.SetThinking(thinkingFromString(msg.level))
+		return a, nil
+
+	case setSessionMsg:
+		a.header.SetSession(msg.name)
 		return a, nil
 
 	case settingsDisplayMsg:
