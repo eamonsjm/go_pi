@@ -658,6 +658,9 @@ func (e *Editor) handleYankPop() {
 	runeOffset := e.cursorRuneOffset()
 	runes := []rune(value)
 
+	if runeOffset > len(runes) {
+		runeOffset = len(runes)
+	}
 	start := runeOffset - e.yankLen
 	if start < 0 {
 		start = 0
