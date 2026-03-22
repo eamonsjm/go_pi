@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"os/exec"
+	"runtime/debug"
 	"sync"
 	"time"
 )
@@ -188,6 +189,24 @@ func (p *PluginProcess) readLoop() {
 	heartbeatCh := p.heartbeatCh
 	scanner := p.scanner
 	p.mu.Unlock()
+
+	// Panic recovery: prevent a panic during message parsing or channel
+	// routing from crashing the host process. This defer is registered first
+	// so it runs last (after channel-close defers), allowing the supervisor
+	// to detect the closed channels and restart the plugin.
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("plugin %s: readLoop panic (recovered): %v\n%s", p.name, r, debug.Stack())
+			// Kill the subprocess so cmd.Wait() returns and the supervisor
+			// can trigger a restart.
+			p.mu.Lock()
+			cmd := p.cmd
+			p.mu.Unlock()
+			if cmd != nil && cmd.Process != nil {
+				_ = cmd.Process.Kill()
+			}
+		}
+	}()
 
 	defer func() {
 		if injectCh != nil {
