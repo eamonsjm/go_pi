@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -71,8 +72,12 @@ func TestPluginTool_Execute_PluginError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error from plugin tool error")
 	}
-	if !strings.Contains(err.Error(), "something went wrong") {
-		t.Errorf("error = %q, want containing %q", err.Error(), "something went wrong")
+	var pluginErr *PluginError
+	if !errors.As(err, &pluginErr) {
+		t.Fatalf("error type = %T, want *PluginError", err)
+	}
+	if !strings.Contains(pluginErr.Content, "something went wrong") {
+		t.Errorf("PluginError.Content = %q, want containing %q", pluginErr.Content, "something went wrong")
 	}
 }
 

@@ -3,9 +3,19 @@ package plugin
 import (
 	"context"
 	"crypto/rand"
-	"errors"
 	"fmt"
 )
+
+// PluginError represents an error reported by a plugin process. It preserves
+// the plugin's error content so callers can use errors.As to distinguish plugin
+// errors from system errors.
+type PluginError struct {
+	Content string
+}
+
+func (e *PluginError) Error() string {
+	return e.Content
+}
 
 // PluginTool wraps a plugin-provided tool definition and its owning process
 // to implement the tools.Tool interface. This allows plugin tools to be
@@ -50,7 +60,7 @@ func (t *PluginTool) Execute(ctx context.Context, params map[string]any) (string
 	}
 
 	if isError {
-		return "", errors.New(content)
+		return "", &PluginError{Content: content}
 	}
 
 	return content, nil
