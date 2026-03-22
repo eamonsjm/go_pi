@@ -110,7 +110,11 @@ func formatTokens(n int) string {
 // estimateCost gives a rough USD estimate based on Claude Sonnet pricing.
 // Input: $3/M tokens, Output: $15/M tokens, Cache-read: $0.30/M.
 func estimateCost(u ai.Usage) float64 {
-	input := float64(u.InputTokens-u.CacheRead) * 3.0 / 1_000_000
+	nonCached := u.InputTokens - u.CacheRead
+	if nonCached < 0 {
+		nonCached = 0
+	}
+	input := float64(nonCached) * 3.0 / 1_000_000
 	cacheRead := float64(u.CacheRead) * 0.30 / 1_000_000
 	output := float64(u.OutputTokens) * 15.0 / 1_000_000
 	total := input + cacheRead + output

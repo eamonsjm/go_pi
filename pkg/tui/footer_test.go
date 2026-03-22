@@ -60,10 +60,16 @@ func TestEstimateCost(t *testing.T) {
 }
 
 func TestEstimateCost_NeverNegative(t *testing.T) {
-	// CacheRead > InputTokens would produce a negative unclamped input cost.
+	// CacheRead > InputTokens: input component must clamp to zero,
+	// leaving only the cache-read cost.
 	cost := estimateCost(ai.Usage{InputTokens: 100, CacheRead: 1000})
 	if cost < 0 {
 		t.Errorf("cost should never be negative, got %f", cost)
+	}
+	// Expected: 0 (clamped input) + 1000*0.30/1M (cache) = 0.0003
+	want := float64(1000) * 0.30 / 1_000_000
+	if cost < want-0.0001 || cost > want+0.0001 {
+		t.Errorf("expected ~%f (cache-read only), got %f", want, cost)
 	}
 }
 
