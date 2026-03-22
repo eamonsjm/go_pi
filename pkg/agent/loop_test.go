@@ -454,6 +454,92 @@ func (t *callbackTool) Execute(_ context.Context, _ map[string]any) (string, err
 	return t.fn()
 }
 
+func TestStaleSteerDrainedBetweenPrompts(t *testing.T) {
+	// Regression test: a Steer() message sent after one Prompt() completes
+	// must not carry over and cause tool-skipping in the next Prompt() call.
+	call := 0
+	provider := &mockProvider{
+		streamFn: func(_ context.Context, _ ai.StreamRequest) (<-chan ai.StreamEvent, error) {
+			ch := make(chan ai.StreamEvent, 20)
+			call++
+			current := call
+			go func() {
+				defer close(ch)
+				switch current {
+				case 1:
+					// First Prompt: simple text reply (no tool calls).
+					ch <- ai.StreamEvent{Type: ai.EventMessageStart}
+					ch <- ai.StreamEvent{Type: ai.EventTextDelta, Delta: "first-reply"}
+					ch <- ai.StreamEvent{Type: ai.EventMessageEnd}
+				case 2:
+					// Second Prompt, first turn: tool call.
+					ch <- ai.StreamEvent{Type: ai.EventMessageStart}
+					ch <- ai.StreamEvent{Type: ai.EventToolUseStart, ToolCallID: "tc-1", ToolName: "echo"}
+					ch <- ai.StreamEvent{Type: ai.EventToolUseDelta, PartialInput: `{}`}
+					ch <- ai.StreamEvent{Type: ai.EventToolUseEnd}
+					ch <- ai.StreamEvent{Type: ai.EventMessageEnd}
+				default:
+					// Second Prompt, second turn: text reply.
+					ch <- ai.StreamEvent{Type: ai.EventMessageStart}
+					ch <- ai.StreamEvent{Type: ai.EventTextDelta, Delta: "second-reply"}
+					ch <- ai.StreamEvent{Type: ai.EventMessageEnd}
+				}
+			}()
+			return ch, nil
+		},
+	}
+
+	reg := tools.NewRegistry()
+	reg.Register(&mockTool{name: "echo", result: "tool-ran"})
+	a := NewAgentLoop(provider, reg)
+
+	// First Prompt — completes with no tool calls.
+	ch1 := a.Events()
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- a.Prompt(context.Background(), "hello")
+	}()
+	drainEvents(ch1, 2*time.Second)
+	if err := <-errCh; err != nil {
+		t.Fatalf("first Prompt returned error: %v", err)
+	}
+
+	// Steer arrives AFTER the first Prompt completed — this is the stale message.
+	a.Steer("stale steer that should be ignored")
+
+	// Second Prompt — has a tool call. The stale steer must NOT skip it.
+	ch2 := a.Events()
+	go func() {
+		errCh <- a.Prompt(context.Background(), "use echo tool")
+	}()
+	events := drainEvents(ch2, 2*time.Second)
+	if err := <-errCh; err != nil {
+		t.Fatalf("second Prompt returned error: %v", err)
+	}
+
+	// The tool must have executed (not been skipped by the stale steer).
+	toolExecuted := false
+	for _, ev := range events {
+		if ev.Type == EventToolExecEnd && ev.ToolName == "echo" {
+			if ev.ToolResult != "tool-ran" {
+				t.Errorf("expected tool result 'tool-ran', got %q", ev.ToolResult)
+			}
+			toolExecuted = true
+		}
+	}
+	if !toolExecuted {
+		t.Error("tool 'echo' was not executed — stale steer message caused unexpected skip")
+	}
+
+	// The stale steer text must not appear as a user message in the conversation.
+	msgs := a.Messages()
+	for _, msg := range msgs {
+		if msg.Role == ai.RoleUser && msg.GetText() == "stale steer that should be ignored" {
+			t.Error("stale steer message was injected as a user turn")
+		}
+	}
+}
+
 func TestFollowUpProcessed(t *testing.T) {
 	call := 0
 	provider := &mockProvider{
