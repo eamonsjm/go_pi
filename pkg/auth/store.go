@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -150,8 +151,9 @@ func (s *Store) Providers() []string {
 
 // WithLock executes fn while holding an exclusive file lock on the auth store.
 // This prevents concurrent processes from racing on token refresh.
-func (s *Store) WithLock(fn func() error) error {
-	if err := s.Lock(); err != nil {
+// The context controls lock acquisition timeout/cancellation.
+func (s *Store) WithLock(ctx context.Context, fn func() error) error {
+	if err := s.Lock(ctx); err != nil {
 		return fmt.Errorf("lock auth store: %w", err)
 	}
 	defer s.Unlock()

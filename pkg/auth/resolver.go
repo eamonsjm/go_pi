@@ -124,7 +124,7 @@ func (r *Resolver) resolveOAuth(ctx context.Context, provider string, cred *Cred
 	}
 
 	var key string
-	if err := r.store.WithLock(func() error {
+	if err := r.store.WithLock(ctx, func() error {
 		// Re-read store inside lock — another process may have refreshed already.
 		if err := r.store.Load(); err != nil {
 			return fmt.Errorf("token refresh load: %w", err)
