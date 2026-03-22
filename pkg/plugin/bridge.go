@@ -54,7 +54,7 @@ func (t *PluginTool) Execute(ctx context.Context, params map[string]any) (string
 	if err != nil {
 		return "", fmt.Errorf("plugin tool %s: %w", t.def.Name, err)
 	}
-	content, isError, err := t.process.ExecuteTool(id, t.def.Name, params)
+	content, isError, err := t.process.ExecuteTool(ctx, id, t.def.Name, params)
 	if err != nil {
 		return "", fmt.Errorf("plugin tool %s: %w", t.def.Name, err)
 	}

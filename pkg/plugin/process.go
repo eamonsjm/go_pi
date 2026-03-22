@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -297,7 +298,9 @@ func (e *timeoutError) Error() string {
 }
 
 // waitResponse waits for a response message on the response channel with a timeout.
-func (p *PluginProcess) waitResponse(timeout time.Duration) (PluginMessage, error) {
+// If ctx is non-nil and is cancelled before a response arrives, the context error
+// is returned immediately.
+func (p *PluginProcess) waitResponse(ctx context.Context, timeout time.Duration) (PluginMessage, error) {
 	p.mu.Lock()
 	responseCh := p.responseCh
 	p.mu.Unlock()
@@ -313,6 +316,8 @@ func (p *PluginProcess) waitResponse(timeout time.Duration) (PluginMessage, erro
 		return msg, nil
 	case <-timer.C:
 		return PluginMessage{}, &timeoutError{plugin: p.name}
+	case <-ctx.Done():
+		return PluginMessage{}, fmt.Errorf("plugin %s: %w", p.name, ctx.Err())
 	}
 }
 
@@ -328,7 +333,7 @@ func (p *PluginProcess) Initialize(cfg PluginConfig) error {
 		return fmt.Errorf("sending initialize message: %w", err)
 	}
 
-	msg, err := p.waitResponse(p.timeouts.InitTimeout)
+	msg, err := p.waitResponse(context.Background(), p.timeouts.InitTimeout)
 	if err != nil {
 		return fmt.Errorf("plugin %s: initialization failed: %w", p.name, err)
 	}
@@ -344,8 +349,9 @@ func (p *PluginProcess) Initialize(cfg PluginConfig) error {
 
 // ExecuteTool sends a tool_call message and waits for the tool_result response.
 // Returns the result content, whether it was an error, and any communication error.
-// If the plugin exceeds the configured tool timeout, the process is killed.
-func (p *PluginProcess) ExecuteTool(id, name string, params map[string]any) (string, bool, error) {
+// If ctx is cancelled or the plugin exceeds the configured tool timeout, the
+// process is killed.
+func (p *PluginProcess) ExecuteTool(ctx context.Context, id, name string, params map[string]any) (string, bool, error) {
 	if err := p.Send(HostMessage{
 		Type:   "tool_call",
 		ID:     id,
@@ -355,7 +361,7 @@ func (p *PluginProcess) ExecuteTool(id, name string, params map[string]any) (str
 		return "", true, err
 	}
 
-	msg, err := p.waitResponse(p.timeouts.ToolTimeout)
+	msg, err := p.waitResponse(ctx, p.timeouts.ToolTimeout)
 	if err != nil {
 		if isTimeout(err) {
 			p.handleTimeout("tool_call", name, p.timeouts.ToolTimeout)
@@ -382,7 +388,7 @@ func (p *PluginProcess) ExecuteCommand(name, args string) (string, bool, error) 
 		return "", true, err
 	}
 
-	msg, err := p.waitResponse(p.timeouts.CommandTimeout)
+	msg, err := p.waitResponse(context.Background(), p.timeouts.CommandTimeout)
 	if err != nil {
 		if isTimeout(err) {
 			p.handleTimeout("command", name, p.timeouts.CommandTimeout)

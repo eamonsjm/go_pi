@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -651,7 +652,7 @@ func TestExecuteTool_RoundTrip(t *testing.T) {
 		t.Fatalf("Initialize: %v", err)
 	}
 
-	content, isError, err := p.ExecuteTool("call-1", "echo", map[string]any{"x": 1})
+	content, isError, err := p.ExecuteTool(context.Background(), "call-1", "echo", map[string]any{"x": 1})
 	if err != nil {
 		t.Fatalf("ExecuteTool: %v", err)
 	}
@@ -669,7 +670,7 @@ func TestExecuteTool_ErrorResult(t *testing.T) {
 		t.Fatalf("Initialize: %v", err)
 	}
 
-	content, isError, err := p.ExecuteTool("call-err", "anything", nil)
+	content, isError, err := p.ExecuteTool(context.Background(), "call-err", "anything", nil)
 	if err != nil {
 		t.Fatalf("ExecuteTool: %v", err)
 	}
@@ -890,7 +891,7 @@ func TestWaitResponse_Timeout(t *testing.T) {
 	}
 
 	start := time.Now()
-	_, err := p.waitResponse(50 * time.Millisecond)
+	_, err := p.waitResponse(context.Background(),50 * time.Millisecond)
 	elapsed := time.Since(start)
 
 	if err == nil {
@@ -913,7 +914,7 @@ func TestWaitResponse_ChannelClosed(t *testing.T) {
 		responseCh: responseCh,
 	}
 
-	_, err := p.waitResponse(5 * time.Second)
+	_, err := p.waitResponse(context.Background(),5 * time.Second)
 	if err == nil {
 		t.Fatal("expected error from closed channel")
 	}
@@ -931,7 +932,7 @@ func TestCrashDuringActiveSend(t *testing.T) {
 	}
 
 	// Send a tool call — the plugin crashes upon receiving it.
-	_, _, err := p.ExecuteTool("call-crash", "anything", nil)
+	_, _, err := p.ExecuteTool(context.Background(), "call-crash", "anything", nil)
 	if err == nil {
 		t.Fatal("expected error from crashed process during tool call")
 	}
@@ -961,7 +962,7 @@ func TestPrematureStdoutClose(t *testing.T) {
 
 	// Plugin closed stdout; responseCh is now closed.
 	// ExecuteTool should fail with "process exited".
-	_, _, err := p.ExecuteTool("call-closed", "anything", nil)
+	_, _, err := p.ExecuteTool(context.Background(), "call-closed", "anything", nil)
 	if err == nil {
 		t.Fatal("expected error when plugin closed stdout")
 	}
@@ -986,7 +987,7 @@ func TestHangingPluginTimeout(t *testing.T) {
 	}
 
 	// Use a short timeout to verify timeout enforcement without waiting 30s.
-	_, err := p.waitResponse(100 * time.Millisecond)
+	_, err := p.waitResponse(context.Background(),100 * time.Millisecond)
 	if err == nil {
 		t.Fatal("expected timeout error from hanging plugin")
 	}
@@ -1002,7 +1003,7 @@ func TestExecuteToolOnClosedProcess(t *testing.T) {
 	}
 	p.Stop()
 
-	_, _, err := p.ExecuteTool("call-after-close", "echo", nil)
+	_, _, err := p.ExecuteTool(context.Background(), "call-after-close", "echo", nil)
 	if err == nil {
 		t.Fatal("expected error from ExecuteTool on closed process")
 	}
@@ -1036,7 +1037,7 @@ func TestAutoRestart_RecoverFromCrash(t *testing.T) {
 	}
 
 	// Verify the plugin works before crash.
-	content, _, err := p.ExecuteTool("pre-crash", "echo", nil)
+	content, _, err := p.ExecuteTool(context.Background(), "pre-crash", "echo", nil)
 	if err != nil {
 		t.Fatalf("ExecuteTool before crash: %v", err)
 	}
@@ -1072,7 +1073,7 @@ func TestAutoRestart_RecoverFromCrash(t *testing.T) {
 	}
 
 	// Verify plugin works after restart.
-	content, _, err = p.ExecuteTool("post-crash", "echo", nil)
+	content, _, err = p.ExecuteTool(context.Background(), "post-crash", "echo", nil)
 	if err != nil {
 		t.Fatalf("ExecuteTool after restart: %v", err)
 	}
@@ -1435,7 +1436,7 @@ func TestHeartbeat_DoesNotInterfereWithTools(t *testing.T) {
 	}
 
 	// Tool call should still work.
-	content, isError, err := p.ExecuteTool("call-1", "echo", nil)
+	content, isError, err := p.ExecuteTool(context.Background(), "call-1", "echo", nil)
 	if err != nil {
 		t.Fatalf("ExecuteTool: %v", err)
 	}
@@ -1504,7 +1505,7 @@ func TestToolTimeout_NoGoroutineLeak(t *testing.T) {
 			ID:   fmt.Sprintf("timeout-%d", i),
 			Name: "slow",
 		})
-		_, err := p.waitResponse(10 * time.Millisecond)
+		_, err := p.waitResponse(context.Background(),10 * time.Millisecond)
 		if err != nil {
 			timeouts++
 		}
@@ -1622,7 +1623,7 @@ func TestExecuteTool_CustomTimeout(t *testing.T) {
 	p.SetTimeouts(TimeoutConfig{ToolTimeout: 50 * time.Millisecond})
 
 	start := time.Now()
-	_, _, err := p.ExecuteTool("call-short", "anything", nil)
+	_, _, err := p.ExecuteTool(context.Background(), "call-short", "anything", nil)
 	elapsed := time.Since(start)
 
 	if err == nil {
@@ -1673,7 +1674,7 @@ func TestExecuteTool_KillsProcessOnTimeout(t *testing.T) {
 	// Set a very short tool timeout.
 	p.SetTimeouts(TimeoutConfig{ToolTimeout: 50 * time.Millisecond})
 
-	_, _, err := p.ExecuteTool("call-kill", "anything", nil)
+	_, _, err := p.ExecuteTool(context.Background(), "call-kill", "anything", nil)
 	if err == nil {
 		t.Fatal("expected timeout error")
 	}

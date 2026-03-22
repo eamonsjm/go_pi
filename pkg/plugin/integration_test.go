@@ -150,7 +150,7 @@ func TestIntegration_ToolCallRoundTrip(t *testing.T) {
 	}
 
 	// Test reverse tool.
-	content, isError, err := p.ExecuteTool("call-1", "reverse", map[string]any{"text": "hello"})
+	content, isError, err := p.ExecuteTool(context.Background(), "call-1", "reverse", map[string]any{"text": "hello"})
 	if err != nil {
 		t.Fatalf("ExecuteTool reverse: %v", err)
 	}
@@ -162,7 +162,7 @@ func TestIntegration_ToolCallRoundTrip(t *testing.T) {
 	}
 
 	// Test upper tool.
-	content, isError, err = p.ExecuteTool("call-2", "upper", map[string]any{"text": "hello"})
+	content, isError, err = p.ExecuteTool(context.Background(), "call-2", "upper", map[string]any{"text": "hello"})
 	if err != nil {
 		t.Fatalf("ExecuteTool upper: %v", err)
 	}
@@ -182,7 +182,7 @@ func TestIntegration_ToolCallUnknownTool(t *testing.T) {
 		t.Fatalf("Initialize: %v", err)
 	}
 
-	content, isError, err := p.ExecuteTool("call-unk", "nonexistent", nil)
+	content, isError, err := p.ExecuteTool(context.Background(), "call-unk", "nonexistent", nil)
 	if err != nil {
 		t.Fatalf("ExecuteTool: %v", err)
 	}
@@ -258,7 +258,7 @@ func TestIntegration_EventForwarding(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// Query recorded events.
-	content, isError, err := p.ExecuteTool("call-ev", "get_events", nil)
+	content, isError, err := p.ExecuteTool(context.Background(), "call-ev", "get_events", nil)
 	if err != nil {
 		t.Fatalf("ExecuteTool get_events: %v", err)
 	}
@@ -363,7 +363,7 @@ func TestIntegration_CrashRecovery(t *testing.T) {
 	}
 
 	// Sending a tool call causes the plugin to crash.
-	_, _, err := p.ExecuteTool("call-crash", "crash", nil)
+	_, _, err := p.ExecuteTool(context.Background(), "call-crash", "crash", nil)
 	if err == nil {
 		t.Fatal("expected error from crashed plugin")
 	}
@@ -428,7 +428,7 @@ func TestIntegration_InitTimeout(t *testing.T) {
 		t.Fatalf("Send initialize: %v", err)
 	}
 
-	_, err = p.waitResponse(200 * time.Millisecond)
+	_, err = p.waitResponse(context.Background(),200 * time.Millisecond)
 	if err == nil {
 		t.Fatal("expected timeout error from slow init")
 	}
@@ -548,7 +548,7 @@ func TestIntegration_ManagerForwardEvent(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// Query the plugin to verify events were received.
-	content, _, err := p.ExecuteTool("call-check", "get_events", nil)
+	content, _, err := p.ExecuteTool(context.Background(), "call-check", "get_events", nil)
 	if err != nil {
 		t.Fatalf("ExecuteTool: %v", err)
 	}
@@ -611,6 +611,7 @@ func TestIntegration_MultipleToolCallsSequential(t *testing.T) {
 
 	for i, tc := range cases {
 		content, isError, err := p.ExecuteTool(
+			context.Background(),
 			fmt.Sprintf("call-%d", i),
 			tc.tool,
 			map[string]any{"text": tc.text},
@@ -640,7 +641,7 @@ func TestIntegration_ToolCallAfterEvent(t *testing.T) {
 		t.Fatalf("SendEvent: %v", err)
 	}
 
-	content, _, err := p.ExecuteTool("interleave-1", "reverse", map[string]any{"text": "test"})
+	content, _, err := p.ExecuteTool(context.Background(), "interleave-1", "reverse", map[string]any{"text": "test"})
 	if err != nil {
 		t.Fatalf("ExecuteTool after event: %v", err)
 	}
@@ -652,7 +653,7 @@ func TestIntegration_ToolCallAfterEvent(t *testing.T) {
 		t.Fatalf("SendEvent: %v", err)
 	}
 
-	content, _, err = p.ExecuteTool("interleave-2", "upper", map[string]any{"text": "test"})
+	content, _, err = p.ExecuteTool(context.Background(), "interleave-2", "upper", map[string]any{"text": "test"})
 	if err != nil {
 		t.Fatalf("ExecuteTool after second event: %v", err)
 	}
