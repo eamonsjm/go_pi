@@ -202,7 +202,8 @@ func run() int {
 
 	authStore, authResolver, authErr := setupAuth()
 	if authErr != nil {
-		log.Fatalf("Failed to initialize auth: %v", authErr)
+		log.Printf("Failed to initialize auth: %v", authErr)
+		return 1
 	}
 
 	// Resolve provider (may fail if no API key — that's ok for interactive mode)
