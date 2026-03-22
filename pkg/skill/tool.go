@@ -16,15 +16,24 @@ var (
 	ErrUnknownSkill = errors.New("unknown skill")
 )
 
+// SkillResolver provides read access to a collection of skills.
+// Implementations include *Registry; accepting this interface decouples
+// consumers from the concrete registry and simplifies testing.
+type SkillResolver interface {
+	Get(name string) (*Skill, bool)
+	Names() []string
+	UserInvocable() []*Skill
+}
+
 // SkillTool is a tool that allows the LLM to invoke skills by name.
 // It satisfies the tools.Tool interface (Name, Description, Schema, Execute).
 type SkillTool struct {
-	registry *Registry
+	registry SkillResolver
 	model    string
 }
 
-// NewSkillTool creates a new Skill tool backed by the given registry.
-func NewSkillTool(reg *Registry, model string) *SkillTool {
+// NewSkillTool creates a new Skill tool backed by the given resolver.
+func NewSkillTool(reg SkillResolver, model string) *SkillTool {
 	return &SkillTool{registry: reg, model: model}
 }
 
@@ -96,7 +105,7 @@ func (t *SkillTool) SetModel(model string) {
 // SkillSystemReminder generates a compact skill index suitable for injection
 // as a system-reminder block. Only user-invocable skills are included.
 // Returns empty string if no user-invocable skills exist.
-func SkillSystemReminder(reg *Registry) string {
+func SkillSystemReminder(reg SkillResolver) string {
 	skills := reg.UserInvocable()
 	if len(skills) == 0 {
 		return ""
