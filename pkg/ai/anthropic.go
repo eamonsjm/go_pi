@@ -485,7 +485,10 @@ func (p *AnthropicProvider) readSSEStream(ctx context.Context, body io.ReadClose
 	defer close(ch)
 	defer func() {
 		if r := recover(); r != nil {
-			ch <- StreamEvent{Type: EventError, Error: fmt.Errorf("anthropic: stream goroutine panicked: %v", r)}
+			select {
+			case ch <- StreamEvent{Type: EventError, Error: fmt.Errorf("anthropic: stream goroutine panicked: %v", r)}:
+			default:
+			}
 		}
 	}()
 	defer func() { _ = body.Close() }()

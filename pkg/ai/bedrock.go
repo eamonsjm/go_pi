@@ -213,7 +213,10 @@ func (p *BedrockProvider) readEventStream(ctx context.Context, output *bedrockru
 	defer close(ch)
 	defer func() {
 		if r := recover(); r != nil {
-			ch <- StreamEvent{Type: EventError, Error: fmt.Errorf("bedrock: stream goroutine panicked: %v", r)}
+			select {
+			case ch <- StreamEvent{Type: EventError, Error: fmt.Errorf("bedrock: stream goroutine panicked: %v", r)}:
+			default:
+			}
 		}
 	}()
 
