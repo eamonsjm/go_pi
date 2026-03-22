@@ -1,6 +1,8 @@
 package skill
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -11,7 +13,7 @@ import (
 // LoadEmbed discovers skills from an embedded filesystem. It walks the FS for
 // .md files, parses frontmatter only (body is loaded lazily), and returns skills
 // with Source set to "built-in".
-func LoadEmbed(fsys fs.FS) ([]*Skill, error) {
+func LoadEmbed(_ context.Context, fsys fs.FS) ([]*Skill, error) {
 	var skills []*Skill
 
 	err := fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
@@ -49,10 +51,10 @@ func LoadEmbed(fsys fs.FS) ([]*Skill, error) {
 // skills with Source set to the given source label.
 //
 // If the directory does not exist, LoadDir returns nil, nil (not an error).
-func LoadDir(dir, source string) ([]*Skill, error) {
+func LoadDir(_ context.Context, dir, source string) ([]*Skill, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("reading skill directory %s: %w", dir, err)
@@ -86,10 +88,10 @@ func LoadDir(dir, source string) ([]*Skill, error) {
 // LoadAll loads skills from all three tiers in override order:
 // built-in (embed) < user (~/.gi/skills/) < project (.gi/skills/).
 // Skills are registered into the provided registry with last-write-wins semantics.
-func LoadAll(reg *Registry, embedFS fs.FS) error {
+func LoadAll(ctx context.Context, reg *Registry, embedFS fs.FS) error {
 	// Tier 1: built-in skills from embedded filesystem.
 	if embedFS != nil {
-		builtins, err := LoadEmbed(embedFS)
+		builtins, err := LoadEmbed(ctx, embedFS)
 		if err != nil {
 			return fmt.Errorf("loading built-in skills: %w", err)
 		}
@@ -102,7 +104,7 @@ func LoadAll(reg *Registry, embedFS fs.FS) error {
 	home, err := os.UserHomeDir()
 	if err == nil {
 		userDir := filepath.Join(home, ".gi", "skills")
-		userSkills, err := LoadDir(userDir, "user")
+		userSkills, err := LoadDir(ctx, userDir, "user")
 		if err != nil {
 			return fmt.Errorf("loading user skills: %w", err)
 		}
@@ -115,7 +117,7 @@ func LoadAll(reg *Registry, embedFS fs.FS) error {
 	cwd, err := os.Getwd()
 	if err == nil {
 		projectDir := filepath.Join(cwd, ".gi", "skills")
-		projectSkills, err := LoadDir(projectDir, "project")
+		projectSkills, err := LoadDir(ctx, projectDir, "project")
 		if err != nil {
 			return fmt.Errorf("loading project skills: %w", err)
 		}

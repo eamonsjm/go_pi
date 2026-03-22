@@ -2,6 +2,7 @@ package skill
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io/fs"
 	"os"
@@ -48,7 +49,7 @@ type Argument struct {
 // LoadBody lazily loads and caches the skill body. For file-based skills it reads
 // from Path; for embed-based skills it reads from the embedded FS. The result is
 // cached after the first successful call.
-func (s *Skill) LoadBody() (string, error) {
+func (s *Skill) LoadBody(_ context.Context) (string, error) {
 	// If Body was already set during parsing (e.g. via ParseSkill with full content),
 	// return it directly.
 	if s.Body != "" {

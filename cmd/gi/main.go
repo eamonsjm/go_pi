@@ -177,7 +177,7 @@ func run() int {
 
 	// Load skills from all three tiers: built-in (embed) < user < project.
 	skillRegistry := skill.NewRegistry()
-	if err := skill.LoadAll(skillRegistry, nil); err != nil {
+	if err := skill.LoadAll(context.Background(), skillRegistry, nil); err != nil {
 		log.Printf("Failed to load skills: %v", err)
 	}
 
@@ -586,7 +586,7 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 				Description: s.Description,
 				Execute: func(args string) tea.Cmd {
 					return func() tea.Msg {
-						body, err := s.LoadBody()
+						body, err := s.LoadBody(context.Background())
 						if err != nil {
 							return tui.CommandResultMsg{Text: fmt.Sprintf("Failed to load skill: %v", err), IsError: true}
 						}
