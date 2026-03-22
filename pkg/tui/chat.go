@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sort"
 	"strings"
 	"unicode/utf8"
 
@@ -732,12 +733,22 @@ func formatArgs(args map[string]any) string {
 	if len(args) == 0 {
 		return ""
 	}
+	keys := make([]string, 0, len(args))
+	for k := range args {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
 	parts := make([]string, 0, len(args))
-	for k, v := range args {
+	for _, k := range keys {
+		v := args[k]
 		s, ok := v.(string)
 		if !ok {
-			b, _ := json.Marshal(v)
-			s = string(b)
+			b, err := json.Marshal(v)
+			if err != nil {
+				s = fmt.Sprintf("<%T>", v)
+			} else {
+				s = string(b)
+			}
 		}
 		// Truncate long values (rune-aware to avoid splitting multi-byte UTF-8).
 		if utf8.RuneCountInString(s) > 60 {

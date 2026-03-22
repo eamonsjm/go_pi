@@ -2,6 +2,7 @@ package tui
 
 import (
 	"encoding/json"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -77,7 +78,9 @@ func LoadKeybindings() *KeybindingConfig {
 		path := filepath.Join(home, ".gi", "keybindings.json")
 		if data, err := os.ReadFile(path); err == nil {
 			var overrides []Binding
-			if json.Unmarshal(data, &overrides) == nil {
+			if err := json.Unmarshal(data, &overrides); err != nil {
+				log.Printf("warning: ignoring malformed keybindings file %s: %v", path, err)
+			} else {
 				for _, b := range overrides {
 					if b.Action != "" && b.Key != "" {
 						kc.actionToKey[b.Action] = b.Key

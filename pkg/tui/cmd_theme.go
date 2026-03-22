@@ -53,7 +53,14 @@ func NewThemeCommand(cfg *config.Config, chat *ChatView) *SlashCommand {
 
 			// Persist to config.
 			cfg.Theme = name
-			_ = cfg.Save()
+			if err := cfg.Save(); err != nil {
+				return func() tea.Msg {
+					return CommandResultMsg{
+						Text:    fmt.Sprintf("Theme applied but failed to save config: %v", err),
+						IsError: true,
+					}
+				}
+			}
 
 			return func() tea.Msg {
 				return themeChangedMsg{name: t.Name}

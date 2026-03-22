@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/ejm/go_pi/pkg/ai"
 )
@@ -136,9 +137,10 @@ func excerptAround(text string, start, end int) string {
 		excerpt = excerpt[:idx]
 	}
 
-	// Truncate long excerpts
-	if len(excerpt) > 80 {
-		excerpt = excerpt[:77] + "..."
+	// Truncate long excerpts (rune-aware to avoid splitting multi-byte UTF-8).
+	if utf8.RuneCountInString(excerpt) > 80 {
+		r := []rune(excerpt)
+		excerpt = string(r[:77]) + "..."
 	}
 	return excerpt
 }
