@@ -707,6 +707,8 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 		go func(proc *plugin.PluginProcess) {
 			for {
 				select {
+				case <-ctx.Done():
+					return
 				case <-pluginDone:
 					return
 				case msg, ok := <-proc.InjectMessages():
@@ -740,6 +742,8 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 		go func(proc *plugin.PluginProcess) {
 			for {
 				select {
+				case <-ctx.Done():
+					return
 				case <-pluginDone:
 					return
 				case msg, ok := <-proc.UIRequests():
