@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textarea"
@@ -1067,7 +1068,8 @@ func (e *Editor) updateSearch(msg tea.KeyMsg) tea.Cmd {
 
 	case tea.KeyBackspace:
 		if len(e.searchQuery) > 0 {
-			e.searchQuery = e.searchQuery[:len(e.searchQuery)-1]
+			_, size := utf8.DecodeLastRuneInString(e.searchQuery)
+			e.searchQuery = e.searchQuery[:len(e.searchQuery)-size]
 			e.searchFilter()
 		}
 		return nil

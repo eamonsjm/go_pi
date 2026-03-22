@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -240,7 +241,8 @@ func (ms *ModelSelector) Update(msg tea.Msg) tea.Cmd {
 
 		case tea.KeyBackspace:
 			if len(ms.filter) > 0 {
-				ms.filter = ms.filter[:len(ms.filter)-1]
+				_, size := utf8.DecodeLastRuneInString(ms.filter)
+				ms.filter = ms.filter[:len(ms.filter)-size]
 				ms.applyFilter()
 			}
 			return nil
