@@ -149,7 +149,9 @@ func NewApp(opts ...AppOption) *App {
 	if cfg.authStore != nil {
 		checker = cfg.authStore
 	} else if store, err := auth.NewStore(""); err == nil {
-		_ = store.Load()
+		if err := store.Load(); err != nil {
+			log.Printf("Warning: failed to load auth store: %v", err)
+		}
 		checker = store
 	}
 
