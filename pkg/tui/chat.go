@@ -93,19 +93,49 @@ type ChatView struct {
 	hasNewBelow bool
 }
 
+// ChatViewOption configures a ChatView during construction.
+type ChatViewOption func(*chatViewConfig)
+
+type chatViewConfig struct {
+	glamourStyle string
+	width        int
+	height       int
+}
+
+// WithGlamourStyle overrides the theme's glamour style (e.g. "dark", "light").
+func WithGlamourStyle(style string) ChatViewOption {
+	return func(c *chatViewConfig) { c.glamourStyle = style }
+}
+
+// WithViewportSize sets the initial viewport dimensions.
+func WithViewportSize(w, h int) ChatViewOption {
+	return func(c *chatViewConfig) { c.width = w; c.height = h }
+}
+
 // NewChatView creates a ChatView with sensible defaults.
-func NewChatView() *ChatView {
-	vp := viewport.New(80, 20)
+func NewChatView(opts ...ChatViewOption) *ChatView {
+	cfg := &chatViewConfig{
+		width:  80,
+		height: 20,
+	}
+	for _, o := range opts {
+		o(cfg)
+	}
+
+	vp := viewport.New(cfg.width, cfg.height)
 	vp.SetContent("")
 	vp.YPosition = 0
 
-	glamourStyle := ActiveTheme().GlamourStyle
+	glamourStyle := cfg.glamourStyle
+	if glamourStyle == "" {
+		glamourStyle = ActiveTheme().GlamourStyle
+	}
 	if glamourStyle == "" {
 		glamourStyle = "dark"
 	}
 	r, err := glamour.NewTermRenderer(
 		glamour.WithStandardStyle(glamourStyle),
-		glamour.WithWordWrap(78),
+		glamour.WithWordWrap(cfg.width-2),
 	)
 	if err != nil {
 		log.Printf("tui: failed to create markdown renderer: %v", err)

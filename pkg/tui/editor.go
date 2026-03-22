@@ -256,10 +256,35 @@ type Editor struct {
 	searchDraft   string   // text in editor before search started
 }
 
+// EditorOption configures an Editor during construction.
+type EditorOption func(*editorConfig)
+
+type editorConfig struct {
+	commands    *CommandRegistry
+	placeholder string
+}
+
+// WithEditorCommands sets the command registry at construction time.
+func WithEditorCommands(reg *CommandRegistry) EditorOption {
+	return func(c *editorConfig) { c.commands = reg }
+}
+
+// WithPlaceholder overrides the default placeholder text.
+func WithPlaceholder(text string) EditorOption {
+	return func(c *editorConfig) { c.placeholder = text }
+}
+
 // NewEditor creates an Editor ready for use.
-func NewEditor() *Editor {
+func NewEditor(opts ...EditorOption) *Editor {
+	cfg := &editorConfig{
+		placeholder: "Type a message... (Enter to send, Shift+Enter for newline)",
+	}
+	for _, o := range opts {
+		o(cfg)
+	}
+
 	ta := textarea.New()
-	ta.Placeholder = "Type a message... (Enter to send, Shift+Enter for newline)"
+	ta.Placeholder = cfg.placeholder
 	ta.CharLimit = 0 // unlimited
 	ta.ShowLineNumbers = false
 	ta.SetHeight(3)
@@ -281,10 +306,14 @@ func NewEditor() *Editor {
 		key.WithKeys("alt+left", "alt+b", "ctrl+left"),
 	)
 
-	return &Editor{
+	e := &Editor{
 		textarea: ta,
 		state:    editorIdle,
 	}
+	if cfg.commands != nil {
+		e.commands = cfg.commands
+	}
+	return e
 }
 
 // SetWidth adjusts the editor to the given terminal width.
