@@ -3,8 +3,10 @@ package refinery_gate
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -233,5 +235,41 @@ func TestCheckCI_MissingWorkflow(t *testing.T) {
 
 	if status.WorkflowStatuses["Lint"].Conclusion != "failure" {
 		t.Errorf("Expected missing Lint workflow to be marked as failure")
+	}
+}
+
+// captureTransport records the request URL and returns a canned JSON response.
+type captureTransport struct {
+	capturedURL string
+}
+
+func (ct *captureTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	ct.capturedURL = req.URL.String()
+	return &http.Response{
+		StatusCode: 200,
+		Header:     http.Header{"Content-Type": {"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"workflow_runs":[]}`)),
+	}, nil
+}
+
+func TestFetchWorkflowRuns_BranchNameURLEncoded(t *testing.T) {
+	transport := &captureTransport{}
+	checker := &GateChecker{
+		client: &http.Client{Transport: transport},
+		owner:  "owner",
+		repo:   "repo",
+		token:  "token",
+		branch: "feature/add-thing#123",
+		// apiURL intentionally empty — exercises the URL construction code path
+	}
+
+	_, err := checker.fetchWorkflowRuns(context.Background())
+	if err != nil {
+		t.Fatalf("fetchWorkflowRuns failed: %v", err)
+	}
+
+	wantEncoded := "branch=feature%2Fadd-thing%23123"
+	if !strings.Contains(transport.capturedURL, wantEncoded) {
+		t.Errorf("Expected URL to contain %q, got: %s", wantEncoded, transport.capturedURL)
 	}
 }

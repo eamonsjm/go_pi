@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -119,12 +120,12 @@ func (gc *GateChecker) CheckCI(ctx context.Context) (*GateStatus, error) {
 
 // fetchWorkflowRuns fetches the latest workflow runs from GitHub API
 func (gc *GateChecker) fetchWorkflowRuns(ctx context.Context) ([]Status, error) {
-	url := gc.apiURL
-	if url == "" {
-		url = fmt.Sprintf("https://api.github.com/repos/%s/%s/actions/runs?branch=%s&per_page=50", gc.owner, gc.repo, gc.branch)
+	apiEndpoint := gc.apiURL
+	if apiEndpoint == "" {
+		apiEndpoint = fmt.Sprintf("https://api.github.com/repos/%s/%s/actions/runs?branch=%s&per_page=50", gc.owner, gc.repo, url.QueryEscape(gc.branch))
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", apiEndpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create GitHub API request: %w", err)
 	}
