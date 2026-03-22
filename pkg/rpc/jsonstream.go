@@ -45,6 +45,13 @@ func RunJSONStream(agentLoop *agent.AgentLoop, prompt string) {
 				}
 				sb.WriteString(scanner.Text())
 			}
+			if err := scanner.Err(); err != nil {
+				data, _ := json.Marshal(Event{Type: "error", Error: fmt.Sprintf("reading stdin: %v", err)})
+				if _, wErr := fmt.Fprintf(os.Stdout, "%s\n", data); wErr != nil {
+					log.Printf("jsonstream: failed to write error: %v", wErr)
+				}
+				os.Exit(1)
+			}
 			prompt = sb.String()
 		}
 		if prompt == "" {
