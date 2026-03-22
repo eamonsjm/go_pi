@@ -127,12 +127,22 @@ func main() {
 	tools.RegisterDefaults(registry)
 
 	pluginMgr := plugin.NewManager(registry)
-	home, _ := os.UserHomeDir()
-	cwd, _ := os.Getwd()
-	if err := pluginMgr.Discover([]string{
-		filepath.Join(home, ".gi", "plugins"),
-		filepath.Join(cwd, ".gi", "plugins"),
-	}); err != nil {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		log.Printf("Warning: could not determine home directory: %v", err)
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		log.Printf("Warning: could not determine working directory: %v", err)
+	}
+	var pluginDirs []string
+	if home != "" {
+		pluginDirs = append(pluginDirs, filepath.Join(home, ".gi", "plugins"))
+	}
+	if cwd != "" {
+		pluginDirs = append(pluginDirs, filepath.Join(cwd, ".gi", "plugins"))
+	}
+	if err := pluginMgr.Discover(pluginDirs); err != nil {
 		log.Printf("Failed to discover plugins: %v", err)
 	}
 	if *pluginFlag != "" {
