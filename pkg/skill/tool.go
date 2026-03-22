@@ -70,7 +70,7 @@ func (t *SkillTool) Execute(ctx context.Context, params map[string]any) (string,
 	}
 
 	// Merge context vars (cwd, branch, model) with argument vars.
-	vars := ContextVars(t.model)
+	vars := ContextVars(ctx, t.model)
 	for k, v := range argVars {
 		vars[k] = v
 	}
