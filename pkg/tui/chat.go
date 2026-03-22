@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -732,9 +733,10 @@ func formatArgs(args map[string]any) string {
 			b, _ := json.Marshal(v)
 			s = string(b)
 		}
-		// Truncate long values.
-		if len(s) > 60 {
-			s = s[:57] + "..."
+		// Truncate long values (rune-aware to avoid splitting multi-byte UTF-8).
+		if utf8.RuneCountInString(s) > 60 {
+			r := []rune(s)
+			s = string(r[:57]) + "..."
 		}
 		parts = append(parts, fmt.Sprintf("%s: %q", k, s))
 	}
