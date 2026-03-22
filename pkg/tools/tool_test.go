@@ -155,6 +155,26 @@ func TestRegistry_RichToolRegistration(t *testing.T) {
 	}
 }
 
+func TestRegistry_ConcurrentAccess(t *testing.T) {
+	r := NewRegistry()
+	r.Register(&ReadTool{})
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 1000; i++ {
+			r.Register(&testRichTool{name: "concurrent"})
+		}
+	}()
+
+	for i := 0; i < 1000; i++ {
+		r.Get("read")
+		r.All()
+		r.ToToolDefs()
+	}
+	<-done
+}
+
 func TestRegistry_NonRichToolNotAssertable(t *testing.T) {
 	r := NewRegistry()
 	r.Register(&ReadTool{})

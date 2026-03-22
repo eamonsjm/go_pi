@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"sort"
+	"sync"
 
 	"github.com/ejm/go_pi/pkg/ai"
 )
@@ -29,7 +30,9 @@ type RichTool interface {
 }
 
 // Registry holds a collection of tools indexed by name.
+// All methods are safe for concurrent use.
 type Registry struct {
+	mu    sync.RWMutex
 	tools map[string]Tool
 }
 
@@ -43,21 +46,27 @@ func NewRegistry() *Registry {
 // Register adds a tool to the registry. If a tool with the same name
 // already exists, it is replaced.
 func (r *Registry) Register(t Tool) {
+	r.mu.Lock()
 	r.tools[t.Name()] = t
+	r.mu.Unlock()
 }
 
 // Get returns the tool with the given name, or false if not found.
 func (r *Registry) Get(name string) (Tool, bool) {
+	r.mu.RLock()
 	t, ok := r.tools[name]
+	r.mu.RUnlock()
 	return t, ok
 }
 
 // All returns all registered tools sorted by name.
 func (r *Registry) All() []Tool {
+	r.mu.RLock()
 	result := make([]Tool, 0, len(r.tools))
 	for _, t := range r.tools {
 		result = append(result, t)
 	}
+	r.mu.RUnlock()
 	sort.Slice(result, func(i, j int) bool {
 		return result[i].Name() < result[j].Name()
 	})
