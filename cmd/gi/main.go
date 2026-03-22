@@ -668,26 +668,37 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 		}
 	})
 
+	// pluginDone is closed when the TUI exits to cancel plugin consumer goroutines.
+	pluginDone := make(chan struct{})
+
 	// Consume inject messages from all plugins and route to TUI/agent.
 	for _, proc := range pluginMgr.Plugins() {
 		go func(proc *plugin.PluginProcess) {
-			for msg := range proc.InjectMessages() {
-				content := msg.Content
-				if msg.Type == "log" {
-					content = msg.Message
-				}
+			for {
+				select {
+				case <-pluginDone:
+					return
+				case msg, ok := <-proc.InjectMessages():
+					if !ok {
+						return
+					}
+					content := msg.Content
+					if msg.Type == "log" {
+						content = msg.Message
+					}
 
-				p.Send(tui.PluginInjectMsg{
-					PluginName: proc.Name(),
-					Content:    content,
-					Role:       msg.Role,
-					IsLog:      msg.Type == "log",
-					LogLevel:   msg.Level,
-				})
+					p.Send(tui.PluginInjectMsg{
+						PluginName: proc.Name(),
+						Content:    content,
+						Role:       msg.Role,
+						IsLog:      msg.Type == "log",
+						LogLevel:   msg.Level,
+					})
 
-				// If the plugin injects a "user" role message, feed it to the agent.
-				if msg.Type == "inject_message" && msg.Role == "user" && content != "" {
-					agentLoop.FollowUp(content)
+					// If the plugin injects a "user" role message, feed it to the agent.
+					if msg.Type == "inject_message" && msg.Role == "user" && content != "" {
+						agentLoop.FollowUp(content)
+					}
 				}
 			}
 		}(proc)
@@ -696,24 +707,34 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 	// Consume UI requests from all plugins and route to TUI.
 	for _, proc := range pluginMgr.Plugins() {
 		go func(proc *plugin.PluginProcess) {
-			for msg := range proc.UIRequests() {
-				p.Send(tui.PluginUIRequestMsg{
-					PluginName: proc.Name(),
-					ID:         msg.ID,
-					UIType:     msg.UIType,
-					UITitle:    msg.UITitle,
-					UIOptions:  msg.UIOptions,
-					UIDefault:  msg.UIDefault,
-					UILevel:    msg.UINotifyLevel,
-				})
+			for {
+				select {
+				case <-pluginDone:
+					return
+				case msg, ok := <-proc.UIRequests():
+					if !ok {
+						return
+					}
+					p.Send(tui.PluginUIRequestMsg{
+						PluginName: proc.Name(),
+						ID:         msg.ID,
+						UIType:     msg.UIType,
+						UITitle:    msg.UITitle,
+						UIOptions:  msg.UIOptions,
+						UIDefault:  msg.UIDefault,
+						UILevel:    msg.UINotifyLevel,
+					})
+				}
 			}
 		}(proc)
 	}
 
 	if _, err := p.Run(); err != nil {
+		close(pluginDone)
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
+	close(pluginDone)
 }
 
 // processFileArgs processes CLI positional arguments, expanding @filepath
