@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"strings"
+	"time"
 )
 
 // OllamaProvider implements the Provider interface for Ollama's local inference API.
@@ -43,29 +45,42 @@ func (p *OllamaProvider) Stream(ctx context.Context, req StreamRequest) (<-chan 
 		return nil, fmt.Errorf("ollama: failed to build request: %w", err)
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+"/api/chat", bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("ollama: failed to create HTTP request: %w", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
+	for attempt := 0; ; attempt++ {
+		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+"/api/chat", bytes.NewReader(body))
+		if err != nil {
+			return nil, fmt.Errorf("ollama: failed to create HTTP request: %w", err)
+		}
+		httpReq.Header.Set("Content-Type", "application/json")
 
-	resp, err := p.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("ollama: request failed: %w", err)
-	}
+		resp, err := p.httpClient.Do(httpReq)
+		if err != nil {
+			return nil, fmt.Errorf("ollama: request failed: %w", err)
+		}
 
-	if resp.StatusCode != http.StatusOK {
-		defer func() { _ = resp.Body.Close() }()
+		if resp.StatusCode == http.StatusOK {
+			ch := make(chan StreamEvent, 64)
+			go p.readStream(ctx, resp.Body, ch)
+			return ch, nil
+		}
+
 		errBody, readErr := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
 		if readErr != nil {
 			errBody = []byte(fmt.Sprintf("failed to read response body: %v", readErr))
 		}
+
+		if (resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusServiceUnavailable) && attempt < maxRetries {
+			wait := (attempt + 1) * 2
+			log.Printf("ollama: HTTP %d, retrying in %ds (attempt %d/%d)", resp.StatusCode, wait, attempt+1, maxRetries+1)
+			select {
+			case <-time.After(time.Duration(wait) * time.Second):
+				continue
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
 		return nil, parseOllamaError(resp.StatusCode, errBody)
 	}
-
-	ch := make(chan StreamEvent, 64)
-	go p.readStream(ctx, resp.Body, ch)
-	return ch, nil
 }
 
 // parseOllamaError parses a non-200 HTTP response from Ollama into an APIError.

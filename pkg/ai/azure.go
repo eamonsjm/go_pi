@@ -5,9 +5,11 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"strings"
+	"time"
 )
 
 const (
@@ -87,30 +89,46 @@ func (p *AzureOpenAIProvider) Stream(ctx context.Context, req StreamRequest) (<-
 		return nil, fmt.Errorf("azure openai: failed to build request: %w", err)
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.requestURL(), bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("azure openai: failed to create HTTP request: %w", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("api-key", p.apiKey)
+	for attempt := 0; ; attempt++ {
+		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.requestURL(), bytes.NewReader(body))
+		if err != nil {
+			return nil, fmt.Errorf("azure openai: failed to create HTTP request: %w", err)
+		}
+		httpReq.Header.Set("Content-Type", "application/json")
+		httpReq.Header.Set("api-key", p.apiKey)
 
-	resp, err := p.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("azure openai: request failed: %w", err)
-	}
+		resp, err := p.httpClient.Do(httpReq)
+		if err != nil {
+			return nil, fmt.Errorf("azure openai: request failed: %w", err)
+		}
 
-	if resp.StatusCode != http.StatusOK {
-		defer func() { _ = resp.Body.Close() }()
+		if resp.StatusCode == http.StatusOK {
+			ch := make(chan StreamEvent, 64)
+			go p.inner.readSSEStream(ctx, resp.Body, ch)
+			return ch, nil
+		}
+
 		errBody, readErr := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
 		if readErr != nil {
 			errBody = []byte(fmt.Sprintf("failed to read response body: %v", readErr))
 		}
+
 		apiErr := parseOpenAIError(resp.StatusCode, resp.Header, errBody)
 		apiErr.Provider = "azure"
+		if (resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusServiceUnavailable) && attempt < maxRetries {
+			wait := apiErr.RetryAfter
+			if wait == 0 {
+				wait = (attempt + 1) * 2
+			}
+			log.Printf("azure: HTTP %d, retrying in %ds (attempt %d/%d)", resp.StatusCode, wait, attempt+1, maxRetries+1)
+			select {
+			case <-time.After(time.Duration(wait) * time.Second):
+				continue
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
 		return nil, apiErr
 	}
-
-	ch := make(chan StreamEvent, 64)
-	go p.inner.readSSEStream(ctx, resp.Body, ch)
-	return ch, nil
 }

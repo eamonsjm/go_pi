@@ -552,3 +552,230 @@ func TestAnthropicStream_NoRetryOnNonRetryable(t *testing.T) {
 		t.Errorf("expected 1 attempt (no retry for auth errors), got %d", attempts)
 	}
 }
+
+// --- OpenAI retry tests ---
+
+func TestOpenAIStream_RetryOn429(t *testing.T) {
+	attempts := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		w.WriteHeader(http.StatusTooManyRequests)
+		fmt.Fprint(w, `{"error":{"message":"Rate limit exceeded","type":"rate_limit_error"}}`)
+	}))
+	defer srv.Close()
+
+	p := &OpenAIProvider{
+		apiKey:     "test-key",
+		httpClient: srv.Client(),
+		baseURL:    srv.URL,
+	}
+
+	_, err := p.Stream(context.Background(), StreamRequest{
+		Model:    "gpt-4",
+		Messages: []Message{NewTextMessage(RoleUser, "hi")},
+	})
+	if err == nil {
+		t.Fatal("expected error after retry exhaustion")
+	}
+	if attempts != maxRetries+1 {
+		t.Errorf("expected %d attempts, got %d", maxRetries+1, attempts)
+	}
+}
+
+func TestOpenAIStream_RetryOn503(t *testing.T) {
+	attempts := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		w.WriteHeader(http.StatusServiceUnavailable)
+		fmt.Fprint(w, `{"error":{"message":"Service unavailable","type":"server_error"}}`)
+	}))
+	defer srv.Close()
+
+	p := &OpenAIProvider{
+		apiKey:     "test-key",
+		httpClient: srv.Client(),
+		baseURL:    srv.URL,
+	}
+
+	_, err := p.Stream(context.Background(), StreamRequest{
+		Model:    "gpt-4",
+		Messages: []Message{NewTextMessage(RoleUser, "hi")},
+	})
+	if err == nil {
+		t.Fatal("expected error after retry exhaustion")
+	}
+	if attempts != maxRetries+1 {
+		t.Errorf("expected %d attempts, got %d", maxRetries+1, attempts)
+	}
+}
+
+func TestOpenAIStream_NoRetryOn401(t *testing.T) {
+	attempts := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		w.WriteHeader(http.StatusUnauthorized)
+		fmt.Fprint(w, `{"error":{"message":"invalid key","type":"authentication_error"}}`)
+	}))
+	defer srv.Close()
+
+	p := &OpenAIProvider{
+		apiKey:     "test-key",
+		httpClient: srv.Client(),
+		baseURL:    srv.URL,
+	}
+
+	_, err := p.Stream(context.Background(), StreamRequest{
+		Model:    "gpt-4",
+		Messages: []Message{NewTextMessage(RoleUser, "hi")},
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if attempts != 1 {
+		t.Errorf("expected 1 attempt (no retry for auth errors), got %d", attempts)
+	}
+}
+
+// --- Azure retry tests ---
+
+func TestAzureStream_RetryOn429(t *testing.T) {
+	attempts := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		w.WriteHeader(http.StatusTooManyRequests)
+		fmt.Fprint(w, `{"error":{"message":"Rate limit exceeded","type":"rate_limit_error"}}`)
+	}))
+	defer srv.Close()
+
+	client := srv.Client()
+	p := &AzureOpenAIProvider{
+		apiKey:     "test-key",
+		endpoint:   srv.URL,
+		deployment: "gpt-4o",
+		apiVersion: "2024-10-21",
+		httpClient: client,
+		inner:      &OpenAIProvider{apiKey: "test-key", httpClient: client},
+	}
+
+	_, err := p.Stream(context.Background(), StreamRequest{
+		Model:    "gpt-4o",
+		Messages: []Message{NewTextMessage(RoleUser, "hi")},
+	})
+	if err == nil {
+		t.Fatal("expected error after retry exhaustion")
+	}
+	if attempts != maxRetries+1 {
+		t.Errorf("expected %d attempts, got %d", maxRetries+1, attempts)
+	}
+}
+
+func TestAzureStream_NoRetryOn401(t *testing.T) {
+	attempts := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		w.WriteHeader(http.StatusUnauthorized)
+		fmt.Fprint(w, `{"error":{"message":"invalid key","type":"authentication_error"}}`)
+	}))
+	defer srv.Close()
+
+	client := srv.Client()
+	p := &AzureOpenAIProvider{
+		apiKey:     "test-key",
+		endpoint:   srv.URL,
+		deployment: "gpt-4o",
+		apiVersion: "2024-10-21",
+		httpClient: client,
+		inner:      &OpenAIProvider{apiKey: "test-key", httpClient: client},
+	}
+
+	_, err := p.Stream(context.Background(), StreamRequest{
+		Model:    "gpt-4o",
+		Messages: []Message{NewTextMessage(RoleUser, "hi")},
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if attempts != 1 {
+		t.Errorf("expected 1 attempt (no retry for auth errors), got %d", attempts)
+	}
+}
+
+// --- Ollama retry tests ---
+
+func TestOllamaStream_RetryOn429(t *testing.T) {
+	attempts := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		w.WriteHeader(http.StatusTooManyRequests)
+		fmt.Fprint(w, `{"error":"rate limited"}`)
+	}))
+	defer srv.Close()
+
+	p := &OllamaProvider{
+		baseURL:    srv.URL,
+		httpClient: srv.Client(),
+	}
+
+	_, err := p.Stream(context.Background(), StreamRequest{
+		Model:    "llama3",
+		Messages: []Message{NewTextMessage(RoleUser, "hi")},
+	})
+	if err == nil {
+		t.Fatal("expected error after retry exhaustion")
+	}
+	if attempts != maxRetries+1 {
+		t.Errorf("expected %d attempts, got %d", maxRetries+1, attempts)
+	}
+}
+
+func TestOllamaStream_RetryOn503(t *testing.T) {
+	attempts := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		w.WriteHeader(http.StatusServiceUnavailable)
+		fmt.Fprint(w, `{"error":"service unavailable"}`)
+	}))
+	defer srv.Close()
+
+	p := &OllamaProvider{
+		baseURL:    srv.URL,
+		httpClient: srv.Client(),
+	}
+
+	_, err := p.Stream(context.Background(), StreamRequest{
+		Model:    "llama3",
+		Messages: []Message{NewTextMessage(RoleUser, "hi")},
+	})
+	if err == nil {
+		t.Fatal("expected error after retry exhaustion")
+	}
+	if attempts != maxRetries+1 {
+		t.Errorf("expected %d attempts, got %d", maxRetries+1, attempts)
+	}
+}
+
+func TestOllamaStream_NoRetryOn404(t *testing.T) {
+	attempts := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		w.WriteHeader(http.StatusNotFound)
+		fmt.Fprint(w, `{"error":"model not found"}`)
+	}))
+	defer srv.Close()
+
+	p := &OllamaProvider{
+		baseURL:    srv.URL,
+		httpClient: srv.Client(),
+	}
+
+	_, err := p.Stream(context.Background(), StreamRequest{
+		Model:    "llama3",
+		Messages: []Message{NewTextMessage(RoleUser, "hi")},
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if attempts != 1 {
+		t.Errorf("expected 1 attempt (no retry for 404), got %d", attempts)
+	}
+}
