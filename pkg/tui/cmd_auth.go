@@ -262,7 +262,7 @@ func NewLogoutCommand(store *auth.Store) *SlashCommand {
 }
 
 // NewAuthStatusCommand creates the /auth slash command that shows auth status.
-func NewAuthStatusCommand(store *auth.Store, resolver *auth.Resolver) *SlashCommand {
+func NewAuthStatusCommand(ctx context.Context, store *auth.Store, resolver *auth.Resolver) *SlashCommand {
 	return &SlashCommand{
 		Name:        "auth",
 		Description: "Show authentication status for all providers",
@@ -272,7 +272,7 @@ func NewAuthStatusCommand(store *auth.Store, resolver *auth.Resolver) *SlashComm
 				sb.WriteString("Authentication Status:\n")
 
 				for _, p := range config.ValidProviderNames() {
-					key, _ := resolver.Resolve(context.TODO(), p)
+					key, _ := resolver.Resolve(ctx, p)
 					cred := store.Get(p)
 
 					if key != "" {
