@@ -1170,3 +1170,158 @@ func TestAutoCompactOptionsApplied(t *testing.T) {
 		t.Errorf("expected keepRecentTokens 2000, got %d", a.keepRecentTokens)
 	}
 }
+
+func TestCompactPreservesMessagesAppendedDuringWindow(t *testing.T) {
+	// Simulate a message being appended (via appendMessage) while the LLM
+	// compaction call is in progress. The compacted result must include the
+	// new message rather than silently discarding it.
+	compacting := make(chan struct{})
+	proceed := make(chan struct{})
+
+	provider := &mockProvider{
+		streamFn: func(_ context.Context, _ ai.StreamRequest) (<-chan ai.StreamEvent, error) {
+			ch := make(chan ai.StreamEvent, 10)
+			go func() {
+				defer close(ch)
+				// Signal that compaction is in progress.
+				close(compacting)
+				// Wait for the test to append a message before returning.
+				<-proceed
+				ch <- ai.StreamEvent{Type: ai.EventTextDelta, Delta: "Summary"}
+			}()
+			return ch, nil
+		},
+	}
+
+	reg := tools.NewRegistry()
+	a := NewAgentLoop(provider, reg, WithMessages([]ai.Message{
+		ai.NewTextMessage(ai.RoleUser, "Hello"),
+		ai.NewTextMessage(ai.RoleAssistant, "Hi there"),
+	}))
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- a.Compact(context.Background(), "")
+	}()
+
+	// Wait until the compaction LLM call is in-flight.
+	<-compacting
+
+	// Append a message during the compaction window.
+	a.appendMessage(ai.NewTextMessage(ai.RoleUser, "urgent follow-up"))
+
+	// Let the compaction finish.
+	close(proceed)
+
+	if err := <-errCh; err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	msgs := a.Messages()
+	// Expect: [compacted summary, urgent follow-up]
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 messages (compacted + appended), got %d", len(msgs))
+	}
+	if !strings.Contains(msgs[0].GetText(), "Summary") {
+		t.Errorf("first message should be compacted summary, got %q", msgs[0].GetText())
+	}
+	if msgs[1].GetText() != "urgent follow-up" {
+		t.Errorf("second message should be the appended follow-up, got %q", msgs[1].GetText())
+	}
+}
+
+func TestAutoCompactPreservesMessagesAppendedDuringWindow(t *testing.T) {
+	// Same race condition test but for autoCompact: messages appended during
+	// the compaction window must be preserved after the recent messages.
+	compacting := make(chan struct{})
+	proceed := make(chan struct{})
+
+	provider := &mockProvider{
+		streamFn: func(_ context.Context, _ ai.StreamRequest) (<-chan ai.StreamEvent, error) {
+			ch := make(chan ai.StreamEvent, 10)
+			go func() {
+				defer close(ch)
+				close(compacting)
+				<-proceed
+				ch <- ai.StreamEvent{Type: ai.EventTextDelta, Delta: "Older summary"}
+			}()
+			return ch, nil
+		},
+	}
+
+	// Build enough messages so findSafeCutPoint produces a non-zero cut.
+	// Use short older messages and a long recent message to force a cut.
+	initialMsgs := []ai.Message{
+		ai.NewTextMessage(ai.RoleUser, "old message 1"),
+		ai.NewTextMessage(ai.RoleAssistant, "old reply 1"),
+		ai.NewTextMessage(ai.RoleUser, "old message 2"),
+		ai.NewTextMessage(ai.RoleAssistant, "old reply 2"),
+		ai.NewTextMessage(ai.RoleUser, strings.Repeat("recent context ", 200)),
+	}
+
+	reg := tools.NewRegistry()
+	a := NewAgentLoop(provider, reg,
+		WithMessages(initialMsgs),
+		WithKeepRecentTokens(512), // Small budget → cut will happen early
+	)
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- a.autoCompact(context.Background())
+	}()
+
+	<-compacting
+
+	// Append a message during the compaction window.
+	a.appendMessage(ai.NewTextMessage(ai.RoleUser, "late arrival"))
+
+	close(proceed)
+
+	if err := <-errCh; err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	msgs := a.Messages()
+	// The last message must be the one appended during the window.
+	lastMsg := msgs[len(msgs)-1]
+	if lastMsg.GetText() != "late arrival" {
+		t.Errorf("last message should be 'late arrival', got %q", lastMsg.GetText())
+	}
+	// The first message should be the compacted summary.
+	if !strings.Contains(msgs[0].GetText(), "Older summary") {
+		t.Errorf("first message should contain compacted summary, got %q", msgs[0].GetText())
+	}
+}
+
+func TestCompactNoAppendedMessagesUnchangedBehavior(t *testing.T) {
+	// When no messages are appended during compaction, behavior is unchanged:
+	// Compact produces exactly one summary message.
+	provider := &mockProvider{
+		streamFn: func(_ context.Context, _ ai.StreamRequest) (<-chan ai.StreamEvent, error) {
+			ch := make(chan ai.StreamEvent, 10)
+			go func() {
+				defer close(ch)
+				ch <- ai.StreamEvent{Type: ai.EventTextDelta, Delta: "clean summary"}
+			}()
+			return ch, nil
+		},
+	}
+
+	reg := tools.NewRegistry()
+	a := NewAgentLoop(provider, reg, WithMessages([]ai.Message{
+		ai.NewTextMessage(ai.RoleUser, "Hello"),
+		ai.NewTextMessage(ai.RoleAssistant, "Hi"),
+	}))
+
+	if err := a.Compact(context.Background(), ""); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	msgs := a.Messages()
+	if len(msgs) != 1 {
+		t.Fatalf("expected exactly 1 message, got %d", len(msgs))
+	}
+	if !strings.Contains(msgs[0].GetText(), "clean summary") {
+		t.Error("expected compacted summary")
+	}
+}
