@@ -19,7 +19,7 @@ func TestBridgePrompt(t *testing.T) {
 		},
 	}
 
-	s := BridgePrompt("myserver", info)
+	s := BridgePrompt("myserver", info, nil)
 
 	if s.Name != "mcp__myserver__summarize" {
 		t.Errorf("Name = %q, want %q", s.Name, "mcp__myserver__summarize")
@@ -50,7 +50,7 @@ func TestBridgePrompt_NoArgs(t *testing.T) {
 		Description: "A greeting",
 	}
 
-	s := BridgePrompt("srv", info)
+	s := BridgePrompt("srv", info, nil)
 	if len(s.Arguments) != 0 {
 		t.Errorf("len(Arguments) = %d, want 0", len(s.Arguments))
 	}
@@ -110,7 +110,7 @@ func TestDiscoverPrompts(t *testing.T) {
 			idx := callCount
 			callCount++
 			return &pages[idx], nil
-		})
+		}, nil)
 	if err != nil {
 		t.Fatalf("DiscoverPrompts error: %v", err)
 	}
@@ -129,7 +129,7 @@ func TestDiffSkillCount(t *testing.T) {
 	makeSkills := func(names ...string) []*skill.Skill {
 		var out []*skill.Skill
 		for _, n := range names {
-			out = append(out, BridgePrompt("s", MCPPromptInfo{Name: n}))
+			out = append(out, BridgePrompt("s", MCPPromptInfo{Name: n}, nil))
 		}
 		return out
 	}
@@ -155,6 +155,118 @@ func TestDiffSkillCount(t *testing.T) {
 					a, r, tt.added, tt.removed)
 			}
 		})
+	}
+}
+
+// mockPromptGetter implements PromptGetter for testing.
+type mockPromptGetter struct {
+	name   string
+	result *PromptsGetResult
+	err    error
+	// captures the last call
+	calledName string
+	calledArgs map[string]string
+}
+
+func (m *mockPromptGetter) ServerName() string { return m.name }
+func (m *mockPromptGetter) GetPrompt(_ context.Context, name string, args map[string]string) (*PromptsGetResult, error) {
+	m.calledName = name
+	m.calledArgs = args
+	return m.result, m.err
+}
+
+func TestBridgePrompt_WithGetter(t *testing.T) {
+	getter := &mockPromptGetter{
+		name: "testserver",
+		result: &PromptsGetResult{
+			Description: "Summary",
+			Messages: []MCPPromptMessage{
+				{Role: "user", Content: MCPContentItem{Type: "text", Text: "Summarize: Go"}},
+			},
+		},
+	}
+
+	info := MCPPromptInfo{
+		Name:        "summarize",
+		Description: "Summarize a topic",
+		Arguments: []MCPPromptArgument{
+			{Name: "topic", Description: "The topic", Required: true},
+		},
+	}
+
+	s := BridgePrompt("testserver", info, getter)
+
+	if s.Executor == nil {
+		t.Fatal("Executor should be set when getter is non-nil")
+	}
+
+	result, err := s.Executor(context.Background(), map[string]string{"topic": "Go"})
+	if err != nil {
+		t.Fatalf("Executor error: %v", err)
+	}
+	if getter.calledName != "summarize" {
+		t.Errorf("calledName = %q, want %q", getter.calledName, "summarize")
+	}
+	if getter.calledArgs["topic"] != "Go" {
+		t.Errorf("calledArgs[topic] = %q, want %q", getter.calledArgs["topic"], "Go")
+	}
+	if result == "" {
+		t.Error("result should not be empty")
+	}
+}
+
+func TestBridgePrompt_ExecutorValidatesArgs(t *testing.T) {
+	getter := &mockPromptGetter{name: "srv"}
+
+	info := MCPPromptInfo{
+		Name: "needs-args",
+		Arguments: []MCPPromptArgument{
+			{Name: "topic", Required: true},
+		},
+	}
+
+	s := BridgePrompt("srv", info, getter)
+
+	// Missing required arg should fail before RPC.
+	_, err := s.Executor(context.Background(), map[string]string{})
+	if err == nil {
+		t.Fatal("expected error for missing required argument")
+	}
+}
+
+func TestBridgePrompt_NilGetter(t *testing.T) {
+	s := BridgePrompt("srv", MCPPromptInfo{Name: "test"}, nil)
+	if s.Executor != nil {
+		t.Error("Executor should be nil when getter is nil")
+	}
+}
+
+func TestFormatPromptResult(t *testing.T) {
+	result := &PromptsGetResult{
+		Description: "A test prompt",
+		Messages: []MCPPromptMessage{
+			{Role: "user", Content: MCPContentItem{Type: "text", Text: "Hello"}},
+			{Role: "assistant", Content: MCPContentItem{Type: "text", Text: "Hi there"}},
+		},
+	}
+
+	got := formatPromptResult(result)
+
+	if got != "A test prompt\n\n[user]\nHello\n\n[assistant]\nHi there" {
+		t.Errorf("formatPromptResult = %q", got)
+	}
+}
+
+func TestFormatPromptResult_NoDescription(t *testing.T) {
+	result := &PromptsGetResult{
+		Messages: []MCPPromptMessage{
+			{Role: "user", Content: MCPContentItem{Type: "text", Text: "Do the thing"}},
+		},
+	}
+
+	got := formatPromptResult(result)
+	if got != "[user]\nDo the thing" {
+		t.Errorf("formatPromptResult = %q", got)
 	}
 }
 

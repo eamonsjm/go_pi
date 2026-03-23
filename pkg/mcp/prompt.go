@@ -42,10 +42,21 @@ type PromptsGetResult struct {
 	Messages    []MCPPromptMessage `json:"messages"`
 }
 
+// PromptGetter can execute a prompts/get RPC on an MCP server.
+// MCPServer implements this; defined as an interface for testability.
+type PromptGetter interface {
+	ServerName() string
+	GetPrompt(ctx context.Context, name string, arguments map[string]string) (*PromptsGetResult, error)
+}
+
 // BridgePrompt creates a skill.Skill from an MCPPromptInfo, bridging MCP
 // prompts into the skill registry. The skill's Source is "mcp" and
 // UserInvocable is true so it appears in the skill list.
-func BridgePrompt(serverName string, info MCPPromptInfo) *skill.Skill {
+//
+// When getter is non-nil, the skill's Executor calls prompts/get on the
+// MCP server and returns the rendered messages. When getter is nil (e.g.,
+// in tests that only check metadata), the skill falls back to a static body.
+func BridgePrompt(serverName string, info MCPPromptInfo, getter PromptGetter) *skill.Skill {
 	name := "mcp__" + serverName + "__" + info.Name
 
 	// Convert MCP arguments to skill arguments.
@@ -58,7 +69,7 @@ func BridgePrompt(serverName string, info MCPPromptInfo) *skill.Skill {
 		})
 	}
 
-	return &skill.Skill{
+	s := &skill.Skill{
 		Name:          name,
 		Description:   info.Description,
 		UserInvocable: true,
@@ -66,14 +77,51 @@ func BridgePrompt(serverName string, info MCPPromptInfo) *skill.Skill {
 		Source:         "mcp",
 		Body:          fmt.Sprintf("[MCP prompt from server %q — invoke via Skill tool]", serverName),
 	}
+
+	if getter != nil {
+		promptName := info.Name
+		mcpArgs := info.Arguments
+		s.Executor = func(ctx context.Context, argVars map[string]string) (string, error) {
+			// Validate required arguments before the RPC.
+			if err := ValidatePromptArgs(mcpArgs, argVars); err != nil {
+				return "", err
+			}
+			result, err := getter.GetPrompt(ctx, promptName, argVars)
+			if err != nil {
+				return "", fmt.Errorf("prompts/get %q on server %q: %w", promptName, serverName, err)
+			}
+			return formatPromptResult(result), nil
+		}
+	}
+
+	return s
+}
+
+// formatPromptResult renders a PromptsGetResult as a string suitable for
+// returning to the LLM. Each message is formatted with its role prefix.
+func formatPromptResult(result *PromptsGetResult) string {
+	var b strings.Builder
+	if result.Description != "" {
+		b.WriteString(result.Description)
+		b.WriteString("\n\n")
+	}
+	for i, msg := range result.Messages {
+		if i > 0 {
+			b.WriteString("\n\n")
+		}
+		fmt.Fprintf(&b, "[%s]\n%s", msg.Role, msg.Content.Text)
+	}
+	return b.String()
 }
 
 // DiscoverPrompts fetches all prompts from an MCP server via paginated
 // prompts/list and returns them as skill.Skill entries ready for registration.
+// The getter is passed to BridgePrompt so each skill can execute prompts/get.
 func DiscoverPrompts(
 	ctx context.Context,
 	serverName string,
 	listPrompts func(ctx context.Context, cursor string) (*PromptsListPage, error),
+	getter PromptGetter,
 ) ([]*skill.Skill, error) {
 	var allSkills []*skill.Skill
 	var cursor string
@@ -83,7 +131,7 @@ func DiscoverPrompts(
 			return nil, fmt.Errorf("prompts/list (page %d): %w", pages, err)
 		}
 		for _, info := range page.Prompts {
-			allSkills = append(allSkills, BridgePrompt(serverName, info))
+			allSkills = append(allSkills, BridgePrompt(serverName, info, getter))
 		}
 		if page.NextCursor == "" || len(allSkills) >= maxTotalItems {
 			break
@@ -146,6 +194,18 @@ func ValidatePromptArgs(args []MCPPromptArgument, provided map[string]string) er
 	return nil
 }
 
+// GetPrompt implements PromptGetter by delegating to the MCP client.
+func (s *MCPServer) GetPrompt(ctx context.Context, name string, arguments map[string]string) (*PromptsGetResult, error) {
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return nil, ErrServerCrashed
+	}
+	s.mu.Unlock()
+
+	return s.client.GetPrompt(ctx, name, arguments)
+}
+
 // discoverAndRegisterPrompts discovers prompts and registers them in the skill registry.
 func (s *MCPServer) discoverAndRegisterPrompts(ctx context.Context) error {
 	if s.manager.skillRegistry == nil {
@@ -154,7 +214,7 @@ func (s *MCPServer) discoverAndRegisterPrompts(ctx context.Context) error {
 
 	discovered, err := DiscoverPrompts(ctx, s.name, func(ctx context.Context, cursor string) (*PromptsListPage, error) {
 		return s.client.ListPrompts(ctx, cursor)
-	})
+	}, s)
 	if err != nil {
 		return err
 	}

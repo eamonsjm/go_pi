@@ -77,15 +77,20 @@ func (t *SkillTool) Execute(ctx context.Context, params map[string]any) (string,
 		return "", fmt.Errorf("%w: %q (available: %s)", ErrUnknownSkill, name, strings.Join(t.registry.Names(), ", "))
 	}
 
-	body, err := s.LoadBody(ctx)
-	if err != nil {
-		return "", fmt.Errorf("failed to load skill %q: %w", name, err)
-	}
-
 	// Parse arguments against skill definitions.
 	argVars, err := ParseSkillArgs(s.Arguments, args)
 	if err != nil {
 		return "", fmt.Errorf("skill %q argument error: %w", name, err)
+	}
+
+	// If the skill has a custom executor (e.g., MCP prompt), use it.
+	if s.Executor != nil {
+		return s.Executor(ctx, argVars)
+	}
+
+	body, err := s.LoadBody(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to load skill %q: %w", name, err)
 	}
 
 	// Merge context vars (cwd, branch, model) with argument vars.

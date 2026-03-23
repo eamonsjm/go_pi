@@ -35,7 +35,12 @@ type Skill struct {
 	// Loaded lazily via LoadBody; empty until first call.
 	Body string `yaml:"-"`
 
-	// Source indicates where this skill came from: "built-in", "user", or "project".
+	// Executor, when non-nil, is called by SkillTool.Execute instead of the
+	// template rendering path. This allows skills backed by dynamic RPCs
+	// (e.g., MCP prompts) to execute real calls rather than return static text.
+	Executor func(ctx context.Context, args map[string]string) (string, error) `yaml:"-"`
+
+	// Source indicates where this skill came from: "built-in", "user", "project", or "mcp".
 	Source string `yaml:"-"`
 
 	// Path is the file path for file-based skills (empty for embed-based before load).

@@ -473,7 +473,7 @@ func (s *MCPServer) handlePromptsListChanged() {
 
 	newSkills, err := DiscoverPrompts(ctx, s.name, func(ctx context.Context, cursor string) (*PromptsListPage, error) {
 		return s.client.ListPrompts(ctx, cursor)
-	})
+	}, s)
 	if err != nil {
 		log.Printf("mcp: failed to re-discover prompts for %q: %v", s.name, err)
 		return

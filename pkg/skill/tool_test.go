@@ -176,6 +176,57 @@ func TestSkillTool_Execute_WithConditionals(t *testing.T) {
 	}
 }
 
+func TestSkillTool_Execute_WithExecutor(t *testing.T) {
+	reg := NewRegistry()
+	reg.Register(&Skill{
+		Name:        "dynamic",
+		Description: "Dynamic skill",
+		Arguments: []Argument{
+			{Name: "topic", Description: "Topic", Required: true},
+		},
+		Executor: func(_ context.Context, args map[string]string) (string, error) {
+			return "Executed with topic: " + args["topic"], nil
+		},
+	})
+
+	st := NewSkillTool(reg, "test-model")
+	result, err := st.Execute(context.Background(), map[string]any{
+		"skill": "dynamic",
+		"args":  "Go",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != "Executed with topic: Go" {
+		t.Errorf("result = %q, want %q", result, "Executed with topic: Go")
+	}
+}
+
+func TestSkillTool_Execute_ExecutorMissingArg(t *testing.T) {
+	reg := NewRegistry()
+	reg.Register(&Skill{
+		Name:        "dynamic",
+		Description: "Dynamic skill",
+		Arguments: []Argument{
+			{Name: "file", Description: "File", Required: true},
+		},
+		Executor: func(_ context.Context, args map[string]string) (string, error) {
+			return "should not reach", nil
+		},
+	})
+
+	st := NewSkillTool(reg, "test-model")
+	_, err := st.Execute(context.Background(), map[string]any{
+		"skill": "dynamic",
+	})
+	if err == nil {
+		t.Fatal("expected error for missing required argument")
+	}
+	if !strings.Contains(err.Error(), "missing required argument") {
+		t.Errorf("error = %v, want 'missing required argument'", err)
+	}
+}
+
 func TestSkillTool_SetModel(t *testing.T) {
 	st := NewSkillTool(NewRegistry(), "old-model")
 	st.SetModel("new-model")
