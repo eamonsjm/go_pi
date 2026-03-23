@@ -149,6 +149,18 @@ func (m *MCPManager) startServer(ctx context.Context, name string, cfg *config.M
 		// Non-fatal: server is connected, tools may appear later via list_changed.
 	}
 
+	// Discover and register resources (if server advertises resource capability).
+	caps := server.client.ServerCapabilities()
+	if caps.Resources != nil {
+		if caps.Resources.Subscribe {
+			server.subscriptions = newSubscriptionManager(server.client)
+		}
+		if err := server.discoverAndRegisterResources(ctx); err != nil {
+			log.Printf("mcp: failed to discover resources for %q: %v", name, err)
+			// Non-fatal: resources may appear later via list_changed.
+		}
+	}
+
 	m.mu.Lock()
 	m.servers[name] = server
 	m.mu.Unlock()
@@ -279,8 +291,10 @@ type MCPServer struct {
 	manager      *MCPManager
 	instructions string // from initialize response
 
-	mu     sync.Mutex
-	closed bool
+	mu           sync.Mutex
+	closed       bool
+	resourceTool tools.Tool             // current read_resource tool, if any
+	subscriptions *subscriptionManager  // resource subscription TTL manager
 }
 
 // newMCPServer creates a new MCPServer. The notification handler is wired up
@@ -361,11 +375,9 @@ func (s *MCPServer) handleNotification(method string, params json.RawMessage) {
 	case "notifications/tools/list_changed":
 		s.handleToolsListChanged()
 	case "notifications/resources/list_changed":
-		// Phase 4: resources
-		log.Printf("mcp: server %q: resources/list_changed (not yet implemented)", s.name)
+		s.handleResourcesListChanged()
 	case "notifications/resources/updated":
-		// Phase 4: resources
-		log.Printf("mcp: server %q: resources/updated (not yet implemented)", s.name)
+		s.handleResourcesUpdated(params)
 	case "notifications/prompts/list_changed":
 		// Phase 5: prompts
 		log.Printf("mcp: server %q: prompts/list_changed (not yet implemented)", s.name)
@@ -395,6 +407,14 @@ func (s *MCPServer) handleToolsListChanged() {
 	}
 
 	s.manager.toolRegistry.ReplaceByPrefix(prefix, newTools)
+
+	// Re-register resource tool (ReplaceByPrefix removed it since it shares the prefix).
+	s.mu.Lock()
+	rt := s.resourceTool
+	s.mu.Unlock()
+	if rt != nil {
+		s.manager.toolRegistry.Register(rt)
+	}
 
 	added, removed := diffToolCount(oldTools, newTools)
 	s.manager.injectSystemMessage(fmt.Sprintf(
@@ -426,7 +446,12 @@ func (s *MCPServer) close() error {
 	}
 	s.closed = true
 
-	// Remove tools from registry.
+	// Close resource subscriptions (sends unsubscribe RPCs before client shuts down).
+	if s.subscriptions != nil {
+		s.subscriptions.close()
+	}
+
+	// Remove tools from registry (including resource tool).
 	prefix := "mcp__" + s.name + "__"
 	s.manager.toolRegistry.ReplaceByPrefix(prefix, nil)
 
