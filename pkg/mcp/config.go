@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -159,10 +160,16 @@ func (c *approvalCache) approve(projectPath, serverName string, cfg *config.MCPS
 }
 
 // serverKey returns the cache key for a server config: SHA-256 hash of
-// command+args for stdio, or host:port for HTTP.
+// command+args for stdio, or host:port for HTTP. Only host:port is used
+// for HTTP so that path/query (which may contain interpolated secrets)
+// do not affect the cache key.
 func serverKey(cfg *config.MCPServerConfig) string {
 	if cfg.URL != "" {
-		return cfg.URL
+		u, err := url.Parse(cfg.URL)
+		if err != nil {
+			return cfg.URL // fallback to full URL if unparseable
+		}
+		return u.Host
 	}
 	h := sha256.New()
 	h.Write([]byte(cfg.Command))

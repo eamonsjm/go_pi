@@ -180,10 +180,22 @@ func TestApprovalCache(t *testing.T) {
 }
 
 func TestServerKey(t *testing.T) {
-	// HTTP server uses URL as key.
+	// HTTP server uses host:port as key (path/query stripped).
 	httpCfg := &config.MCPServerConfig{URL: "https://example.com/mcp"}
-	if got := serverKey(httpCfg); got != "https://example.com/mcp" {
-		t.Errorf("HTTP serverKey = %q, want URL", got)
+	if got := serverKey(httpCfg); got != "example.com" {
+		t.Errorf("HTTP serverKey = %q, want %q", got, "example.com")
+	}
+
+	// HTTP with explicit port.
+	httpCfgPort := &config.MCPServerConfig{URL: "https://example.com:8443/v2/mcp?token=secret"}
+	if got := serverKey(httpCfgPort); got != "example.com:8443" {
+		t.Errorf("HTTP serverKey with port = %q, want %q", got, "example.com:8443")
+	}
+
+	// Different paths on same host produce the same key.
+	httpCfg2 := &config.MCPServerConfig{URL: "https://example.com/other"}
+	if serverKey(httpCfg) != serverKey(httpCfg2) {
+		t.Error("same host with different paths should produce the same key")
 	}
 
 	// Stdio server uses command hash.
