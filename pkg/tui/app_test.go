@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ejm/go_pi/pkg/agent"
 	"github.com/ejm/go_pi/pkg/ai"
+	"github.com/ejm/go_pi/pkg/config"
 )
 
 func TestNewApp(t *testing.T) {
@@ -1918,5 +1919,330 @@ func TestApp_Update_PluginUIRequestMsg_HeadlessMode(t *testing.T) {
 	resp = <-responseChan
 	if resp.Value != "default-value" {
 		t.Errorf("expected default-value, got %s", resp.Value)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Option functions
+// ---------------------------------------------------------------------------
+
+func TestWithAppInitialPrompt(t *testing.T) {
+	app := NewApp(WithAppInitialPrompt("hello world"))
+	if app.initialPrompt != "hello world" {
+		t.Errorf("expected 'hello world', got %q", app.initialPrompt)
+	}
+}
+
+func TestWithAppHasUI(t *testing.T) {
+	app := NewApp(WithAppHasUI(true))
+	if !app.hasUI {
+		t.Error("expected hasUI=true")
+	}
+	app2 := NewApp(WithAppHasUI(false))
+	if app2.hasUI {
+		t.Error("expected hasUI=false")
+	}
+}
+
+func TestWithAppAuthStore(t *testing.T) {
+	// WithAppAuthStore(nil) should not panic.
+	app := NewApp(WithAppAuthStore(nil))
+	if app == nil {
+		t.Fatal("NewApp returned nil")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// SetInitialPrompt / SetLoginSuccessCallback / SetProgram
+// ---------------------------------------------------------------------------
+
+func TestApp_SetInitialPrompt(t *testing.T) {
+	app := NewApp()
+	app.SetInitialPrompt("test prompt")
+	if app.initialPrompt != "test prompt" {
+		t.Errorf("expected 'test prompt', got %q", app.initialPrompt)
+	}
+}
+
+func TestApp_SetLoginSuccessCallback(t *testing.T) {
+	app := NewApp()
+	var called string
+	app.SetLoginSuccessCallback(func(provider string) {
+		called = provider
+	})
+
+	// Trigger via Update.
+	app.width, app.height = 80, 24
+	app.Update(authLoginSuccessMsg{providerName: "anthropic", text: "ok"})
+	if called != "anthropic" {
+		t.Errorf("expected callback with 'anthropic', got %q", called)
+	}
+}
+
+func TestApp_SetProgram_RoutesSetModel(t *testing.T) {
+	// Without a program, SetModel writes directly to header.
+	app := NewApp()
+	app.SetModel("direct-model")
+	if app.header.model != "direct-model" {
+		t.Errorf("expected 'direct-model', got %q", app.header.model)
+	}
+	// SetProgram is tested indirectly via SetModelMsg in existing tests.
+}
+
+// ---------------------------------------------------------------------------
+// RestoreSession
+// ---------------------------------------------------------------------------
+
+func TestApp_RestoreSession(t *testing.T) {
+	app := NewApp()
+	msgs := []ai.Message{
+		ai.NewTextMessage(ai.RoleUser, "hello"),
+		ai.NewTextMessage(ai.RoleAssistant, "hi there"),
+	}
+	app.RestoreSession("abcdef1234567890", msgs)
+	// Header should show truncated session ID.
+	if app.header.sessionName != "abcdef123456" {
+		t.Errorf("expected truncated session ID, got %q", app.header.sessionName)
+	}
+}
+
+func TestApp_RestoreSession_ShortID(t *testing.T) {
+	app := NewApp()
+	app.RestoreSession("short", nil)
+	if app.header.sessionName != "short" {
+		t.Errorf("expected 'short', got %q", app.header.sessionName)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// InitialPrompt auto-submit on first WindowSizeMsg
+// ---------------------------------------------------------------------------
+
+func TestApp_InitialPrompt_AutoSubmit(t *testing.T) {
+	app := NewApp(WithAppInitialPrompt("auto prompt"))
+
+	// First WindowSizeMsg triggers auto-submit.
+	_, cmd := app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	if cmd == nil {
+		t.Fatal("expected non-nil cmd for initial prompt")
+	}
+	// Execute the returned cmd to get the editorSubmitMsg.
+	msg := cmd()
+	sub, ok := msg.(editorSubmitMsg)
+	if !ok {
+		t.Fatalf("expected editorSubmitMsg, got %T", msg)
+	}
+	if sub.text != "auto prompt" {
+		t.Errorf("expected 'auto prompt', got %q", sub.text)
+	}
+	// initialPrompt should be cleared.
+	if app.initialPrompt != "" {
+		t.Error("expected initialPrompt to be cleared after auto-submit")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// cycleThinking
+// ---------------------------------------------------------------------------
+
+func TestGetThinkingOrder(t *testing.T) {
+	order := getThinkingOrder()
+	want := []string{"off", "low", "medium", "high"}
+	if len(order) != len(want) {
+		t.Fatalf("expected %d entries, got %d", len(want), len(order))
+	}
+	for i, v := range want {
+		if order[i] != v {
+			t.Errorf("order[%d] = %q, want %q", i, order[i], v)
+		}
+	}
+}
+
+func TestApp_CycleThinking_NilDeps(t *testing.T) {
+	app := NewApp()
+	// cfg and agentLoop are nil — cycleThinking should return nil without panicking.
+	cmd := app.cycleThinking()
+	if cmd != nil {
+		t.Error("expected nil cmd when deps are nil")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// cycleModel
+// ---------------------------------------------------------------------------
+
+func TestApp_CycleModel_NilConfig(t *testing.T) {
+	app := NewApp()
+	// cfg is nil — cycleModel should return nil without panicking.
+	cmd := app.cycleModel(1)
+	if cmd != nil {
+		t.Error("expected nil cmd when cfg is nil")
+	}
+}
+
+func TestApp_CycleModel_Forward(t *testing.T) {
+	app := NewApp()
+	app.cfg = &config.Config{DefaultModel: getDefaultModels()[0].Model}
+
+	cmd := app.cycleModel(1)
+	if cmd == nil {
+		t.Fatal("expected non-nil cmd")
+	}
+	msg := cmd()
+	sel, ok := msg.(modelSelectedMsg)
+	if !ok {
+		t.Fatalf("expected modelSelectedMsg, got %T", msg)
+	}
+	models := getDefaultModels()
+	if sel.model != models[1].Model {
+		t.Errorf("expected next model %q, got %q", models[1].Model, sel.model)
+	}
+}
+
+func TestApp_CycleModel_Backward(t *testing.T) {
+	app := NewApp()
+	app.cfg = &config.Config{DefaultModel: getDefaultModels()[0].Model}
+
+	cmd := app.cycleModel(-1)
+	if cmd == nil {
+		t.Fatal("expected non-nil cmd")
+	}
+	msg := cmd()
+	sel := msg.(modelSelectedMsg)
+	models := getDefaultModels()
+	// -1 from index 0 wraps to last.
+	if sel.model != models[len(models)-1].Model {
+		t.Errorf("expected last model %q, got %q", models[len(models)-1].Model, sel.model)
+	}
+}
+
+func TestApp_CycleModel_UnknownCurrentModel(t *testing.T) {
+	app := NewApp()
+	app.cfg = &config.Config{DefaultModel: "unknown-model-xyz"}
+
+	cmd := app.cycleModel(1)
+	if cmd == nil {
+		t.Fatal("expected non-nil cmd")
+	}
+	msg := cmd()
+	sel := msg.(modelSelectedMsg)
+	// Unknown current model defaults to index 0.
+	models := getDefaultModels()
+	if sel.model != models[0].Model {
+		t.Errorf("expected first model %q, got %q", models[0].Model, sel.model)
+	}
+}
+
+func TestApp_CycleModel_WrapForward(t *testing.T) {
+	models := getDefaultModels()
+	app := NewApp()
+	app.cfg = &config.Config{DefaultModel: models[len(models)-1].Model}
+
+	cmd := app.cycleModel(1)
+	msg := cmd()
+	sel := msg.(modelSelectedMsg)
+	if sel.model != models[0].Model {
+		t.Errorf("expected wrap to first model %q, got %q", models[0].Model, sel.model)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// wrapLongString
+// ---------------------------------------------------------------------------
+
+func TestWrapLongString(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		width int
+		want  string
+	}{
+		{
+			name:  "empty string",
+			input: "",
+			width: 10,
+			want:  "",
+		},
+		{
+			name:  "shorter than width",
+			input: "hello",
+			width: 10,
+			want:  "hello",
+		},
+		{
+			name:  "exact width",
+			input: "hello",
+			width: 5,
+			want:  "hello",
+		},
+		{
+			name:  "longer than width",
+			input: "abcdefghij",
+			width: 5,
+			want:  "abcde\nfghij",
+		},
+		{
+			name:  "zero width",
+			input: "abc",
+			width: 0,
+			want:  "abc",
+		},
+		{
+			name:  "negative width",
+			input: "abc",
+			width: -1,
+			want:  "abc",
+		},
+		{
+			name:  "width 1",
+			input: "abc",
+			width: 1,
+			want:  "a\nb\nc",
+		},
+		{
+			name:  "unicode chars",
+			input: "αβγδεζ",
+			width: 3,
+			want:  "αβγ\nδεζ",
+		},
+		{
+			name:  "multiple wraps",
+			input: "123456789012",
+			width: 4,
+			want:  "1234\n5678\n9012",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := wrapLongString(tt.input, tt.width)
+			if got != tt.want {
+				t.Errorf("wrapLongString(%q, %d) = %q, want %q", tt.input, tt.width, got, tt.want)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// thinkingFromString
+// ---------------------------------------------------------------------------
+
+func TestThinkingFromString_AllLevels(t *testing.T) {
+	cases := []struct {
+		input string
+		want  ai.ThinkingLevel
+	}{
+		{"low", ai.ThinkingLow},
+		{"medium", ai.ThinkingMedium},
+		{"high", ai.ThinkingHigh},
+		{"off", ai.ThinkingOff},
+		{"", ai.ThinkingOff},
+		{"unknown", ai.ThinkingOff},
+	}
+	for _, tc := range cases {
+		got := thinkingFromString(tc.input)
+		if got != tc.want {
+			t.Errorf("thinkingFromString(%q) = %v, want %v", tc.input, got, tc.want)
+		}
 	}
 }
