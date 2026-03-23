@@ -424,6 +424,58 @@ func TestIsVersionSupported(t *testing.T) {
 	}
 }
 
+func TestMCPClientRequestHandlerDoesNotBlockDemux(t *testing.T) {
+	mt := newMockTransport()
+	client := NewMCPClient(mt, nil)
+	defer client.Close()
+
+	// Install a request handler that blocks until released.
+	handlerStarted := make(chan struct{})
+	handlerRelease := make(chan struct{})
+	client.onRequest = func(method string, id json.RawMessage, params json.RawMessage) {
+		close(handlerStarted)
+		<-handlerRelease
+	}
+
+	// Send a server-initiated request to trigger the blocking handler.
+	mt.incoming <- json.RawMessage(`{"jsonrpc":"2.0","id":"srv-1","method":"sampling/createMessage","params":{}}`)
+
+	// Wait for the handler to start blocking.
+	select {
+	case <-handlerStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout: request handler never started")
+	}
+
+	// While the handler is blocked, send a client request and its response.
+	// If the demux goroutine is blocked, this will timeout.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		mt.incoming <- json.RawMessage(`{"jsonrpc":"2.0","id":1,"result":{"ok":true}}`)
+	}()
+
+	result, err := client.Request(ctx, "test/method", nil)
+	if err != nil {
+		t.Fatalf("Request should succeed while request handler is blocked: %v", err)
+	}
+
+	var parsed struct {
+		OK bool `json:"ok"`
+	}
+	if err := json.Unmarshal(result, &parsed); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if !parsed.OK {
+		t.Error("expected ok=true")
+	}
+
+	// Release the handler.
+	close(handlerRelease)
+}
+
 func TestMCPClientTransportCloseDuringRequest(t *testing.T) {
 	mt := newMockTransport()
 	client := NewMCPClient(mt, nil)

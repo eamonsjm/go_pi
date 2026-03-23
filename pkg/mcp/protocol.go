@@ -217,7 +217,7 @@ func (c *MCPClient) demux() {
 					log.Printf("mcp: failed to parse server request: %v", err)
 					continue
 				}
-				c.onRequest(req.Method, req.ID, req.Params)
+				go c.onRequest(req.Method, req.ID, req.Params)
 			} else {
 				log.Printf("mcp: no handler for server request %q (id=%s)", peek.Method, string(peek.ID))
 			}
