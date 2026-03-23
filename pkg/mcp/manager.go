@@ -8,6 +8,7 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/ejm/go_pi/pkg/config"
 	"github.com/ejm/go_pi/pkg/mcp/transport"
@@ -373,7 +374,8 @@ func (s *MCPServer) handleNotification(method string, params json.RawMessage) {
 
 // handleToolsListChanged re-discovers tools and updates the registry.
 func (s *MCPServer) handleToolsListChanged() {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 
 	prefix := "mcp__" + s.name + "__"
 	oldTools := s.manager.toolRegistry.AllWithPrefix(prefix)
