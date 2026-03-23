@@ -114,7 +114,7 @@ func (t *StreamableHTTP) Send(ctx context.Context, msg json.RawMessage) error {
 		go t.parseSSEStream(resp.Body, "post")
 	case strings.HasPrefix(ct, "application/json"):
 		body, readErr := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if readErr != nil {
 			return fmt.Errorf("reading JSON response: %w", readErr)
 		}
@@ -122,7 +122,7 @@ func (t *StreamableHTTP) Send(ctx context.Context, msg json.RawMessage) error {
 	default:
 		// Robustness: attempt JSON parse as fallback for unknown Content-Type.
 		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if len(body) > 0 {
 			log.Printf("mcp http: unexpected Content-Type %q from MCP server, attempting JSON parse", ct)
 			t.trySend(body)
@@ -196,7 +196,7 @@ func (t *StreamableHTTP) OpenServerStream(ctx context.Context) error {
 		return err
 	}
 	if resp.StatusCode != http.StatusOK {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		t.getStreamMu.Unlock()
 		return fmt.Errorf("GET stream returned HTTP %d", resp.StatusCode)
 	}
@@ -291,7 +291,7 @@ func (t *StreamableHTTP) trySend(msg json.RawMessage) (sent bool) {
 // streamName identifies the stream for event ID tracking ("get" or "post").
 // For "get" streams, clears getStreamActive on exit to allow reconnection.
 func (t *StreamableHTTP) parseSSEStream(body io.ReadCloser, streamName string) {
-	defer body.Close()
+	defer func() { _ = body.Close() }()
 	if streamName == "get" {
 		defer func() {
 			t.getStreamMu.Lock()

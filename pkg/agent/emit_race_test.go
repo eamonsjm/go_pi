@@ -200,8 +200,8 @@ func TestSteerEmitCancelInterleaving(t *testing.T) {
 					ch := make(chan ai.StreamEvent, 20)
 					go func() {
 						defer close(ch)
-						switch {
-						case n == 1:
+						switch n {
+						case 1:
 							ch <- ai.StreamEvent{Type: ai.EventMessageStart}
 							ch <- ai.StreamEvent{Type: ai.EventToolUseStart, ToolCallID: "tc-1", ToolName: "waiter"}
 							ch <- ai.StreamEvent{Type: ai.EventToolUseDelta, PartialInput: `{}`}

@@ -62,9 +62,7 @@ func TestStdioClose(t *testing.T) {
 	defer timer.Stop()
 	select {
 	case _, ok := <-s.Receive():
-		if ok {
-			// May receive buffered messages; drain.
-		}
+		_ = ok // May receive buffered messages; drain.
 	case <-timer.C:
 		t.Fatal("channel not closed after Close")
 	}
