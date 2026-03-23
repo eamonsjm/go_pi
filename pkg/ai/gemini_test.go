@@ -848,6 +848,47 @@ func TestGeminiBuildRequestBody_ToolCallInputConversionError(t *testing.T) {
 	}
 }
 
+func TestGeminiStatusToErrorType(t *testing.T) {
+	tests := []struct {
+		name       string
+		status     string
+		statusCode int
+		want       string
+	}{
+		// gRPC status string mappings (primary path).
+		{"RESOURCE_EXHAUSTED maps to rate_limit_error", "RESOURCE_EXHAUSTED", 0, "rate_limit_error"},
+		{"UNAVAILABLE maps to overloaded_error", "UNAVAILABLE", 0, "overloaded_error"},
+		{"INVALID_ARGUMENT maps to invalid_request_error", "INVALID_ARGUMENT", 0, "invalid_request_error"},
+		{"NOT_FOUND maps to not_found_error", "NOT_FOUND", 0, "not_found_error"},
+		{"PERMISSION_DENIED maps to permission_error", "PERMISSION_DENIED", 0, "permission_error"},
+		{"UNAUTHENTICATED maps to authentication_error", "UNAUTHENTICATED", 0, "authentication_error"},
+
+		// gRPC status takes precedence over HTTP status code.
+		{"gRPC status takes precedence over HTTP code", "RESOURCE_EXHAUSTED", http.StatusInternalServerError, "rate_limit_error"},
+
+		// HTTP status code fallback (unknown gRPC status).
+		{"HTTP 429 fallback to rate_limit_error", "UNKNOWN", http.StatusTooManyRequests, "rate_limit_error"},
+		{"HTTP 503 fallback to overloaded_error", "UNKNOWN", http.StatusServiceUnavailable, "overloaded_error"},
+		{"HTTP 401 fallback to authentication_error", "UNKNOWN", http.StatusUnauthorized, "authentication_error"},
+		{"HTTP 403 fallback to permission_error", "UNKNOWN", http.StatusForbidden, "permission_error"},
+		{"HTTP 404 fallback to not_found_error", "UNKNOWN", http.StatusNotFound, "not_found_error"},
+
+		// Default: returns raw status when neither match.
+		{"unknown status and code returns raw status", "INTERNAL", http.StatusInternalServerError, "INTERNAL"},
+		{"empty status with unmatched code returns empty", "", 0, ""},
+		{"custom status returned as-is", "CUSTOM_ERROR", 418, "CUSTOM_ERROR"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := geminiStatusToErrorType(tt.status, tt.statusCode)
+			if got != tt.want {
+				t.Errorf("geminiStatusToErrorType(%q, %d) = %q, want %q", tt.status, tt.statusCode, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestGeminiStream_ContextCancellation(t *testing.T) {
 	ready := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
