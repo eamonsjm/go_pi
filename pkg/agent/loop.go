@@ -602,6 +602,9 @@ func (a *AgentLoop) executeTool(ctx context.Context, tc ai.ContentBlock) ai.Mess
 				ToolResult: resultText,
 				ToolError:  true,
 			})
+			if hookErr != nil {
+				return ai.NewToolResultMessage(tc.ToolUseID, hookErr.Error(), true)
+			}
 			return ai.NewRichToolResultMessage(tc.ToolUseID, richErr.Blocks, true)
 		}
 
