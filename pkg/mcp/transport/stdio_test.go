@@ -61,8 +61,8 @@ func TestStdioClose(t *testing.T) {
 	timer := time.NewTimer(2 * time.Second)
 	defer timer.Stop()
 	select {
-	case _, ok := <-s.Receive():
-		_ = ok // May receive buffered messages; drain.
+	case <-s.Receive():
+		// May receive buffered messages before close; drain.
 	case <-timer.C:
 		t.Fatal("channel not closed after Close")
 	}

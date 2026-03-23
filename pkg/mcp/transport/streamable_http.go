@@ -257,7 +257,7 @@ func (t *StreamableHTTP) Close() error {
 	if err != nil {
 		return fmt.Errorf("session termination DELETE failed: %w", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	// 405 Method Not Allowed is valid (server disallows client-initiated termination).
 	if resp.StatusCode == http.StatusMethodNotAllowed {
