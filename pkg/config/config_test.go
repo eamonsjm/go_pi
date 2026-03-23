@@ -575,6 +575,66 @@ func TestMergeFromFileMCPServers(t *testing.T) {
 	}
 }
 
+func TestLoadConfigSetsServerOrigin(t *testing.T) {
+	globalDir := t.TempDir()
+	localDir := t.TempDir()
+
+	// Global config defines two servers.
+	globalData := []byte(`{
+		"mcpServers": {
+			"global-only": {"command": "global-cmd"},
+			"overridden": {"command": "global-override-cmd"}
+		}
+	}`)
+	if err := os.WriteFile(filepath.Join(globalDir, "settings.json"), globalData, 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	// Project config overrides one and adds one.
+	localFile := filepath.Join(localDir, "local.json")
+	localData := []byte(`{
+		"mcpServers": {
+			"overridden": {"command": "project-override-cmd"},
+			"project-only": {"url": "https://project.example.com/mcp"}
+		}
+	}`)
+	if err := os.WriteFile(localFile, localData, 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	cfg, err := LoadConfig(WithConfigDir(globalDir), WithLocalConfigPath(localFile))
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+
+	// global-only should have Origin "global".
+	if cfg.MCPServers["global-only"] == nil {
+		t.Fatal("global-only server missing")
+	}
+	if cfg.MCPServers["global-only"].Origin != "global" {
+		t.Errorf("global-only Origin = %q, want %q", cfg.MCPServers["global-only"].Origin, "global")
+	}
+
+	// overridden should have Origin "project" (project-local replaced it).
+	if cfg.MCPServers["overridden"] == nil {
+		t.Fatal("overridden server missing")
+	}
+	if cfg.MCPServers["overridden"].Origin != "project" {
+		t.Errorf("overridden Origin = %q, want %q", cfg.MCPServers["overridden"].Origin, "project")
+	}
+	if cfg.MCPServers["overridden"].Command != "project-override-cmd" {
+		t.Errorf("overridden Command = %q, want %q", cfg.MCPServers["overridden"].Command, "project-override-cmd")
+	}
+
+	// project-only should have Origin "project".
+	if cfg.MCPServers["project-only"] == nil {
+		t.Fatal("project-only server missing")
+	}
+	if cfg.MCPServers["project-only"].Origin != "project" {
+		t.Errorf("project-only Origin = %q, want %q", cfg.MCPServers["project-only"].Origin, "project")
+	}
+}
+
 func TestMergeFromFileAllowProjectEnvVars(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "settings.json")

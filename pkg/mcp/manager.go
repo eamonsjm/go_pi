@@ -94,8 +94,13 @@ func (m *MCPManager) StartAll(ctx context.Context, appCfg *config.Config) error 
 		if serverCfg == nil {
 			continue
 		}
-		// Expand env vars. Project-level servers use the allowlist.
-		expanded := expandServerConfig(serverCfg, nil) // TODO: distinguish project vs global origin
+		// Project-level servers use the env var allowlist; global servers
+		// get unrestricted interpolation (nil allowlist).
+		var envAllowlist map[string]bool
+		if serverCfg.Origin == "project" {
+			envAllowlist = allowlist
+		}
+		expanded := expandServerConfig(serverCfg, envAllowlist)
 		if err := m.startServer(ctx, name, expanded); err != nil {
 			log.Printf("mcp: failed to start server %q: %v", name, err)
 			continue

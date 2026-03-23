@@ -32,6 +32,10 @@ type MCPServerConfig struct {
 
 	// Instruction handling: "use" (default) or "ignore"
 	Instructions string `json:"instructions,omitempty"`
+
+	// Origin indicates where this config was loaded from ("global" or
+	// "project"). Not serialized — set at runtime by LoadConfig.
+	Origin string `json:"-"`
 }
 
 // MCPPermissionConfig controls per-server tool permission overrides.
@@ -172,6 +176,13 @@ func LoadConfig(opts ...LoadConfigOption) (*Config, error) {
 		return nil, fmt.Errorf("global config: %w", err)
 	}
 
+	// Mark all servers loaded so far as global-origin.
+	for _, srv := range cfg.MCPServers {
+		if srv != nil {
+			srv.Origin = "global"
+		}
+	}
+
 	// Project-local config.
 	localPath := filepath.Join(".gi", "settings.json")
 	if o.localConfigPath != "" {
@@ -179,6 +190,14 @@ func LoadConfig(opts ...LoadConfigOption) (*Config, error) {
 	}
 	if err := mergeFromFile(cfg, localPath); err != nil {
 		return nil, fmt.Errorf("local config: %w", err)
+	}
+
+	// Servers added or replaced by the project-local config have Origin == ""
+	// (freshly unmarshaled). Mark them as project-origin.
+	for _, srv := range cfg.MCPServers {
+		if srv != nil && srv.Origin == "" {
+			srv.Origin = "project"
+		}
 	}
 
 	return cfg, nil

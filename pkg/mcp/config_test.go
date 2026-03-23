@@ -179,6 +179,53 @@ func TestApprovalCache(t *testing.T) {
 	}
 }
 
+func TestExpandServerConfigRespectsOrigin(t *testing.T) {
+	t.Setenv("ALLOWED_VAR", "allowed-value")
+	t.Setenv("BLOCKED_VAR", "blocked-value")
+
+	allowlist := map[string]bool{"ALLOWED_VAR": true}
+
+	// Project-origin server: only allowlisted vars expand.
+	projectCfg := &config.MCPServerConfig{
+		Origin:  "project",
+		Command: "${ALLOWED_VAR}",
+		Args:    []string{"--secret=${BLOCKED_VAR}"},
+	}
+
+	var envAllowlist map[string]bool
+	if projectCfg.Origin == "project" {
+		envAllowlist = allowlist
+	}
+	expanded := expandServerConfig(projectCfg, envAllowlist)
+
+	if expanded.Command != "allowed-value" {
+		t.Errorf("project: allowed var not expanded: Command = %q, want %q", expanded.Command, "allowed-value")
+	}
+	if expanded.Args[0] != "--secret=" {
+		t.Errorf("project: blocked var should expand to empty: Args[0] = %q, want %q", expanded.Args[0], "--secret=")
+	}
+
+	// Global-origin server: all vars expand (nil allowlist).
+	globalCfg := &config.MCPServerConfig{
+		Origin:  "global",
+		Command: "${ALLOWED_VAR}",
+		Args:    []string{"--secret=${BLOCKED_VAR}"},
+	}
+
+	envAllowlist = nil
+	if globalCfg.Origin == "project" {
+		envAllowlist = allowlist
+	}
+	expanded = expandServerConfig(globalCfg, envAllowlist)
+
+	if expanded.Command != "allowed-value" {
+		t.Errorf("global: Command = %q, want %q", expanded.Command, "allowed-value")
+	}
+	if expanded.Args[0] != "--secret=blocked-value" {
+		t.Errorf("global: blocked var should expand freely: Args[0] = %q, want %q", expanded.Args[0], "--secret=blocked-value")
+	}
+}
+
 func TestServerKey(t *testing.T) {
 	// HTTP server uses host:port as key (path/query stripped).
 	httpCfg := &config.MCPServerConfig{URL: "https://example.com/mcp"}
