@@ -184,3 +184,140 @@ func TestRegistry_NonRichToolNotAssertable(t *testing.T) {
 		t.Error("ReadTool should not implement RichTool")
 	}
 }
+
+func TestRegistry_Unregister(t *testing.T) {
+	r := NewRegistry()
+	r.Register(&ReadTool{})
+	r.Register(&WriteTool{})
+
+	r.Unregister("read")
+
+	if _, ok := r.Get("read"); ok {
+		t.Error("expected 'read' to be removed")
+	}
+	if _, ok := r.Get("write"); !ok {
+		t.Error("expected 'write' to still exist")
+	}
+}
+
+func TestRegistry_UnregisterMissing(t *testing.T) {
+	r := NewRegistry()
+	// Should not panic.
+	r.Unregister("nonexistent")
+}
+
+func TestRegistry_ReplaceByPrefix(t *testing.T) {
+	r := NewRegistry()
+	r.Register(&ReadTool{})
+	r.Register(&testRichTool{name: "mcp__fs__read"})
+	r.Register(&testRichTool{name: "mcp__fs__write"})
+	r.Register(&testRichTool{name: "mcp__db__query"})
+
+	// Replace all mcp__fs__ tools.
+	r.ReplaceByPrefix("mcp__fs__", []Tool{
+		&testRichTool{name: "mcp__fs__list"},
+	})
+
+	// mcp__fs__read and mcp__fs__write should be gone.
+	if _, ok := r.Get("mcp__fs__read"); ok {
+		t.Error("expected mcp__fs__read to be removed")
+	}
+	if _, ok := r.Get("mcp__fs__write"); ok {
+		t.Error("expected mcp__fs__write to be removed")
+	}
+	// mcp__fs__list should be added.
+	if _, ok := r.Get("mcp__fs__list"); !ok {
+		t.Error("expected mcp__fs__list to be registered")
+	}
+	// built-in 'read' should be untouched.
+	if _, ok := r.Get("read"); !ok {
+		t.Error("expected built-in 'read' to remain")
+	}
+	// mcp__db__query should be untouched.
+	if _, ok := r.Get("mcp__db__query"); !ok {
+		t.Error("expected mcp__db__query to remain")
+	}
+}
+
+func TestRegistry_ReplaceByPrefixEmpty(t *testing.T) {
+	r := NewRegistry()
+	r.Register(&testRichTool{name: "mcp__fs__read"})
+
+	// Replace with empty set = remove all.
+	r.ReplaceByPrefix("mcp__fs__", nil)
+
+	if _, ok := r.Get("mcp__fs__read"); ok {
+		t.Error("expected mcp__fs__read to be removed")
+	}
+	all := r.All()
+	if len(all) != 0 {
+		t.Errorf("expected 0 tools, got %d", len(all))
+	}
+}
+
+func TestRegistry_AllWithPrefix(t *testing.T) {
+	r := NewRegistry()
+	r.Register(&ReadTool{})
+	r.Register(&testRichTool{name: "mcp__fs__read"})
+	r.Register(&testRichTool{name: "mcp__fs__write"})
+	r.Register(&testRichTool{name: "mcp__db__query"})
+
+	fsTools := r.AllWithPrefix("mcp__fs__")
+	if len(fsTools) != 2 {
+		t.Fatalf("expected 2 tools, got %d", len(fsTools))
+	}
+
+	dbTools := r.AllWithPrefix("mcp__db__")
+	if len(dbTools) != 1 {
+		t.Fatalf("expected 1 tool, got %d", len(dbTools))
+	}
+
+	noTools := r.AllWithPrefix("mcp__nonexist__")
+	if len(noTools) != 0 {
+		t.Fatalf("expected 0 tools, got %d", len(noTools))
+	}
+}
+
+func TestRichToolError(t *testing.T) {
+	err := &RichToolError{
+		Blocks: []ai.ContentBlock{
+			{Type: ai.ContentTypeText, Text: "error: "},
+			{Type: ai.ContentTypeImage, MediaType: "image/png", ImageData: "data"},
+			{Type: ai.ContentTypeText, Text: "file not found"},
+		},
+	}
+	// Error() should only concatenate text blocks.
+	if err.Error() != "error: file not found" {
+		t.Errorf("Error() = %q, want %q", err.Error(), "error: file not found")
+	}
+}
+
+func TestRichToolErrorEmpty(t *testing.T) {
+	err := &RichToolError{}
+	if err.Error() != "" {
+		t.Errorf("Error() = %q, want empty", err.Error())
+	}
+}
+
+func TestRegistry_ConcurrentReplaceAndRead(t *testing.T) {
+	r := NewRegistry()
+	r.Register(&ReadTool{})
+	r.Register(&testRichTool{name: "mcp__fs__read"})
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 500; i++ {
+			r.ReplaceByPrefix("mcp__fs__", []Tool{
+				&testRichTool{name: "mcp__fs__v2"},
+			})
+		}
+	}()
+
+	for i := 0; i < 500; i++ {
+		r.AllWithPrefix("mcp__fs__")
+		r.Get("read")
+		r.All()
+	}
+	<-done
+}

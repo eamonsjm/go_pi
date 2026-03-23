@@ -585,6 +585,26 @@ func (a *AgentLoop) executeTool(ctx context.Context, tc ai.ContentBlock) ai.Mess
 	// Check if tool supports rich (multi-block) results.
 	if richTool, ok := tool.(tools.RichTool); ok {
 		blocks, err := safeExecuteRich(ctx, richTool, params)
+
+		// Check for RichToolError — tool-level error with preserved content blocks.
+		// This is distinct from transport errors (which flatten to plain text).
+		var richErr *tools.RichToolError
+		if errors.As(err, &richErr) {
+			resultText := richErr.Error()
+			resultText, hookErr := hooks.After(ctx, tc.ToolName, params, resultText, nil)
+			if hookErr != nil {
+				resultText = hookErr.Error()
+			}
+			a.emit(ctx, AgentEvent{
+				Type:       EventToolExecEnd,
+				ToolCallID: tc.ToolUseID,
+				ToolName:   tc.ToolName,
+				ToolResult: resultText,
+				ToolError:  true,
+			})
+			return ai.NewRichToolResultMessage(tc.ToolUseID, richErr.Blocks, true)
+		}
+
 		isError := err != nil
 		var resultText string
 		if isError {

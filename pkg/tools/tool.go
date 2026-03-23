@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/ejm/go_pi/pkg/ai"
@@ -29,6 +30,25 @@ type RichTool interface {
 	ExecuteRich(ctx context.Context, params map[string]any) ([]ai.ContentBlock, error)
 }
 
+// RichToolError is returned by RichTool.ExecuteRich when the tool executed
+// successfully at transport level but the result represents an error the
+// LLM should reason about (e.g., MCP isError=true). The Blocks contain
+// the error content that should be presented to the LLM as a tool result
+// with isError=true, NOT flattened to a Go error string.
+type RichToolError struct {
+	Blocks []ai.ContentBlock
+}
+
+func (e *RichToolError) Error() string {
+	var b strings.Builder
+	for _, block := range e.Blocks {
+		if block.Type == ai.ContentTypeText {
+			b.WriteString(block.Text)
+		}
+	}
+	return b.String()
+}
+
 // Registry holds a collection of tools indexed by name.
 // All methods are safe for concurrent use.
 type Registry struct {
@@ -49,6 +69,42 @@ func (r *Registry) Register(t Tool) {
 	r.mu.Lock()
 	r.tools[t.Name()] = t
 	r.mu.Unlock()
+}
+
+// Unregister removes a tool from the registry by name.
+func (r *Registry) Unregister(name string) {
+	r.mu.Lock()
+	delete(r.tools, name)
+	r.mu.Unlock()
+}
+
+// ReplaceByPrefix atomically removes all tools with the given prefix
+// and registers the new set. Used by MCP when re-discovering tools
+// after notifications/tools/list_changed.
+func (r *Registry) ReplaceByPrefix(prefix string, newTools []Tool) {
+	r.mu.Lock()
+	for name := range r.tools {
+		if strings.HasPrefix(name, prefix) {
+			delete(r.tools, name)
+		}
+	}
+	for _, t := range newTools {
+		r.tools[t.Name()] = t
+	}
+	r.mu.Unlock()
+}
+
+// AllWithPrefix returns all tools whose name starts with the given prefix.
+func (r *Registry) AllWithPrefix(prefix string) []Tool {
+	r.mu.RLock()
+	var result []Tool
+	for name, t := range r.tools {
+		if strings.HasPrefix(name, prefix) {
+			result = append(result, t)
+		}
+	}
+	r.mu.RUnlock()
+	return result
 }
 
 // Get returns the tool with the given name, or false if not found.
