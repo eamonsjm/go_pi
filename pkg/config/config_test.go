@@ -511,3 +511,88 @@ func TestMergeFromFileNullValues(t *testing.T) {
 		t.Errorf("null should not override max_tokens, got %d", cfg.MaxTokens)
 	}
 }
+
+func TestMergeFromFileMCPServers(t *testing.T) {
+	dir := t.TempDir()
+
+	// Global config with two servers.
+	globalPath := filepath.Join(dir, "global.json")
+	globalData := []byte(`{
+		"mcpServers": {
+			"filesystem": {"command": "npx", "args": ["-y", "fs-server"]},
+			"db": {"command": "mcp-db", "args": ["--port=5432"]}
+		}
+	}`)
+	if err := os.WriteFile(globalPath, globalData, 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	cfg := mustDefaultConfig(t)
+	if err := mergeFromFile(cfg, globalPath); err != nil {
+		t.Fatalf("mergeFromFile global: %v", err)
+	}
+
+	if len(cfg.MCPServers) != 2 {
+		t.Fatalf("expected 2 servers, got %d", len(cfg.MCPServers))
+	}
+	if cfg.MCPServers["filesystem"].Command != "npx" {
+		t.Errorf("filesystem command = %q, want %q", cfg.MCPServers["filesystem"].Command, "npx")
+	}
+
+	// Project config: override db, null-disable filesystem.
+	projectPath := filepath.Join(dir, "project.json")
+	projectData := []byte(`{
+		"mcpServers": {
+			"filesystem": null,
+			"db": {"command": "mcp-db-v2", "args": ["--port=5433"]},
+			"remote": {"url": "https://mcp.example.com/mcp"}
+		}
+	}`)
+	if err := os.WriteFile(projectPath, projectData, 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	if err := mergeFromFile(cfg, projectPath); err != nil {
+		t.Fatalf("mergeFromFile project: %v", err)
+	}
+
+	// filesystem should be removed (null-disabled).
+	if _, ok := cfg.MCPServers["filesystem"]; ok {
+		t.Error("filesystem should be null-disabled by project config")
+	}
+
+	// db should be overridden.
+	if cfg.MCPServers["db"].Command != "mcp-db-v2" {
+		t.Errorf("db command = %q, want %q", cfg.MCPServers["db"].Command, "mcp-db-v2")
+	}
+
+	// remote should be added.
+	if cfg.MCPServers["remote"] == nil {
+		t.Fatal("remote server not added")
+	}
+	if cfg.MCPServers["remote"].URL != "https://mcp.example.com/mcp" {
+		t.Errorf("remote URL = %q, want %q", cfg.MCPServers["remote"].URL, "https://mcp.example.com/mcp")
+	}
+}
+
+func TestMergeFromFileAllowProjectEnvVars(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "settings.json")
+
+	data := []byte(`{"allowProjectEnvVars": ["DB_NAME", "API_KEY"]}`)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	cfg := mustDefaultConfig(t)
+	if err := mergeFromFile(cfg, path); err != nil {
+		t.Fatalf("mergeFromFile: %v", err)
+	}
+
+	if len(cfg.AllowProjectEnvVars) != 2 {
+		t.Fatalf("expected 2 allowed vars, got %d", len(cfg.AllowProjectEnvVars))
+	}
+	if cfg.AllowProjectEnvVars[0] != "DB_NAME" || cfg.AllowProjectEnvVars[1] != "API_KEY" {
+		t.Errorf("AllowProjectEnvVars = %v, want [DB_NAME, API_KEY]", cfg.AllowProjectEnvVars)
+	}
+}

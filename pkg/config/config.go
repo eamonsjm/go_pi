@@ -16,6 +16,37 @@ type RTKConfig struct {
 	ExportPath        string            `json:"export_path"`
 }
 
+// MCPServerConfig describes a single MCP server connection.
+type MCPServerConfig struct {
+	Command string            `json:"command,omitempty"`
+	Args    []string          `json:"args,omitempty"`
+	Env     map[string]string `json:"env,omitempty"`
+	URL     string            `json:"url,omitempty"`     // Streamable HTTP endpoint
+	Headers map[string]string `json:"headers,omitempty"` // for Streamable HTTP auth
+
+	// Permission overrides
+	Permissions *MCPPermissionConfig `json:"permissions,omitempty"`
+
+	// Sampling limits
+	Sampling *SamplingConfig `json:"sampling,omitempty"`
+
+	// Instruction handling: "use" (default) or "ignore"
+	Instructions string `json:"instructions,omitempty"`
+}
+
+// MCPPermissionConfig controls per-server tool permission overrides.
+type MCPPermissionConfig struct {
+	AutoApprove []string `json:"autoApprove,omitempty"` // tool names auto-approved
+	Deny        []string `json:"deny,omitempty"`        // tool names always denied
+}
+
+// SamplingConfig controls MCP sampling (LLM invocation by servers).
+type SamplingConfig struct {
+	Enabled         bool `json:"enabled"`
+	MaxTokens       int  `json:"maxTokens"`
+	RequireApproval bool `json:"requireApproval,omitempty"` // default: true
+}
+
 // Config holds all gi settings.
 type Config struct {
 	// Provider settings
@@ -38,6 +69,14 @@ type Config struct {
 
 	// RTK (Rust Token Killer) compression settings
 	RTK *RTKConfig `json:"rtk"`
+
+	// MCP server definitions. Keys are server names.
+	MCPServers map[string]*MCPServerConfig `json:"mcpServers,omitempty"`
+
+	// AllowProjectEnvVars lists environment variable names that project-level
+	// MCP configs may interpolate. Global config has full interpolation access;
+	// project-level is restricted to this allowlist for security.
+	AllowProjectEnvVars []string `json:"allowProjectEnvVars,omitempty"`
 }
 
 // DefaultConfig returns a Config populated with sensible defaults.
@@ -247,6 +286,32 @@ func mergeFromFile(cfg *Config, path string) error {
 		var rtkCfg RTKConfig
 		if json.Unmarshal(v, &rtkCfg) == nil {
 			cfg.RTK = &rtkCfg
+		}
+	}
+
+	// MCP servers
+	if v, ok := raw["mcpServers"]; ok {
+		var servers map[string]*MCPServerConfig
+		if json.Unmarshal(v, &servers) == nil && servers != nil {
+			if cfg.MCPServers == nil {
+				cfg.MCPServers = make(map[string]*MCPServerConfig)
+			}
+			for name, srv := range servers {
+				if srv == nil {
+					// null value disables a server from a higher tier
+					delete(cfg.MCPServers, name)
+				} else {
+					cfg.MCPServers[name] = srv
+				}
+			}
+		}
+	}
+
+	// AllowProjectEnvVars
+	if v, ok := raw["allowProjectEnvVars"]; ok {
+		var vars []string
+		if json.Unmarshal(v, &vars) == nil {
+			cfg.AllowProjectEnvVars = vars
 		}
 	}
 
