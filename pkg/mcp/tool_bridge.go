@@ -146,7 +146,19 @@ func (t *MCPTool) Execute(ctx context.Context, params map[string]any) (string, e
 	}
 	var b strings.Builder
 	for _, block := range blocks {
-		b.WriteString(block.Text)
+		switch block.Type {
+		case ai.ContentTypeText:
+			b.WriteString(block.Text)
+		case ai.ContentTypeImage:
+			fmt.Fprintf(&b, "[image: %s]", block.MediaType)
+		default:
+			// Non-text block with no Text field; emit placeholder.
+			if block.Text == "" {
+				fmt.Fprintf(&b, "[%s content]", block.Type)
+			} else {
+				b.WriteString(block.Text)
+			}
+		}
 	}
 	return b.String(), nil
 }

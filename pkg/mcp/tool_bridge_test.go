@@ -169,6 +169,29 @@ func TestMCPToolExecuteFlatten(t *testing.T) {
 	}
 }
 
+func TestMCPToolExecuteFlattenMixedContent(t *testing.T) {
+	server := &mockToolCaller{
+		name: "test",
+		result: &MCPToolResult{
+			Content: []MCPContentItem{
+				{Type: "text", Text: "Here is the screenshot: "},
+				{Type: "image", MimeType: "image/png", Data: "iVBOR..."},
+				{Type: "text", Text: " and done"},
+			},
+		},
+	}
+	tool := &MCPTool{server: server, originalName: "mixed"}
+
+	result, err := tool.Execute(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := "Here is the screenshot: [image: image/png] and done"
+	if result != want {
+		t.Errorf("Execute() = %q, want %q", result, want)
+	}
+}
+
 func TestConvertResultAudio(t *testing.T) {
 	tool := &MCPTool{}
 	blocks := tool.convertResult(&MCPToolResult{
