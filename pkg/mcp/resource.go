@@ -12,6 +12,7 @@ import (
 
 	"github.com/ejm/go_pi/pkg/ai"
 	"github.com/ejm/go_pi/pkg/tools"
+	"golang.org/x/sync/errgroup"
 )
 
 // Content size limits for resource reads.
@@ -577,11 +578,18 @@ func (sm *subscriptionManager) close() {
 	sm.subs = nil
 	sm.mu.Unlock()
 
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	g, gCtx := errgroup.WithContext(ctx)
+	g.SetLimit(10)
 	for _, uri := range uris {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		if err := sm.client.UnsubscribeResource(ctx, uri); err != nil {
-			log.Printf("mcp: failed to unsubscribe from resource %q on close: %v", uri, err)
-		}
-		cancel()
+		g.Go(func() error {
+			if err := sm.client.UnsubscribeResource(gCtx, uri); err != nil {
+				log.Printf("mcp: failed to unsubscribe from resource %q on close: %v", uri, err)
+			}
+			return nil // best-effort; don't abort other unsubscribes
+		})
 	}
+	g.Wait()
 }
