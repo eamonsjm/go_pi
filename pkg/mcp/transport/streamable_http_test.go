@@ -1,0 +1,253 @@
+package transport
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestStreamableHTTPJSONResponse(t *testing.T) {
+	resp := `{"jsonrpc":"2.0","id":1,"result":{"ok":true}}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Mcp-Session-Id", "test-session-123")
+		fmt.Fprint(w, resp)
+	}))
+	defer server.Close()
+
+	tr := NewStreamableHTTP(server.URL, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	msg := json.RawMessage(`{"jsonrpc":"2.0","id":1,"method":"test"}`)
+	if err := tr.Send(ctx, msg); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	select {
+	case got := <-tr.Receive():
+		if string(got) != resp {
+			t.Errorf("got %s, want %s", got, resp)
+		}
+	case <-ctx.Done():
+		t.Fatal("timeout waiting for response")
+	}
+
+	// Verify session ID was stored.
+	tr.mu.RLock()
+	sid := tr.sessionID
+	tr.mu.RUnlock()
+	if sid != "test-session-123" {
+		t.Errorf("sessionID = %q, want %q", sid, "test-session-123")
+	}
+}
+
+func TestStreamableHTTPSSEResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Fatal("expected http.Flusher")
+		}
+
+		fmt.Fprint(w, "id: evt-1\n")
+		fmt.Fprint(w, "data: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"status\":\"ok\"}}\n")
+		fmt.Fprint(w, "\n")
+		flusher.Flush()
+
+		fmt.Fprint(w, "data: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/progress\"}\n")
+		fmt.Fprint(w, "\n")
+		flusher.Flush()
+	}))
+	defer server.Close()
+
+	tr := NewStreamableHTTP(server.URL, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	msg := json.RawMessage(`{"jsonrpc":"2.0","id":1,"method":"test"}`)
+	if err := tr.Send(ctx, msg); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	// Should receive two messages from the SSE stream.
+	for i := 0; i < 2; i++ {
+		select {
+		case got := <-tr.Receive():
+			if !json.Valid(got) {
+				t.Errorf("message %d: invalid JSON: %s", i, got)
+			}
+		case <-ctx.Done():
+			t.Fatalf("timeout waiting for message %d", i)
+		}
+	}
+
+	// Verify event ID was tracked.
+	tr.lastEventMu.Lock()
+	lastID := tr.lastEventIDs["post"]
+	tr.lastEventMu.Unlock()
+	if lastID != "evt-1" {
+		t.Errorf("lastEventID = %q, want %q", lastID, "evt-1")
+	}
+}
+
+func TestStreamableHTTPBatchRejected(t *testing.T) {
+	tr := NewStreamableHTTP("http://unused", nil)
+	err := tr.Send(context.Background(), json.RawMessage(`[{"jsonrpc":"2.0"}]`))
+	if err == nil {
+		t.Error("expected error for batch request")
+	}
+	if !strings.Contains(err.Error(), "batch") {
+		t.Errorf("error should mention batch: %v", err)
+	}
+}
+
+func TestStreamableHTTPHeaders(t *testing.T) {
+	var gotHeaders http.Header
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotHeaders = r.Header.Clone()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":{}}`)
+	}))
+	defer server.Close()
+
+	tr := NewStreamableHTTP(server.URL, map[string]string{
+		"Authorization": "Bearer test-token",
+	})
+	tr.mu.Lock()
+	tr.sessionID = "sid-abc"
+	tr.negotiatedVersion = "2025-11-25"
+	tr.mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := tr.Send(ctx, json.RawMessage(`{"jsonrpc":"2.0","id":1,"method":"test"}`)); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	// Drain response.
+	<-tr.Receive()
+
+	if got := gotHeaders.Get("Authorization"); got != "Bearer test-token" {
+		t.Errorf("Authorization = %q, want %q", got, "Bearer test-token")
+	}
+	if got := gotHeaders.Get("Mcp-Session-Id"); got != "sid-abc" {
+		t.Errorf("Mcp-Session-Id = %q, want %q", got, "sid-abc")
+	}
+	if got := gotHeaders.Get("MCP-Protocol-Version"); got != "2025-11-25" {
+		t.Errorf("MCP-Protocol-Version = %q, want %q", got, "2025-11-25")
+	}
+}
+
+func TestStreamableHTTPCloseWithSession(t *testing.T) {
+	var gotMethod string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	tr := NewStreamableHTTP(server.URL, nil)
+	tr.mu.Lock()
+	tr.sessionID = "sess-to-close"
+	tr.mu.Unlock()
+
+	if err := tr.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if gotMethod != "DELETE" {
+		t.Errorf("expected DELETE, got %s", gotMethod)
+	}
+}
+
+func TestStreamableHTTPCloseNoSession(t *testing.T) {
+	tr := NewStreamableHTTP("http://unused", nil)
+	// No session ID → Close should be a no-op (no HTTP call).
+	if err := tr.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+}
+
+func TestStreamableHTTPClose405Accepted(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}))
+	defer server.Close()
+
+	tr := NewStreamableHTTP(server.URL, nil)
+	tr.mu.Lock()
+	tr.sessionID = "sess-405"
+	tr.mu.Unlock()
+
+	// 405 is acceptable (server disallows client-initiated termination).
+	if err := tr.Close(); err != nil {
+		t.Fatalf("Close: unexpected error: %v", err)
+	}
+}
+
+func TestStreamableHTTPInvalidSessionIDRejected(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Mcp-Session-Id", "bad session\nid")
+		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":{}}`)
+	}))
+	defer server.Close()
+
+	tr := NewStreamableHTTP(server.URL, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := tr.Send(ctx, json.RawMessage(`{"jsonrpc":"2.0","id":1,"method":"test"}`)); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	<-tr.Receive()
+
+	// Session ID with spaces/newlines should be rejected.
+	tr.mu.RLock()
+	sid := tr.sessionID
+	tr.mu.RUnlock()
+	if sid != "" {
+		t.Errorf("invalid session ID should not have been stored, got %q", sid)
+	}
+}
+
+func TestStreamableHTTPOpenServerStream(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":{}}`)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher := w.(http.Flusher)
+		fmt.Fprint(w, "data: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/test\"}\n\n")
+		flusher.Flush()
+	}))
+	defer server.Close()
+
+	tr := NewStreamableHTTP(server.URL, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := tr.OpenServerStream(ctx); err != nil {
+		t.Fatalf("OpenServerStream: %v", err)
+	}
+
+	select {
+	case got := <-tr.Receive():
+		if !json.Valid(got) {
+			t.Errorf("invalid JSON from server stream: %s", got)
+		}
+	case <-ctx.Done():
+		t.Fatal("timeout waiting for server-initiated message")
+	}
+}
