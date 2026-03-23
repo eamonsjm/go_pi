@@ -258,3 +258,32 @@ func (r *Registry) Len() int {
 	r.mu.RUnlock()
 	return n
 }
+
+// ReplaceByPrefix atomically removes all skills with the given name prefix
+// and registers the new set. Used by MCP when re-discovering prompts
+// after notifications/prompts/list_changed.
+func (r *Registry) ReplaceByPrefix(prefix string, newSkills []*Skill) {
+	r.mu.Lock()
+	for name := range r.skills {
+		if strings.HasPrefix(name, prefix) {
+			delete(r.skills, name)
+		}
+	}
+	for _, s := range newSkills {
+		r.skills[s.Name] = s
+	}
+	r.mu.Unlock()
+}
+
+// AllWithPrefix returns all skills whose name starts with the given prefix.
+func (r *Registry) AllWithPrefix(prefix string) []*Skill {
+	r.mu.RLock()
+	var result []*Skill
+	for name, s := range r.skills {
+		if strings.HasPrefix(name, prefix) {
+			result = append(result, s)
+		}
+	}
+	r.mu.RUnlock()
+	return result
+}

@@ -12,6 +12,7 @@ import (
 
 	"github.com/ejm/go_pi/pkg/config"
 	"github.com/ejm/go_pi/pkg/mcp/transport"
+	"github.com/ejm/go_pi/pkg/skill"
 	"github.com/ejm/go_pi/pkg/tools"
 )
 
@@ -30,6 +31,7 @@ const maxPendingMessages = 10
 // Lock ordering (innermost last):
 //  1. MCPManager.mu
 //  2. tools.Registry.mu (via ReplaceByPrefix etc.)
+//  3. skill.Registry.mu (via ReplaceByPrefix etc.)
 //
 // Never acquire MCPManager.mu while holding a registry lock.
 type MCPManager struct {
@@ -38,7 +40,8 @@ type MCPManager struct {
 	servers    map[string]*MCPServer
 	serverList []string // ordered server names (config order)
 
-	toolRegistry *tools.Registry
+	toolRegistry  *tools.Registry
+	skillRegistry *skill.Registry
 
 	// System messages queued for the agent loop.
 	pendingSystemMessages []string
@@ -51,28 +54,38 @@ type MCPManager struct {
 	// Version info for initialize handshake.
 	clientName    string
 	clientVersion string
+
+	// Sampling support.
+	samplingHandler SamplingHandler
+	confirmSampling ConfirmSamplingFunc
 }
 
 // MCPManagerConfig holds the parameters for creating an MCPManager.
 type MCPManagerConfig struct {
-	ToolRegistry  *tools.Registry
-	WorkingDir    string
-	ConfigDir     string // ~/.gi
-	ProjectPath   string // project root for approval cache keying
-	ClientName    string // e.g., "gi"
-	ClientVersion string
+	ToolRegistry    *tools.Registry
+	SkillRegistry   *skill.Registry
+	WorkingDir      string
+	ConfigDir       string // ~/.gi
+	ProjectPath     string // project root for approval cache keying
+	ClientName      string // e.g., "gi"
+	ClientVersion   string
+	SamplingHandler SamplingHandler
+	ConfirmSampling ConfirmSamplingFunc
 }
 
 // NewMCPManager creates a new MCPManager.
 func NewMCPManager(cfg MCPManagerConfig) *MCPManager {
 	return &MCPManager{
-		servers:       make(map[string]*MCPServer),
-		toolRegistry:  cfg.ToolRegistry,
-		workingDir:    cfg.WorkingDir,
-		configDir:     cfg.ConfigDir,
-		projectPath:   cfg.ProjectPath,
-		clientName:    cfg.ClientName,
-		clientVersion: cfg.ClientVersion,
+		servers:         make(map[string]*MCPServer),
+		toolRegistry:    cfg.ToolRegistry,
+		skillRegistry:   cfg.SkillRegistry,
+		workingDir:      cfg.WorkingDir,
+		configDir:       cfg.ConfigDir,
+		projectPath:     cfg.ProjectPath,
+		clientName:      cfg.ClientName,
+		clientVersion:   cfg.ClientVersion,
+		samplingHandler: cfg.SamplingHandler,
+		confirmSampling: cfg.ConfirmSampling,
 	}
 }
 
@@ -159,6 +172,12 @@ func (m *MCPManager) startServer(ctx context.Context, name string, cfg *config.M
 			log.Printf("mcp: failed to discover resources for %q: %v", name, err)
 			// Non-fatal: resources may appear later via list_changed.
 		}
+	}
+
+	// Discover and register prompts (if server supports them).
+	if err := server.discoverAndRegisterPrompts(ctx); err != nil {
+		log.Printf("mcp: failed to discover prompts for %q: %v", name, err)
+		// Non-fatal: prompts may appear later via list_changed.
 	}
 
 	m.mu.Lock()
@@ -298,7 +317,8 @@ type MCPServer struct {
 }
 
 // newMCPServer creates a new MCPServer. The notification handler is wired up
-// to dispatch to the manager's handleListChanged.
+// to dispatch to the manager's handleListChanged, and the request handler
+// dispatches server-initiated requests (sampling, roots).
 func newMCPServer(name string, cfg *config.MCPServerConfig, t transport.Transport, mgr *MCPManager) *MCPServer {
 	s := &MCPServer{
 		name:      name,
@@ -306,7 +326,9 @@ func newMCPServer(name string, cfg *config.MCPServerConfig, t transport.Transpor
 		transport: t,
 		manager:   mgr,
 	}
-	s.client = NewMCPClient(t, s.handleNotification)
+	client := NewMCPClient(t, s.handleNotification)
+	client.onRequest = s.handleRequest
+	s.client = client
 	return s
 }
 
@@ -379,14 +401,29 @@ func (s *MCPServer) handleNotification(method string, params json.RawMessage) {
 	case "notifications/resources/updated":
 		s.handleResourcesUpdated(params)
 	case "notifications/prompts/list_changed":
-		// Phase 5: prompts
-		log.Printf("mcp: server %q: prompts/list_changed (not yet implemented)", s.name)
+		s.handlePromptsListChanged()
 	case "notifications/message":
 		s.handleLogMessage(params)
 	case "notifications/progress":
 		log.Printf("mcp: server %q: progress notification (deferred)", s.name)
 	default:
 		log.Printf("mcp: server %q: unknown notification %q", s.name, method)
+	}
+}
+
+// handleRequest dispatches server-initiated requests (method + id).
+func (s *MCPServer) handleRequest(method string, id json.RawMessage, params json.RawMessage) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	switch method {
+	case "sampling/createMessage":
+		s.handleSamplingRequest(ctx, id, params)
+	case "roots/list":
+		s.respondResult(ctx, id, s.manager.handleRootsList())
+	default:
+		s.respondError(ctx, id, ErrCodeMethodNotFound,
+			fmt.Sprintf("unsupported server request: %q", method))
 	}
 }
 
@@ -422,6 +459,34 @@ func (s *MCPServer) handleToolsListChanged() {
 		s.name, added, removed, len(newTools)))
 }
 
+// handlePromptsListChanged re-discovers prompts and updates the skill registry.
+func (s *MCPServer) handlePromptsListChanged() {
+	if s.manager.skillRegistry == nil {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	prefix := "mcp__" + s.name + "__"
+	oldSkills := s.manager.skillRegistry.AllWithPrefix(prefix)
+
+	newSkills, err := DiscoverPrompts(ctx, s.name, func(ctx context.Context, cursor string) (*PromptsListPage, error) {
+		return s.client.ListPrompts(ctx, cursor)
+	})
+	if err != nil {
+		log.Printf("mcp: failed to re-discover prompts for %q: %v", s.name, err)
+		return
+	}
+
+	s.manager.skillRegistry.ReplaceByPrefix(prefix, newSkills)
+
+	added, removed := diffSkillCount(oldSkills, newSkills)
+	s.manager.injectSystemMessage(fmt.Sprintf(
+		"[MCP server %q prompts updated — %d added, %d removed]",
+		s.name, added, removed))
+}
+
 // handleLogMessage forwards a server log notification to the Go logger.
 func (s *MCPServer) handleLogMessage(params json.RawMessage) {
 	var msg struct {
@@ -455,7 +520,26 @@ func (s *MCPServer) close() error {
 	prefix := "mcp__" + s.name + "__"
 	s.manager.toolRegistry.ReplaceByPrefix(prefix, nil)
 
+	// Remove prompts from skill registry.
+	if s.manager.skillRegistry != nil {
+		s.manager.skillRegistry.ReplaceByPrefix(prefix, nil)
+	}
+
 	return s.client.Close()
+}
+
+// GetAnnotations returns tool annotations for a given server+tool name.
+// Used by the permission hook to check readOnlyHint etc.
+func (m *MCPManager) GetAnnotations(serverName, toolName string) *ToolAnnotations {
+	fullName := buildMCPToolName(serverName, toolName)
+	t, ok := m.toolRegistry.Get(fullName)
+	if !ok {
+		return nil
+	}
+	if mcpTool, ok := t.(*MCPTool); ok {
+		return mcpTool.Annotations()
+	}
+	return nil
 }
 
 // --- Helpers ---

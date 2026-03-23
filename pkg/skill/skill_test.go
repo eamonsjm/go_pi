@@ -392,3 +392,74 @@ func TestSplitFrontmatter_EmptyBody(t *testing.T) {
 		t.Errorf("Body: got %q, want empty string", s.Body)
 	}
 }
+
+func TestRegistry_ReplaceByPrefix(t *testing.T) {
+	r := NewRegistry()
+	r.Register(&Skill{Name: "mcp__srv__a"})
+	r.Register(&Skill{Name: "mcp__srv__b"})
+	r.Register(&Skill{Name: "mcp__other__x"})
+	r.Register(&Skill{Name: "builtin"})
+
+	// Replace all "mcp__srv__" skills with new set.
+	r.ReplaceByPrefix("mcp__srv__", []*Skill{
+		{Name: "mcp__srv__c"},
+		{Name: "mcp__srv__d"},
+	})
+
+	// Old srv skills should be gone.
+	if _, ok := r.Get("mcp__srv__a"); ok {
+		t.Error("mcp__srv__a should be removed")
+	}
+	if _, ok := r.Get("mcp__srv__b"); ok {
+		t.Error("mcp__srv__b should be removed")
+	}
+	// New ones should exist.
+	if _, ok := r.Get("mcp__srv__c"); !ok {
+		t.Error("mcp__srv__c should exist")
+	}
+	if _, ok := r.Get("mcp__srv__d"); !ok {
+		t.Error("mcp__srv__d should exist")
+	}
+	// Other prefixes untouched.
+	if _, ok := r.Get("mcp__other__x"); !ok {
+		t.Error("mcp__other__x should still exist")
+	}
+	if _, ok := r.Get("builtin"); !ok {
+		t.Error("builtin should still exist")
+	}
+}
+
+func TestRegistry_ReplaceByPrefix_ClearAll(t *testing.T) {
+	r := NewRegistry()
+	r.Register(&Skill{Name: "mcp__srv__a"})
+	r.Register(&Skill{Name: "mcp__srv__b"})
+
+	r.ReplaceByPrefix("mcp__srv__", nil)
+
+	if r.Len() != 0 {
+		t.Errorf("Len = %d, want 0", r.Len())
+	}
+}
+
+func TestRegistry_AllWithPrefix(t *testing.T) {
+	r := NewRegistry()
+	r.Register(&Skill{Name: "mcp__srv__a"})
+	r.Register(&Skill{Name: "mcp__srv__b"})
+	r.Register(&Skill{Name: "mcp__other__x"})
+	r.Register(&Skill{Name: "builtin"})
+
+	result := r.AllWithPrefix("mcp__srv__")
+	if len(result) != 2 {
+		t.Errorf("len(AllWithPrefix) = %d, want 2", len(result))
+	}
+
+	result = r.AllWithPrefix("mcp__other__")
+	if len(result) != 1 {
+		t.Errorf("len(AllWithPrefix) = %d, want 1", len(result))
+	}
+
+	result = r.AllWithPrefix("nonexistent__")
+	if len(result) != 0 {
+		t.Errorf("len(AllWithPrefix) = %d, want 0", len(result))
+	}
+}

@@ -82,6 +82,11 @@ type pendingRequest struct {
 // with no id). The handler receives the method name and raw params.
 type NotificationHandler func(method string, params json.RawMessage)
 
+// RequestHandler is called when the server sends a request (a message with both
+// id and method). The handler receives the method name, request id, and raw params.
+// Used for server-initiated requests like sampling/createMessage and roots/list.
+type RequestHandler func(method string, id json.RawMessage, params json.RawMessage)
+
 // InitializeResult holds the parsed fields from the initialize response.
 type InitializeResult struct {
 	ProtocolVersion string                `json:"protocolVersion"`
@@ -147,6 +152,7 @@ type MCPClient struct {
 	pending   map[string]*pendingRequest
 
 	onNotification NotificationHandler
+	onRequest      RequestHandler
 
 	// Set after successful initialize handshake.
 	negotiatedVersion string
@@ -202,8 +208,24 @@ func (c *MCPClient) demux() {
 			continue
 		}
 
+		if peek.Method != "" && peek.ID != nil {
+			// Server-initiated request (has both method and id).
+			// Examples: sampling/createMessage, roots/list
+			if c.onRequest != nil {
+				var req JSONRPCRequest
+				if err := json.Unmarshal(msg, &req); err != nil {
+					log.Printf("mcp: failed to parse server request: %v", err)
+					continue
+				}
+				c.onRequest(req.Method, req.ID, req.Params)
+			} else {
+				log.Printf("mcp: no handler for server request %q (id=%s)", peek.Method, string(peek.ID))
+			}
+			continue
+		}
+
 		if peek.ID != nil {
-			// Response (has id).
+			// Response (has id, no method).
 			idStr := string(peek.ID)
 			c.pendingMu.Lock()
 			p, ok := c.pending[idStr]
