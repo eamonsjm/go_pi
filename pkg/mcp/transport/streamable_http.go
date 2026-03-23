@@ -48,6 +48,7 @@ type StreamableHTTP struct {
 
 	closeMu sync.Mutex
 	closed  bool
+	done    chan struct{} // closed on Close() to signal writer goroutines
 }
 
 // NewStreamableHTTP creates a new StreamableHTTP transport.
@@ -59,6 +60,7 @@ func NewStreamableHTTP(endpoint string, headers map[string]string) *StreamableHT
 		httpClient:   &http.Client{},
 		lastEventIDs: make(map[string]string),
 		incoming:     make(chan json.RawMessage, incomingBufferSize),
+		done:         make(chan struct{}),
 	}
 }
 
@@ -109,21 +111,21 @@ func (t *StreamableHTTP) Send(ctx context.Context, msg json.RawMessage) error {
 	ct := resp.Header.Get("Content-Type")
 	switch {
 	case strings.HasPrefix(ct, "text/event-stream"):
-		go t.parseSSEStream(resp.Body, t.incoming, "post")
+		go t.parseSSEStream(resp.Body, "post")
 	case strings.HasPrefix(ct, "application/json"):
 		body, readErr := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		if readErr != nil {
 			return fmt.Errorf("reading JSON response: %w", readErr)
 		}
-		t.incoming <- body
+		t.trySend(body)
 	default:
 		// Robustness: attempt JSON parse as fallback for unknown Content-Type.
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		if len(body) > 0 {
 			log.Printf("mcp http: unexpected Content-Type %q from MCP server, attempting JSON parse", ct)
-			t.incoming <- body
+			t.trySend(body)
 		}
 	}
 
@@ -202,7 +204,7 @@ func (t *StreamableHTTP) OpenServerStream(ctx context.Context) error {
 	t.getStreamActive = true
 	t.getStreamMu.Unlock()
 
-	go t.parseSSEStream(resp.Body, t.incoming, "get")
+	go t.parseSSEStream(resp.Body, "get")
 	return nil
 }
 
@@ -212,14 +214,21 @@ func (t *StreamableHTTP) Receive() <-chan json.RawMessage {
 }
 
 // Close terminates the HTTP session via DELETE and releases resources.
+// It closes the incoming channel so consumers (e.g. MCPClient.demux) exit
+// their range loops cleanly.
 func (t *StreamableHTTP) Close() error {
 	t.closeMu.Lock()
-	defer t.closeMu.Unlock()
-
 	if t.closed {
+		t.closeMu.Unlock()
 		return nil
 	}
 	t.closed = true
+	close(t.done)
+	t.closeMu.Unlock()
+
+	// Close incoming so consumers unblock. Writer goroutines are signaled
+	// via done and guard sends with trySend.
+	close(t.incoming)
 
 	t.mu.RLock()
 	sessionID := t.sessionID
@@ -260,10 +269,28 @@ func (t *StreamableHTTP) Close() error {
 	return nil
 }
 
-// parseSSEStream reads SSE events from body and sends parsed JSON messages to ch.
+// trySend sends msg to the incoming channel, returning false if the transport
+// is shutting down. The recover handles the narrow race where Close() closes
+// the channel between the select choosing the send case and the send executing.
+func (t *StreamableHTTP) trySend(msg json.RawMessage) (sent bool) {
+	defer func() {
+		if recover() != nil {
+			sent = false
+		}
+	}()
+	select {
+	case t.incoming <- msg:
+		return true
+	case <-t.done:
+		return false
+	}
+}
+
+// parseSSEStream reads SSE events from body and sends parsed JSON messages
+// to the incoming channel via trySend.
 // streamName identifies the stream for event ID tracking ("get" or "post").
 // For "get" streams, clears getStreamActive on exit to allow reconnection.
-func (t *StreamableHTTP) parseSSEStream(body io.ReadCloser, ch chan<- json.RawMessage, streamName string) {
+func (t *StreamableHTTP) parseSSEStream(body io.ReadCloser, streamName string) {
 	defer body.Close()
 	if streamName == "get" {
 		defer func() {
@@ -303,13 +330,19 @@ func (t *StreamableHTTP) parseSSEStream(body io.ReadCloser, ch chan<- json.RawMe
 					var batch []json.RawMessage
 					if json.Unmarshal(msg, &batch) == nil {
 						for _, m := range batch {
-							ch <- m
+							if !t.trySend(m) {
+								return
+							}
 						}
 					} else {
-						ch <- msg
+						if !t.trySend(msg) {
+							return
+						}
 					}
 				} else {
-					ch <- msg
+					if !t.trySend(msg) {
+						return
+					}
 				}
 				data.Reset()
 				eventID = ""

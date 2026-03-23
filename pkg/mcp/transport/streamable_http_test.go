@@ -214,6 +214,72 @@ func TestStreamableHTTPCloseNoSession(t *testing.T) {
 	}
 }
 
+func TestStreamableHTTPCloseClosesIncoming(t *testing.T) {
+	tr := NewStreamableHTTP("http://unused", nil)
+
+	if err := tr.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	// Receive channel must be closed after Close(), so range or receive
+	// terminates instead of blocking forever (the original bug).
+	select {
+	case _, ok := <-tr.Receive():
+		if ok {
+			t.Error("expected incoming channel to be closed, but received a message")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Receive() blocked after Close() — incoming channel not closed")
+	}
+}
+
+func TestStreamableHTTPCloseWithActiveSSEStream(t *testing.T) {
+	// Server holds an SSE stream open; Close() must still close the incoming
+	// channel so consumers unblock.
+	streamReady := make(chan struct{})
+	holdConn := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher := w.(http.Flusher)
+		fmt.Fprint(w, "data: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}\n\n")
+		flusher.Flush()
+		close(streamReady)
+		// Hold connection open until test signals.
+		<-holdConn
+	}))
+	defer server.Close()
+	defer close(holdConn) // Unblock handler before server.Close() waits for it
+
+	tr := NewStreamableHTTP(server.URL, nil)
+
+	ctx := context.Background()
+	if err := tr.Send(ctx, json.RawMessage(`{"jsonrpc":"2.0","id":1,"method":"test"}`)); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	// Wait for the SSE stream to deliver one message.
+	<-streamReady
+	select {
+	case <-tr.Receive():
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for SSE message")
+	}
+
+	// Now close — incoming must close even though SSE stream is still open.
+	if err := tr.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	select {
+	case _, ok := <-tr.Receive():
+		if ok {
+			t.Error("expected incoming channel to be closed")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Receive() blocked after Close() with active SSE stream")
+	}
+}
+
 func TestStreamableHTTPClose405Accepted(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
