@@ -258,7 +258,7 @@ func TestNewAliasesCommand_SortOrder(t *testing.T) {
 	if posA < 0 || posM < 0 || posZ < 0 {
 		t.Fatalf("expected all aliases in output, got %q", result.Text)
 	}
-	if !(posA < posM && posM < posZ) {
+	if posA >= posM || posM >= posZ {
 		t.Errorf("aliases not in alphabetical order in %q", result.Text)
 	}
 }

@@ -338,7 +338,7 @@ func TestNewForkCommand_BranchCountInMessage(t *testing.T) {
 	// Verify the system message mentions "3 total branches" by checking
 	// that the sprintf format is correct (the actual view is tested at
 	// integration level).
-	expected := fmt.Sprintf("3 total branches")
+	expected := "3 total branches"
 	_ = expected
 	_ = strings.Contains // used in assertions elsewhere
 }
