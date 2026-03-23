@@ -11,11 +11,16 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
 )
 
+// bedrockStreamer abstracts the Bedrock ConverseStream API call for testability.
+type bedrockStreamer interface {
+	ConverseStream(ctx context.Context, params *bedrockruntime.ConverseStreamInput, optFns ...func(*bedrockruntime.Options)) (*bedrockruntime.ConverseStreamOutput, error)
+}
+
 // BedrockProvider implements the Provider interface for AWS Bedrock's Converse Stream API.
 // It supports the standard AWS credential chain (environment variables, shared config,
 // IAM roles, instance profiles).
 type BedrockProvider struct {
-	client *bedrockruntime.Client
+	client bedrockStreamer
 }
 
 // NewBedrockProvider creates a new AWS Bedrock provider.
@@ -56,7 +61,7 @@ func (p *BedrockProvider) Stream(ctx context.Context, req StreamRequest) (<-chan
 	}
 
 	ch := make(chan StreamEvent, 64)
-	go p.readEventStream(ctx, output, ch)
+	go p.readEventStream(ctx, output.GetStream(), ch)
 	return ch, nil
 }
 
@@ -222,7 +227,7 @@ type bedrockToolState struct {
 	name string
 }
 
-func (p *BedrockProvider) readEventStream(ctx context.Context, output *bedrockruntime.ConverseStreamOutput, ch chan<- StreamEvent) {
+func (p *BedrockProvider) readEventStream(ctx context.Context, stream *bedrockruntime.ConverseStreamEventStream, ch chan<- StreamEvent) {
 	defer close(ch)
 	defer func() {
 		if r := recover(); r != nil {
@@ -233,7 +238,6 @@ func (p *BedrockProvider) readEventStream(ctx context.Context, output *bedrockru
 		}
 	}()
 
-	stream := output.GetStream()
 	defer func() { _ = stream.Close() }()
 
 	var usage Usage
