@@ -98,6 +98,45 @@ func TestStreamableHTTPSSEResponse(t *testing.T) {
 	}
 }
 
+func TestStreamableHTTPSSEMultiLineData(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Fatal("expected http.Flusher")
+		}
+
+		// Send a multi-line SSE data field (per SSE spec, multiple data:
+		// lines in one event should be joined with newlines).
+		fmt.Fprint(w, "data: {\"jsonrpc\":\"2.0\",\"id\":1,\n")
+		fmt.Fprint(w, "data: \"result\":{\"multi\":true}}\n")
+		fmt.Fprint(w, "\n")
+		flusher.Flush()
+	}))
+	defer server.Close()
+
+	tr := NewStreamableHTTP(server.URL, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	msg := json.RawMessage(`{"jsonrpc":"2.0","id":1,"method":"test"}`)
+	if err := tr.Send(ctx, msg); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	select {
+	case got := <-tr.Receive():
+		// The two data lines should be joined with a newline.
+		want := "{\"jsonrpc\":\"2.0\",\"id\":1,\n\"result\":{\"multi\":true}}"
+		if string(got) != want {
+			t.Errorf("got %q, want %q", string(got), want)
+		}
+	case <-ctx.Done():
+		t.Fatal("timeout waiting for multi-line SSE message")
+	}
+}
+
 func TestStreamableHTTPBatchRejected(t *testing.T) {
 	tr := NewStreamableHTTP("http://unused", nil)
 	err := tr.Send(context.Background(), json.RawMessage(`[{"jsonrpc":"2.0"}]`))

@@ -281,6 +281,9 @@ func (t *StreamableHTTP) parseSSEStream(body io.ReadCloser, ch chan<- json.RawMe
 		line := scanner.Text()
 		switch {
 		case strings.HasPrefix(line, "data: "):
+			if data.Len() > 0 {
+				data.WriteByte('\n')
+			}
 			data.WriteString(strings.TrimPrefix(line, "data: "))
 		case strings.HasPrefix(line, "id: "):
 			eventID = strings.TrimPrefix(line, "id: ")
