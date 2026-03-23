@@ -33,7 +33,10 @@ type StreamableHTTP struct {
 	httpClient *http.Client
 
 	// GET stream for server-initiated messages.
-	getStreamOnce sync.Once
+	// Uses mutex+bool instead of sync.Once so parseSSEStream can clear the
+	// flag on exit, allowing reconnection after disconnect.
+	getStreamMu     sync.Mutex
+	getStreamActive bool
 
 	// SSE event ID tracking for reconnection.
 	lastEventIDs map[string]string
@@ -146,52 +149,61 @@ func (t *StreamableHTTP) SetNegotiatedVersion(version string) {
 }
 
 // OpenServerStream issues a GET to receive server-initiated messages.
-// Call once after initialization; the stream feeds into the same incoming
-// channel as POST responses. Safe to call multiple times (only the first
-// call establishes the stream).
+// Call after initialization; the stream feeds into the same incoming
+// channel as POST responses. Safe to call multiple times — only starts
+// a new stream if no active GET stream exists. After a disconnect,
+// parseSSEStream clears the active flag, allowing the next call to
+// re-establish the stream with Last-Event-ID for resumption.
 func (t *StreamableHTTP) OpenServerStream(ctx context.Context) error {
-	var streamErr error
-	t.getStreamOnce.Do(func() {
-		req, err := http.NewRequestWithContext(ctx, "GET", t.endpoint, nil)
-		if err != nil {
-			streamErr = fmt.Errorf("creating GET request: %w", err)
-			return
-		}
-		req.Header.Set("Accept", "text/event-stream")
+	t.getStreamMu.Lock()
+	if t.getStreamActive {
+		t.getStreamMu.Unlock()
+		return nil
+	}
 
-		t.mu.RLock()
-		if t.sessionID != "" {
-			req.Header.Set("Mcp-Session-Id", t.sessionID)
-		}
-		if t.negotiatedVersion != "" {
-			req.Header.Set("MCP-Protocol-Version", t.negotiatedVersion)
-		}
-		t.mu.RUnlock()
+	req, err := http.NewRequestWithContext(ctx, "GET", t.endpoint, nil)
+	if err != nil {
+		t.getStreamMu.Unlock()
+		return fmt.Errorf("creating GET request: %w", err)
+	}
+	req.Header.Set("Accept", "text/event-stream")
 
-		for k, v := range t.headers {
-			req.Header.Set(k, v)
-		}
+	t.mu.RLock()
+	if t.sessionID != "" {
+		req.Header.Set("Mcp-Session-Id", t.sessionID)
+	}
+	if t.negotiatedVersion != "" {
+		req.Header.Set("MCP-Protocol-Version", t.negotiatedVersion)
+	}
+	t.mu.RUnlock()
 
-		// Track last event ID for reconnection.
-		t.lastEventMu.Lock()
-		if lastID, ok := t.lastEventIDs["get"]; ok {
-			req.Header.Set("Last-Event-ID", lastID)
-		}
-		t.lastEventMu.Unlock()
+	for k, v := range t.headers {
+		req.Header.Set(k, v)
+	}
 
-		resp, err := t.httpClient.Do(req)
-		if err != nil {
-			streamErr = err
-			return
-		}
-		if resp.StatusCode != http.StatusOK {
-			resp.Body.Close()
-			streamErr = fmt.Errorf("GET stream returned HTTP %d", resp.StatusCode)
-			return
-		}
-		go t.parseSSEStream(resp.Body, t.incoming, "get")
-	})
-	return streamErr
+	// Track last event ID for reconnection.
+	t.lastEventMu.Lock()
+	if lastID, ok := t.lastEventIDs["get"]; ok {
+		req.Header.Set("Last-Event-ID", lastID)
+	}
+	t.lastEventMu.Unlock()
+
+	resp, err := t.httpClient.Do(req)
+	if err != nil {
+		t.getStreamMu.Unlock()
+		return err
+	}
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		t.getStreamMu.Unlock()
+		return fmt.Errorf("GET stream returned HTTP %d", resp.StatusCode)
+	}
+
+	t.getStreamActive = true
+	t.getStreamMu.Unlock()
+
+	go t.parseSSEStream(resp.Body, t.incoming, "get")
+	return nil
 }
 
 // Receive returns the unified channel for all incoming messages.
@@ -250,8 +262,16 @@ func (t *StreamableHTTP) Close() error {
 
 // parseSSEStream reads SSE events from body and sends parsed JSON messages to ch.
 // streamName identifies the stream for event ID tracking ("get" or "post").
+// For "get" streams, clears getStreamActive on exit to allow reconnection.
 func (t *StreamableHTTP) parseSSEStream(body io.ReadCloser, ch chan<- json.RawMessage, streamName string) {
 	defer body.Close()
+	if streamName == "get" {
+		defer func() {
+			t.getStreamMu.Lock()
+			t.getStreamActive = false
+			t.getStreamMu.Unlock()
+		}()
+	}
 
 	scanner := bufio.NewScanner(body)
 	var data strings.Builder

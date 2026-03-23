@@ -251,3 +251,82 @@ func TestStreamableHTTPOpenServerStream(t *testing.T) {
 		t.Fatal("timeout waiting for server-initiated message")
 	}
 }
+
+func TestStreamableHTTPOpenServerStreamReconnect(t *testing.T) {
+	var getCount int
+	var lastEventIDHeader string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":{}}`)
+			return
+		}
+		getCount++
+		lastEventIDHeader = r.Header.Get("Last-Event-ID")
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher := w.(http.Flusher)
+		// Send one event with an ID, then close the stream (simulates disconnect).
+		fmt.Fprintf(w, "id: evt-%d\n", getCount)
+		fmt.Fprintf(w, "data: {\"jsonrpc\":\"2.0\",\"method\":\"notify\",\"params\":{\"n\":%d}}\n\n", getCount)
+		flusher.Flush()
+		// Handler returns → server closes the response body → stream ends.
+	}))
+	defer server.Close()
+
+	tr := NewStreamableHTTP(server.URL, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// First connection.
+	if err := tr.OpenServerStream(ctx); err != nil {
+		t.Fatalf("OpenServerStream (1st): %v", err)
+	}
+	select {
+	case got := <-tr.Receive():
+		if !strings.Contains(string(got), `"n":1`) {
+			t.Errorf("1st message: got %s, want n:1", got)
+		}
+	case <-ctx.Done():
+		t.Fatal("timeout waiting for 1st message")
+	}
+
+	// Wait for parseSSEStream to exit and clear getStreamActive.
+	// The server handler returned, so the body is closed quickly.
+	deadline := time.After(2 * time.Second)
+	for {
+		tr.getStreamMu.Lock()
+		active := tr.getStreamActive
+		tr.getStreamMu.Unlock()
+		if !active {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("timeout waiting for getStreamActive to clear")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+
+	// Second connection (reconnect).
+	if err := tr.OpenServerStream(ctx); err != nil {
+		t.Fatalf("OpenServerStream (2nd): %v", err)
+	}
+	select {
+	case got := <-tr.Receive():
+		if !strings.Contains(string(got), `"n":2`) {
+			t.Errorf("2nd message: got %s, want n:2", got)
+		}
+	case <-ctx.Done():
+		t.Fatal("timeout waiting for 2nd message")
+	}
+
+	if getCount != 2 {
+		t.Errorf("expected 2 GET requests, got %d", getCount)
+	}
+
+	// Verify Last-Event-ID was sent on reconnection.
+	if lastEventIDHeader != "evt-1" {
+		t.Errorf("Last-Event-ID on reconnect = %q, want %q", lastEventIDHeader, "evt-1")
+	}
+}
