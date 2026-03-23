@@ -44,7 +44,7 @@ type MCPPermissionConfig struct {
 type SamplingConfig struct {
 	Enabled         bool `json:"enabled"`
 	MaxTokens       int  `json:"maxTokens"`
-	RequireApproval bool `json:"requireApproval,omitempty"` // default: true
+	SkipApproval bool `json:"skipApproval,omitempty"` // default: false (approval required)
 }
 
 // Config holds all gi settings.

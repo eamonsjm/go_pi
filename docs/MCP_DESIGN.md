@@ -761,8 +761,9 @@ MCP servers can request the client to sample from the LLM via `sampling/createMe
 
 ```go
 func (s *MCPServer) handleSamplingRequest(req SamplingRequest) (SamplingResponse, error) {
-    // Check approval before executing sampling request
-    if s.config.Sampling.RequireApproval {
+    // Check approval before executing sampling request (SkipApproval defaults
+    // to false so the zero-value config is the secure path).
+    if !s.config.Sampling.SkipApproval {
         if !s.manager.isInteractive() {
             return SamplingResponse{}, fmt.Errorf(
                 "MCP server %q requested sampling but approval is required and no interactive session is available",
@@ -790,13 +791,13 @@ func (s *MCPServer) handleSamplingRequest(req SamplingRequest) (SamplingResponse
 type SamplingConfig struct {
     Enabled         bool `json:"enabled"`
     MaxTokens       int  `json:"maxTokens"`
-    // Require explicit approval for each sampling request.
-    // Default: true. Set false only for trusted servers.
-    RequireApproval bool `json:"requireApproval,omitempty"`
+    // Skip the approval prompt for each sampling request.
+    // Default: false (approval required). Set true only for trusted servers.
+    SkipApproval bool `json:"skipApproval,omitempty"`
 }
 ```
 
-In non-interactive mode, if `RequireApproval` is true (default), sampling requests are rejected with an error message explaining that approval is required.
+In non-interactive mode, if `SkipApproval` is false (the default), sampling requests are rejected with an error message explaining that approval is required.
 
 ```json
 {"mcpServers": {"helper": {"sampling": {"enabled": true, "maxTokens": 4096}}}}

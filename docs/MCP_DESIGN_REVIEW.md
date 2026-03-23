@@ -331,13 +331,13 @@ modes (print mode, JSON event stream, RPC mode — seen in `cmd/gi/main.go` line
 type SamplingConfig struct {
     Enabled   bool `json:"enabled"`
     MaxTokens int  `json:"maxTokens"`
-    // NEW: require explicit approval for each sampling request
-    // Default: true (require approval). Set false only for trusted servers.
-    RequireApproval bool `json:"requireApproval,omitempty"`
+    // NEW: skip the approval prompt for each sampling request.
+    // Default: false (approval required). Set true only for trusted servers.
+    SkipApproval bool `json:"skipApproval,omitempty"`
 }
 ```
 
-In non-interactive mode, if `RequireApproval` is true (default), reject sampling
+In non-interactive mode, if `SkipApproval` is false (the default), reject sampling
 requests with an error message explaining that approval is required.
 
 ---
