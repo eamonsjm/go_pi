@@ -145,6 +145,41 @@ func TestServerInstructionsLengthCap(t *testing.T) {
 	}
 }
 
+func TestShutdownClearsMaps(t *testing.T) {
+	reg := tools.NewRegistry()
+	mgr := NewMCPManager(MCPManagerConfig{ToolRegistry: reg})
+
+	// Populate servers directly (no real transport needed for this test).
+	mgr.mu.Lock()
+	mgr.servers["s1"] = &MCPServer{
+		name:    "s1",
+		config:  &config.MCPServerConfig{},
+		manager: mgr,
+		closed:  true, // already closed — avoids nil transport deref
+	}
+	mgr.servers["s2"] = &MCPServer{
+		name:    "s2",
+		config:  &config.MCPServerConfig{},
+		manager: mgr,
+		closed:  true,
+	}
+	mgr.serverList = []string{"s1", "s2"}
+	mgr.pendingSystemMessages = []string{"pending msg"}
+	mgr.mu.Unlock()
+
+	mgr.Shutdown(context.Background())
+
+	if names := mgr.ServerNames(); len(names) != 0 {
+		t.Errorf("ServerNames after Shutdown = %v, want empty", names)
+	}
+	if s := mgr.Server("s1"); s != nil {
+		t.Error("Server(s1) after Shutdown should be nil")
+	}
+	if msgs := mgr.DrainSystemMessages(); len(msgs) != 0 {
+		t.Errorf("DrainSystemMessages after Shutdown = %v, want empty", msgs)
+	}
+}
+
 func TestDiffToolCount(t *testing.T) {
 	old := []tools.Tool{
 		&mockTool{name: "a"},

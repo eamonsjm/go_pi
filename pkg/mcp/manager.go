@@ -170,6 +170,12 @@ func (m *MCPManager) Shutdown(ctx context.Context) {
 			log.Printf("mcp: error shutting down server %q: %v", name, err)
 		}
 	}
+
+	m.mu.Lock()
+	m.servers = make(map[string]*MCPServer)
+	m.serverList = nil
+	m.pendingSystemMessages = nil
+	m.mu.Unlock()
 }
 
 // injectSystemMessage queues a system message for the next agent loop turn.
