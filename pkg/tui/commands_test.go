@@ -197,6 +197,121 @@ func TestCommandRegistry_MatchSortOrder(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Alias management methods: SetAlias, GetAlias, RemoveAlias, AllAliases
+// ---------------------------------------------------------------------------
+
+func TestCommandRegistry_SetAlias(t *testing.T) {
+	reg := NewCommandRegistry()
+	reg.Register(&SlashCommand{Name: "help"})
+
+	// Set alias for existing command should succeed.
+	if !reg.SetAlias("h", "help") {
+		t.Error("expected SetAlias to succeed for existing target")
+	}
+
+	// Set alias for nonexistent command should fail.
+	if reg.SetAlias("x", "nonexistent") {
+		t.Error("expected SetAlias to fail for nonexistent target")
+	}
+}
+
+func TestCommandRegistry_GetAlias(t *testing.T) {
+	reg := NewCommandRegistry()
+	reg.Register(&SlashCommand{Name: "help"})
+	reg.SetAlias("h", "help")
+
+	if target := reg.GetAlias("h"); target != "help" {
+		t.Errorf("GetAlias('h') = %q, want 'help'", target)
+	}
+
+	if target := reg.GetAlias("nonexistent"); target != "" {
+		t.Errorf("GetAlias('nonexistent') = %q, want empty string", target)
+	}
+}
+
+func TestCommandRegistry_RemoveAlias(t *testing.T) {
+	reg := NewCommandRegistry()
+	reg.Register(&SlashCommand{Name: "help"})
+	reg.SetAlias("h", "help")
+
+	reg.RemoveAlias("h")
+	if target := reg.GetAlias("h"); target != "" {
+		t.Errorf("expected alias to be removed, got %q", target)
+	}
+
+	// Removing nonexistent alias should not panic.
+	reg.RemoveAlias("nonexistent")
+}
+
+func TestCommandRegistry_AllAliases(t *testing.T) {
+	reg := NewCommandRegistry()
+	reg.Register(&SlashCommand{Name: "help"})
+	reg.Register(&SlashCommand{Name: "model"})
+
+	// Empty initially.
+	aliases := reg.AllAliases()
+	if len(aliases) != 0 {
+		t.Errorf("expected 0 aliases, got %d", len(aliases))
+	}
+
+	reg.SetAlias("h", "help")
+	reg.SetAlias("m", "model")
+
+	aliases = reg.AllAliases()
+	if len(aliases) != 2 {
+		t.Fatalf("expected 2 aliases, got %d", len(aliases))
+	}
+	if aliases["h"] != "help" {
+		t.Errorf("aliases['h'] = %q, want 'help'", aliases["h"])
+	}
+	if aliases["m"] != "model" {
+		t.Errorf("aliases['m'] = %q, want 'model'", aliases["m"])
+	}
+}
+
+func TestCommandRegistry_AllAliases_ReturnsCopy(t *testing.T) {
+	reg := NewCommandRegistry()
+	reg.Register(&SlashCommand{Name: "help"})
+	reg.SetAlias("h", "help")
+
+	aliases := reg.AllAliases()
+	// Modifying the returned map should not affect the registry.
+	aliases["injected"] = "evil"
+
+	if reg.GetAlias("injected") != "" {
+		t.Error("AllAliases should return a copy, not a reference to the internal map")
+	}
+}
+
+func TestCommandRegistry_GetResolvesAlias(t *testing.T) {
+	reg := NewCommandRegistry()
+	cmd := &SlashCommand{Name: "help", Description: "help command"}
+	reg.Register(cmd)
+	reg.SetAlias("h", "help")
+
+	got, ok := reg.Get("h")
+	if !ok {
+		t.Fatal("expected Get to resolve alias 'h'")
+	}
+	if got.Name != "help" {
+		t.Errorf("expected resolved command 'help', got %q", got.Name)
+	}
+}
+
+func TestCommandRegistry_SetAlias_Overwrite(t *testing.T) {
+	reg := NewCommandRegistry()
+	reg.Register(&SlashCommand{Name: "help"})
+	reg.Register(&SlashCommand{Name: "model"})
+
+	reg.SetAlias("x", "help")
+	reg.SetAlias("x", "model")
+
+	if target := reg.GetAlias("x"); target != "model" {
+		t.Errorf("expected overwritten alias target 'model', got %q", target)
+	}
+}
+
 func TestCommandRegistry_ManyCommands(t *testing.T) {
 	reg := NewCommandRegistry()
 	for i := 0; i < 100; i++ {
