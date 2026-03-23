@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 )
 
 // StreamableHTTP implements Transport for remote MCP servers over
@@ -217,7 +218,10 @@ func (t *StreamableHTTP) Close() error {
 		return nil
 	}
 
-	req, err := http.NewRequestWithContext(context.Background(), "DELETE", t.endpoint, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "DELETE", t.endpoint, nil)
 	if err != nil {
 		return err
 	}
