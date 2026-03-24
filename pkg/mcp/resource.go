@@ -591,5 +591,5 @@ func (sm *subscriptionManager) close() {
 			return nil // best-effort; don't abort other unsubscribes
 		})
 	}
-	g.Wait()
+	_ = g.Wait() // best-effort; individual goroutines already log errors
 }
