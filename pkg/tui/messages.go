@@ -87,6 +87,14 @@ type MCPConfirmMsg struct {
 	ResultCh   chan bool
 }
 
+// SamplingConfirmMsg is sent by the MCP sampling confirmation callback when a
+// server requests sampling approval. The background goroutine blocks on
+// ResponseCh until the user types "y" or "n".
+type SamplingConfirmMsg struct {
+	ServerName string
+	ResponseCh chan<- bool
+}
+
 // setModelMsg routes a model name change through the Bubble Tea message loop
 // so that App.SetModel is safe to call from any goroutine.
 type setModelMsg struct {

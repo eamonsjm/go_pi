@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -186,17 +187,21 @@ func run() int {
 	skillTool := skill.NewSkillTool(skillRegistry, cfg.DefaultModel)
 	registry.Register(skillTool)
 
-	// Initialize MCP servers.
+	// Initialize MCP servers with sampling support.
 	var mcpMgr *mcp.MCPManager
+	var sb *samplingBridge
 	if len(cfg.MCPServers) > 0 {
+		sb = &samplingBridge{}
 		mcpMgr = mcp.NewMCPManager(mcp.MCPManagerConfig{
-			ToolRegistry:  registry,
-			SkillRegistry: skillRegistry,
-			WorkingDir:    cwd,
-			ConfigDir:     cfg.ConfigDir,
-			ProjectPath:   cwd,
-			ClientName:    "gi",
-			ClientVersion: "0.1.0",
+			ToolRegistry:    registry,
+			SkillRegistry:   skillRegistry,
+			WorkingDir:      cwd,
+			ConfigDir:       cfg.ConfigDir,
+			ProjectPath:     cwd,
+			ClientName:      "gi",
+			ClientVersion:   "0.1.0",
+			SamplingHandler: sb.Handle,
+			ConfirmSampling: sb.Confirm,
 		})
 		if err := mcpMgr.StartAll(context.Background(), cfg); err != nil {
 			log.Printf("Failed to start MCP servers: %v", err)
@@ -227,6 +232,12 @@ func run() int {
 
 	// Resolve provider (may fail if no API key — that's ok for interactive mode)
 	provider, providerErr := resolveProvider(context.Background(), cfg, authResolver)
+
+	// Wire the provider into the sampling bridge so MCP servers can delegate
+	// sampling requests to the configured AI provider.
+	if sb != nil && provider != nil {
+		sb.SetProvider(provider, cfg.DefaultModel)
+	}
 
 	// Print mode requires a working provider
 	if *printFlag != "" {
@@ -320,7 +331,7 @@ func run() int {
 		}
 	}
 
-	return runInteractive(agentLoop, sessionMgr, cfg, providerErr, pluginMgr, authStore, authResolver, skillRegistry, restoredSessionID, restoredMsgs, initialPrompt, mcpPermHook)
+	return runInteractive(agentLoop, sessionMgr, cfg, providerErr, pluginMgr, authStore, authResolver, skillRegistry, restoredSessionID, restoredMsgs, initialPrompt, mcpPermHook, sb)
 }
 
 // setupAuth creates the auth store and resolver with registered OAuth providers.
@@ -575,7 +586,7 @@ func makeAgentLoop(provider ai.Provider, registry *tools.Registry, cfg *config.C
 	return loop, permHook
 }
 
-func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg *config.Config, providerErr error, pluginMgr *plugin.Manager, authStore *auth.Store, authResolver *auth.Resolver, skillReg *skill.Registry, restoredSessionID string, restoredMsgs []ai.Message, initialPrompt string, mcpPermHook *mcp.MCPPermissionHook) int {
+func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg *config.Config, providerErr error, pluginMgr *plugin.Manager, authStore *auth.Store, authResolver *auth.Resolver, skillReg *skill.Registry, restoredSessionID string, restoredMsgs []ai.Message, initialPrompt string, mcpPermHook *mcp.MCPPermissionHook, sb *samplingBridge) int {
 	// Create the application lifecycle context. This is cancelled when
 	// runInteractive returns, ensuring all background operations (such as
 	// compaction) are stopped when the user quits.
@@ -607,6 +618,9 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 		agentLoop.SetProvider(p)
 		agentLoop.SetModel(cfg.DefaultModel)
 		app.SetModel(cfg.DefaultModel)
+		if sb != nil {
+			sb.SetProvider(p, cfg.DefaultModel)
+		}
 	})
 
 	// Register plugin-provided slash commands.
@@ -686,6 +700,9 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 
 	p := tea.NewProgram(app, tea.WithAltScreen())
 	app.SetProgram(p)
+	if sb != nil {
+		sb.SetProgram(p)
+	}
 
 	// Wire MCP permission hook to TUI confirmation now that the program exists.
 	if mcpPermHook != nil {
@@ -821,6 +838,100 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 	}
 	close(pluginDone)
 	return 0
+}
+
+// samplingBridge holds mutable state for MCP sampling callbacks. The AI
+// provider and tea.Program may be set after the MCPManager is created.
+type samplingBridge struct {
+	mu       sync.Mutex
+	provider ai.Provider
+	model    string
+	program  *tea.Program
+}
+
+// Handle implements mcp.SamplingHandler by delegating to the AI provider.
+func (b *samplingBridge) Handle(ctx context.Context, serverName string, req mcp.SamplingRequest) (*mcp.SamplingResponse, error) {
+	b.mu.Lock()
+	p, model := b.provider, b.model
+	b.mu.Unlock()
+	if p == nil {
+		return nil, fmt.Errorf("no AI provider available for sampling")
+	}
+	return executeSampling(ctx, p, model, req)
+}
+
+// Confirm implements mcp.ConfirmSamplingFunc by sending a TUI confirmation
+// prompt and blocking until the user responds.
+func (b *samplingBridge) Confirm(serverName string, req mcp.SamplingRequest) (bool, error) {
+	b.mu.Lock()
+	prog := b.program
+	b.mu.Unlock()
+	if prog == nil {
+		return false, fmt.Errorf("no interactive session available")
+	}
+	ch := make(chan bool, 1)
+	prog.Send(tui.SamplingConfirmMsg{ServerName: serverName, ResponseCh: ch})
+	return <-ch, nil
+}
+
+// SetProvider updates the AI provider and model used for sampling.
+func (b *samplingBridge) SetProvider(p ai.Provider, model string) {
+	b.mu.Lock()
+	b.provider = p
+	b.model = model
+	b.mu.Unlock()
+}
+
+// SetProgram sets the tea.Program reference for interactive confirmation.
+func (b *samplingBridge) SetProgram(p *tea.Program) {
+	b.mu.Lock()
+	b.program = p
+	b.mu.Unlock()
+}
+
+// executeSampling converts an MCP sampling request into an AI provider call,
+// streams the response, and returns the collected result.
+func executeSampling(ctx context.Context, provider ai.Provider, model string, req mcp.SamplingRequest) (*mcp.SamplingResponse, error) {
+	messages := make([]ai.Message, 0, len(req.Messages))
+	for _, m := range req.Messages {
+		role := ai.RoleUser
+		if m.Role == "assistant" {
+			role = ai.RoleAssistant
+		}
+		messages = append(messages, ai.NewTextMessage(role, m.Content.Text))
+	}
+
+	streamReq := ai.StreamRequest{
+		Model:         model,
+		SystemPrompt:  req.SystemPrompt,
+		Messages:      messages,
+		MaxTokens:     req.MaxTokens,
+		Temperature:   req.Temperature,
+		StopSequences: req.StopSequences,
+	}
+
+	events, err := provider.Stream(ctx, streamReq)
+	if err != nil {
+		return nil, fmt.Errorf("sampling stream: %w", err)
+	}
+
+	var text strings.Builder
+	for event := range events {
+		switch event.Type {
+		case ai.EventTextDelta:
+			text.WriteString(event.Delta)
+		case ai.EventError:
+			if event.Error != nil {
+				return nil, fmt.Errorf("sampling stream error: %w", event.Error)
+			}
+		}
+	}
+
+	return &mcp.SamplingResponse{
+		Role:    "assistant",
+		Content: mcp.MCPContentItem{Type: "text", Text: text.String()},
+		Model:   model,
+	}, nil
 }
 
 // processFileArgs processes CLI positional arguments, expanding @filepath

@@ -107,6 +107,10 @@ type App struct {
 	// The next editorSubmitMsg is interpreted as y/yes (approve) or anything else (deny).
 	mcpConfirmCh chan bool
 
+	// MCP sampling confirmation. Non-nil while waiting for user to approve/deny
+	// a sampling request. The next editor submission (y/n) sends the result.
+	samplingConfirmCh chan<- bool
+
 	// program is set after tea.NewProgram is created so that public setters
 	// (SetModel, SetThinking, SetSession) route mutations through the Bubble
 	// Tea message loop instead of writing directly to Header fields. This
@@ -485,6 +489,15 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 
+		// If we're waiting for a sampling confirmation, route the input there.
+		if a.samplingConfirmCh != nil {
+			ch := a.samplingConfirmCh
+			a.samplingConfirmCh = nil
+			a.chat.AddUserMessage(msg.text)
+			ch <- strings.HasPrefix(strings.ToLower(strings.TrimSpace(msg.text)), "y")
+			return a, nil
+		}
+
 		// If we're waiting for a UI response, handle it.
 		if a.uiRequestPending != nil {
 			req := a.uiRequestPending
@@ -571,6 +584,17 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case PluginInjectMsg:
 		a.chat.AddPluginMessage(msg.PluginName, msg.Content, msg.IsLog, msg.LogLevel)
+		return a, nil
+
+	case SamplingConfirmMsg:
+		if !a.hasUI {
+			// Headless mode: deny sampling requests that require approval.
+			msg.ResponseCh <- false
+			return a, nil
+		}
+		a.samplingConfirmCh = msg.ResponseCh
+		a.chat.AddSystemMessage(fmt.Sprintf(
+			"MCP server %q is requesting sampling approval. Type 'y' to approve or 'n' to deny.", msg.ServerName))
 		return a, nil
 
 	case PluginUIRequestMsg:

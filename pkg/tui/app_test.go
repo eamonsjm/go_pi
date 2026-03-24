@@ -1923,6 +1923,66 @@ func TestApp_Update_PluginUIRequestMsg_HeadlessMode(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// MCP sampling confirmation
+// ---------------------------------------------------------------------------
+
+func TestApp_Update_SamplingConfirmMsg_InteractiveApprove(t *testing.T) {
+	app := NewApp()
+	app.SetHasUI(true)
+
+	ch := make(chan bool, 1)
+	app.Update(SamplingConfirmMsg{ServerName: "test-server", ResponseCh: ch})
+
+	if app.samplingConfirmCh == nil {
+		t.Fatal("samplingConfirmCh should be stored")
+	}
+
+	// User types "y".
+	app.Update(editorSubmitMsg{text: "y"})
+
+	approved := <-ch
+	if !approved {
+		t.Error("expected approved=true")
+	}
+	if app.samplingConfirmCh != nil {
+		t.Error("samplingConfirmCh should be cleared")
+	}
+}
+
+func TestApp_Update_SamplingConfirmMsg_InteractiveDeny(t *testing.T) {
+	app := NewApp()
+	app.SetHasUI(true)
+
+	ch := make(chan bool, 1)
+	app.Update(SamplingConfirmMsg{ServerName: "test-server", ResponseCh: ch})
+
+	// User types "n".
+	app.Update(editorSubmitMsg{text: "n"})
+
+	approved := <-ch
+	if approved {
+		t.Error("expected approved=false")
+	}
+}
+
+func TestApp_Update_SamplingConfirmMsg_Headless(t *testing.T) {
+	app := NewApp()
+	app.SetHasUI(false)
+
+	ch := make(chan bool, 1)
+	app.Update(SamplingConfirmMsg{ServerName: "test-server", ResponseCh: ch})
+
+	// Should immediately deny.
+	approved := <-ch
+	if approved {
+		t.Error("headless mode should deny sampling")
+	}
+	if app.samplingConfirmCh != nil {
+		t.Error("samplingConfirmCh should not be stored in headless mode")
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Option functions
 // ---------------------------------------------------------------------------
 
