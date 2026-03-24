@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -893,6 +894,277 @@ func TestIntegration_ResourceSubscribeUnsubscribe(t *testing.T) {
 		}
 		t.Errorf("expected read_resource tool, got: %v", names)
 	}
+}
+
+func TestIntegration_ResourceReadExecution(t *testing.T) {
+	t.Run("text content", func(t *testing.T) {
+		ar := newAutoResponder()
+		ar.setupInitialize(ServerCapabilities{
+			Resources: &ResourceCapability{Subscribe: true, ListChanged: true},
+		}, "")
+		ar.setupResourcesList([]MCPResourceInfo{
+			{URI: "file:///hello.txt", Name: "hello.txt", MimeType: "text/plain"},
+		})
+		ar.setHandler("resources/templates/list", func(id json.RawMessage, _ json.RawMessage) {
+			ar.respond(id, ResourceTemplatesListPage{})
+		})
+		ar.setHandler("resources/subscribe", func(id json.RawMessage, _ json.RawMessage) {
+			ar.respond(id, struct{}{})
+		})
+		ar.setHandler("resources/unsubscribe", func(id json.RawMessage, _ json.RawMessage) {
+			ar.respond(id, struct{}{})
+		})
+		ar.setHandler("resources/read", func(id json.RawMessage, params json.RawMessage) {
+			var p struct {
+				URI string `json:"uri"`
+			}
+			_ = json.Unmarshal(params, &p)
+			ar.respond(id, MCPResourceReadResult{
+				Contents: []MCPResourceContent{
+					{URI: p.URI, MimeType: "text/plain", Text: "hello from resource"},
+				},
+			})
+		})
+
+		mgr, server := buildTestServer(t, "resread", &config.MCPServerConfig{}, ar)
+		defer mgr.Shutdown(context.Background())
+
+		caps := server.client.ServerCapabilities()
+		if caps.Resources != nil && caps.Resources.Subscribe {
+			server.subscriptions = newSubscriptionManager(server.client)
+		}
+
+		if err := server.discoverAndRegisterResources(context.Background()); err != nil {
+			t.Fatalf("discoverAndRegisterResources: %v", err)
+		}
+
+		tool, ok := mgr.toolRegistry.Get("mcp__resread__read_resource")
+		if !ok {
+			t.Fatal("read_resource tool not registered")
+		}
+
+		richTool, ok := tool.(tools.RichTool)
+		if !ok {
+			t.Fatal("resource tool should implement RichTool")
+		}
+
+		blocks, err := richTool.ExecuteRich(context.Background(), map[string]any{"uri": "file:///hello.txt"})
+		if err != nil {
+			t.Fatalf("ExecuteRich: %v", err)
+		}
+		if len(blocks) != 1 {
+			t.Fatalf("expected 1 block, got %d", len(blocks))
+		}
+		if blocks[0].Type != ai.ContentTypeText {
+			t.Errorf("expected text type, got %q", blocks[0].Type)
+		}
+		if blocks[0].Text != "hello from resource" {
+			t.Errorf("text = %q, want %q", blocks[0].Text, "hello from resource")
+		}
+
+		// Also verify the plain Execute flattens correctly.
+		plain, err := tool.Execute(context.Background(), map[string]any{"uri": "file:///hello.txt"})
+		if err != nil {
+			t.Fatalf("Execute: %v", err)
+		}
+		if plain != "hello from resource" {
+			t.Errorf("Execute() = %q, want %q", plain, "hello from resource")
+		}
+	})
+
+	t.Run("text truncation at 1MB", func(t *testing.T) {
+		ar := newAutoResponder()
+		ar.setupInitialize(ServerCapabilities{
+			Resources: &ResourceCapability{},
+		}, "")
+		ar.setupResourcesList([]MCPResourceInfo{
+			{URI: "file:///big.txt", Name: "big.txt"},
+		})
+		ar.setHandler("resources/templates/list", func(id json.RawMessage, _ json.RawMessage) {
+			ar.respond(id, ResourceTemplatesListPage{})
+		})
+
+		bigText := strings.Repeat("A", maxResourceTextBytes+500)
+		ar.setHandler("resources/read", func(id json.RawMessage, _ json.RawMessage) {
+			ar.respond(id, MCPResourceReadResult{
+				Contents: []MCPResourceContent{
+					{URI: "file:///big.txt", Text: bigText},
+				},
+			})
+		})
+
+		mgr, server := buildTestServer(t, "resbigtxt", &config.MCPServerConfig{}, ar)
+		defer mgr.Shutdown(context.Background())
+
+		if err := server.discoverAndRegisterResources(context.Background()); err != nil {
+			t.Fatalf("discoverAndRegisterResources: %v", err)
+		}
+
+		tool, ok := mgr.toolRegistry.Get("mcp__resbigtxt__read_resource")
+		if !ok {
+			t.Fatal("read_resource tool not registered")
+		}
+
+		blocks, err := tool.(tools.RichTool).ExecuteRich(context.Background(), map[string]any{"uri": "file:///big.txt"})
+		if err != nil {
+			t.Fatalf("ExecuteRich: %v", err)
+		}
+		if len(blocks) != 1 {
+			t.Fatalf("expected 1 block, got %d", len(blocks))
+		}
+		if !strings.Contains(blocks[0].Text, "[truncated at") {
+			t.Error("expected truncation marker in oversized text")
+		}
+		// Content before the truncation marker should be exactly maxResourceTextBytes.
+		idx := strings.Index(blocks[0].Text, "\n[truncated at")
+		if idx != maxResourceTextBytes {
+			t.Errorf("truncation at byte %d, want %d", idx, maxResourceTextBytes)
+		}
+	})
+
+	t.Run("binary size cap at 512KB", func(t *testing.T) {
+		ar := newAutoResponder()
+		ar.setupInitialize(ServerCapabilities{
+			Resources: &ResourceCapability{},
+		}, "")
+		ar.setupResourcesList([]MCPResourceInfo{
+			{URI: "file:///huge.bin", Name: "huge.bin", MimeType: "application/octet-stream"},
+		})
+		ar.setHandler("resources/templates/list", func(id json.RawMessage, _ json.RawMessage) {
+			ar.respond(id, ResourceTemplatesListPage{})
+		})
+
+		oversizedBlob := base64.StdEncoding.EncodeToString(make([]byte, maxResourceBinaryBytes+100))
+		ar.setHandler("resources/read", func(id json.RawMessage, _ json.RawMessage) {
+			ar.respond(id, MCPResourceReadResult{
+				Contents: []MCPResourceContent{
+					{URI: "file:///huge.bin", MimeType: "application/octet-stream", Blob: oversizedBlob},
+				},
+			})
+		})
+
+		mgr, server := buildTestServer(t, "resbigbin", &config.MCPServerConfig{}, ar)
+		defer mgr.Shutdown(context.Background())
+
+		if err := server.discoverAndRegisterResources(context.Background()); err != nil {
+			t.Fatalf("discoverAndRegisterResources: %v", err)
+		}
+
+		tool, ok := mgr.toolRegistry.Get("mcp__resbigbin__read_resource")
+		if !ok {
+			t.Fatal("read_resource tool not registered")
+		}
+
+		blocks, err := tool.(tools.RichTool).ExecuteRich(context.Background(), map[string]any{"uri": "file:///huge.bin"})
+		if err != nil {
+			t.Fatalf("ExecuteRich: %v", err)
+		}
+		if len(blocks) != 1 {
+			t.Fatalf("expected 1 block, got %d", len(blocks))
+		}
+		if blocks[0].Type != ai.ContentTypeText {
+			t.Errorf("expected text type for oversized binary, got %q", blocks[0].Type)
+		}
+		if !strings.Contains(blocks[0].Text, "too large") {
+			t.Errorf("expected 'too large' message, got %q", blocks[0].Text)
+		}
+	})
+
+	t.Run("image content", func(t *testing.T) {
+		ar := newAutoResponder()
+		ar.setupInitialize(ServerCapabilities{
+			Resources: &ResourceCapability{},
+		}, "")
+		ar.setupResourcesList([]MCPResourceInfo{
+			{URI: "file:///photo.png", Name: "photo.png", MimeType: "image/png"},
+		})
+		ar.setHandler("resources/templates/list", func(id json.RawMessage, _ json.RawMessage) {
+			ar.respond(id, ResourceTemplatesListPage{})
+		})
+
+		imgData := base64.StdEncoding.EncodeToString([]byte("fakepngdata"))
+		ar.setHandler("resources/read", func(id json.RawMessage, _ json.RawMessage) {
+			ar.respond(id, MCPResourceReadResult{
+				Contents: []MCPResourceContent{
+					{URI: "file:///photo.png", MimeType: "image/png", Blob: imgData},
+				},
+			})
+		})
+
+		mgr, server := buildTestServer(t, "resimg", &config.MCPServerConfig{}, ar)
+		defer mgr.Shutdown(context.Background())
+
+		if err := server.discoverAndRegisterResources(context.Background()); err != nil {
+			t.Fatalf("discoverAndRegisterResources: %v", err)
+		}
+
+		tool, ok := mgr.toolRegistry.Get("mcp__resimg__read_resource")
+		if !ok {
+			t.Fatal("read_resource tool not registered")
+		}
+
+		blocks, err := tool.(tools.RichTool).ExecuteRich(context.Background(), map[string]any{"uri": "file:///photo.png"})
+		if err != nil {
+			t.Fatalf("ExecuteRich: %v", err)
+		}
+		if len(blocks) != 1 {
+			t.Fatalf("expected 1 block, got %d", len(blocks))
+		}
+		if blocks[0].Type != ai.ContentTypeImage {
+			t.Errorf("expected image type, got %q", blocks[0].Type)
+		}
+		if blocks[0].MediaType != "image/png" {
+			t.Errorf("media type = %q, want image/png", blocks[0].MediaType)
+		}
+		if blocks[0].ImageData != imgData {
+			t.Error("image data mismatch")
+		}
+
+		// Plain Execute should produce "[image: image/png]".
+		plain, err := tool.Execute(context.Background(), map[string]any{"uri": "file:///photo.png"})
+		if err != nil {
+			t.Fatalf("Execute: %v", err)
+		}
+		if !strings.Contains(plain, "[image: image/png]") {
+			t.Errorf("Execute() = %q, want '[image: image/png]'", plain)
+		}
+	})
+
+	t.Run("server error propagates", func(t *testing.T) {
+		ar := newAutoResponder()
+		ar.setupInitialize(ServerCapabilities{
+			Resources: &ResourceCapability{},
+		}, "")
+		ar.setupResourcesList([]MCPResourceInfo{
+			{URI: "file:///secret.txt", Name: "secret.txt"},
+		})
+		ar.setHandler("resources/templates/list", func(id json.RawMessage, _ json.RawMessage) {
+			ar.respond(id, ResourceTemplatesListPage{})
+		})
+		ar.setHandler("resources/read", func(id json.RawMessage, _ json.RawMessage) {
+			ar.respondError(id, -32600, "access denied")
+		})
+
+		mgr, server := buildTestServer(t, "reserr", &config.MCPServerConfig{}, ar)
+		defer mgr.Shutdown(context.Background())
+
+		if err := server.discoverAndRegisterResources(context.Background()); err != nil {
+			t.Fatalf("discoverAndRegisterResources: %v", err)
+		}
+
+		tool, ok := mgr.toolRegistry.Get("mcp__reserr__read_resource")
+		if !ok {
+			t.Fatal("read_resource tool not registered")
+		}
+
+		_, err := tool.(tools.RichTool).ExecuteRich(context.Background(), map[string]any{"uri": "file:///secret.txt"})
+		if err == nil {
+			t.Fatal("expected error from server")
+		}
+		if !strings.Contains(err.Error(), "access denied") {
+			t.Errorf("error = %v, want 'access denied'", err)
+		}
+	})
 }
 
 func TestIntegration_UnknownNotification(t *testing.T) {
