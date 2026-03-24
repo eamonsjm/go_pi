@@ -78,6 +78,15 @@ type PluginUIResponseMsg struct {
 	Error      string // Error message if dialog failed
 }
 
+// MCPConfirmMsg is sent from the MCP permission hook (via App.ConfirmMCPTool)
+// to request interactive user approval for an MCP tool invocation. The caller
+// blocks on ResultCh until the TUI sends a boolean response.
+type MCPConfirmMsg struct {
+	ServerName string
+	ToolName   string
+	ResultCh   chan bool
+}
+
 // setModelMsg routes a model name change through the Bubble Tea message loop
 // so that App.SetModel is safe to call from any goroutine.
 type setModelMsg struct {

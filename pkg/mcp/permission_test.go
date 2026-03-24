@@ -125,6 +125,24 @@ func TestMCPPermissionHook_UnknownServer(t *testing.T) {
 	}
 }
 
+func TestMCPPermissionHook_SetConfirm(t *testing.T) {
+	// Start with nil confirm (non-interactive) → deny.
+	h := NewMCPPermissionHook(nil, nil)
+	err := h.BeforeExecute(context.Background(), "mcp__fs__write_file", nil)
+	if err == nil {
+		t.Error("should deny without confirm callback")
+	}
+
+	// Wire a confirm callback after construction → approve.
+	h.SetConfirm(func(server, tool, desc string) (bool, error) {
+		return true, nil
+	})
+	err = h.BeforeExecute(context.Background(), "mcp__fs__write_file", nil)
+	if err != nil {
+		t.Errorf("should approve after SetConfirm: %v", err)
+	}
+}
+
 func TestMCPAnnotationSource(t *testing.T) {
 	readOnly := true
 	src := NewMCPAnnotationSource(func(server, tool string) *ToolAnnotations {

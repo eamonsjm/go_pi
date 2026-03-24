@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -100,6 +101,11 @@ type App struct {
 	uiRequestPending *PluginUIRequestMsg
 	onUIResponse     func(*PluginUIResponseMsg)
 	hasUI            bool // true when in interactive mode, false in print/RPC mode
+
+	// MCP tool confirmation handling.
+	// mcpConfirmCh is non-nil while waiting for the user to approve/deny an MCP tool.
+	// The next editorSubmitMsg is interpreted as y/yes (approve) or anything else (deny).
+	mcpConfirmCh chan bool
 
 	// program is set after tea.NewProgram is created so that public setters
 	// (SetModel, SetThinking, SetSession) route mutations through the Bubble
@@ -233,6 +239,30 @@ func (a *App) SetSession(name string) {
 		return
 	}
 	a.header.SetSession(name)
+}
+
+// ConfirmMCPTool prompts the user to approve or deny an MCP tool invocation.
+// It is safe to call from any goroutine (e.g. the agent loop's tool execution).
+// Blocks until the user responds or the application context is cancelled.
+func (a *App) ConfirmMCPTool(serverName, toolName, description string) (bool, error) {
+	if a.program == nil {
+		return false, fmt.Errorf("no interactive session available")
+	}
+	ch := make(chan bool, 1)
+	a.program.Send(MCPConfirmMsg{
+		ServerName: serverName,
+		ToolName:   toolName,
+		ResultCh:   ch,
+	})
+	if a.ctx != nil {
+		select {
+		case approved := <-ch:
+			return approved, nil
+		case <-a.ctx.Done():
+			return false, fmt.Errorf("session closed")
+		}
+	}
+	return <-ch, nil
 }
 
 // SetModelChangeCallback sets the function called when the user switches the
@@ -445,6 +475,16 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 
+		// If we're waiting for an MCP tool confirmation, interpret input.
+		if a.mcpConfirmCh != nil {
+			ch := a.mcpConfirmCh
+			a.mcpConfirmCh = nil
+			a.chat.AddUserMessage(msg.text)
+			answer := strings.TrimSpace(strings.ToLower(msg.text))
+			ch <- (answer == "y" || answer == "yes")
+			return a, nil
+		}
+
 		// If we're waiting for a UI response, handle it.
 		if a.uiRequestPending != nil {
 			req := a.uiRequestPending
@@ -564,6 +604,18 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Store the pending UI request. The next editor submission will be handled
 		// as a response to this request rather than a prompt to the agent.
 		a.uiRequestPending = &msg
+		return a, nil
+
+	case MCPConfirmMsg:
+		if !a.hasUI {
+			// Non-interactive: deny by default.
+			msg.ResultCh <- false
+			return a, nil
+		}
+		a.mcpConfirmCh = msg.ResultCh
+		a.chat.AddSystemMessage(fmt.Sprintf(
+			"MCP tool %q on server %q requires approval. Type y to allow, or n to deny:",
+			msg.ToolName, msg.ServerName))
 		return a, nil
 
 	case authOAuthMsg:
@@ -689,6 +741,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case editorQuitMsg:
 		if a.authCancelFn != nil {
 			a.authCancelFn()
+		}
+		// Unblock any pending MCP confirm so the caller goroutine doesn't hang.
+		if a.mcpConfirmCh != nil {
+			a.mcpConfirmCh <- false
+			a.mcpConfirmCh = nil
 		}
 		a.quitting = true
 		return a, tea.Quit

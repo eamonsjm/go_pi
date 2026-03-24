@@ -38,6 +38,12 @@ func NewMCPPermissionHook(configs map[string]*config.MCPPermissionConfig, confir
 	}
 }
 
+// SetConfirm sets (or replaces) the interactive confirmation callback.
+// This allows wiring the callback after construction, e.g. once the TUI is ready.
+func (h *MCPPermissionHook) SetConfirm(fn ConfirmToolFunc) {
+	h.confirm = fn
+}
+
 // SetAnnotationSource sets the annotation source for permission decisions.
 func (h *MCPPermissionHook) SetAnnotationSource(src AnnotationSource) {
 	h.annotationSource = src

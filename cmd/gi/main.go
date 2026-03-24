@@ -234,7 +234,7 @@ func run() int {
 			log.Printf("Cannot use print mode: %v", providerErr)
 			return 1
 		}
-		agentLoop := makeAgentLoop(provider, registry, cfg, skillRegistry, mcpMgr)
+		agentLoop, _ := makeAgentLoop(provider, registry, cfg, skillRegistry, mcpMgr)
 		sessionMgr.NewSession()
 		prompt := *printFlag
 		if initialPrompt != "" {
@@ -252,7 +252,7 @@ func run() int {
 			log.Printf("Cannot use JSON mode: %v", providerErr)
 			return 1
 		}
-		agentLoop := makeAgentLoop(provider, registry, cfg, skillRegistry, mcpMgr)
+		agentLoop, _ := makeAgentLoop(provider, registry, cfg, skillRegistry, mcpMgr)
 		return rpc.RunJSONStream(agentLoop, initialPrompt)
 	}
 
@@ -262,15 +262,16 @@ func run() int {
 			log.Printf("Cannot use RPC mode: %v", providerErr)
 			return 1
 		}
-		agentLoop := makeAgentLoop(provider, registry, cfg, skillRegistry, mcpMgr)
+		agentLoop, _ := makeAgentLoop(provider, registry, cfg, skillRegistry, mcpMgr)
 		rpc.RunRPC(agentLoop)
 		return 0
 	}
 
 	// Create agent loop - may be nil provider if no API key configured
 	var agentLoop *agent.AgentLoop
+	var mcpPermHook *mcp.MCPPermissionHook
 	if provider != nil {
-		agentLoop = makeAgentLoop(provider, registry, cfg, skillRegistry, mcpMgr)
+		agentLoop, mcpPermHook = makeAgentLoop(provider, registry, cfg, skillRegistry, mcpMgr)
 	} else {
 		// Create a placeholder loop with no provider — submitting will show the error
 		placeholderPrompt := buildSystemPrompt()
@@ -319,7 +320,7 @@ func run() int {
 		}
 	}
 
-	return runInteractive(agentLoop, sessionMgr, cfg, providerErr, pluginMgr, authStore, authResolver, skillRegistry, restoredSessionID, restoredMsgs, initialPrompt)
+	return runInteractive(agentLoop, sessionMgr, cfg, providerErr, pluginMgr, authStore, authResolver, skillRegistry, restoredSessionID, restoredMsgs, initialPrompt, mcpPermHook)
 }
 
 // setupAuth creates the auth store and resolver with registered OAuth providers.
@@ -531,7 +532,7 @@ func runPrintMode(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, promp
 	return 0
 }
 
-func makeAgentLoop(provider ai.Provider, registry *tools.Registry, cfg *config.Config, skillReg *skill.Registry, mcpMgr *mcp.MCPManager) *agent.AgentLoop {
+func makeAgentLoop(provider ai.Provider, registry *tools.Registry, cfg *config.Config, skillReg *skill.Registry, mcpMgr *mcp.MCPManager) (*agent.AgentLoop, *mcp.MCPPermissionHook) {
 	systemPrompt := buildSystemPrompt()
 	if skillReg != nil {
 		if idx := skill.SkillSystemReminder(skillReg); idx != "" {
@@ -558,6 +559,7 @@ func makeAgentLoop(provider ai.Provider, registry *tools.Registry, cfg *config.C
 
 	// Register MCP permission hook AFTER RTK hooks (which are registered in
 	// NewAgentLoop) to preserve the original tool name for RTK translation.
+	var permHook *mcp.MCPPermissionHook
 	if mcpMgr != nil {
 		permConfigs := make(map[string]*config.MCPPermissionConfig)
 		for name, srv := range cfg.MCPServers {
@@ -565,15 +567,15 @@ func makeAgentLoop(provider ai.Provider, registry *tools.Registry, cfg *config.C
 				permConfigs[name] = srv.Permissions
 			}
 		}
-		permHook := mcp.NewMCPPermissionHook(permConfigs, nil)
+		permHook = mcp.NewMCPPermissionHook(permConfigs, nil)
 		permHook.SetAnnotationSource(mcp.NewMCPAnnotationSource(mcpMgr.GetAnnotations))
 		loop.Hooks().Register(permHook)
 	}
 
-	return loop
+	return loop, permHook
 }
 
-func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg *config.Config, providerErr error, pluginMgr *plugin.Manager, authStore *auth.Store, authResolver *auth.Resolver, skillReg *skill.Registry, restoredSessionID string, restoredMsgs []ai.Message, initialPrompt string) int {
+func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg *config.Config, providerErr error, pluginMgr *plugin.Manager, authStore *auth.Store, authResolver *auth.Resolver, skillReg *skill.Registry, restoredSessionID string, restoredMsgs []ai.Message, initialPrompt string, mcpPermHook *mcp.MCPPermissionHook) int {
 	// Create the application lifecycle context. This is cancelled when
 	// runInteractive returns, ensuring all background operations (such as
 	// compaction) are stopped when the user quits.
@@ -684,6 +686,11 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 
 	p := tea.NewProgram(app, tea.WithAltScreen())
 	app.SetProgram(p)
+
+	// Wire MCP permission hook to TUI confirmation now that the program exists.
+	if mcpPermHook != nil {
+		mcpPermHook.SetConfirm(app.ConfirmMCPTool)
+	}
 
 	// Create a map of plugin processes for UI response handling
 	pluginsByName := make(map[string]*plugin.PluginProcess)

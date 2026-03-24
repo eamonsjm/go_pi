@@ -2246,3 +2246,139 @@ func TestThinkingFromString_AllLevels(t *testing.T) {
 		}
 	}
 }
+
+// ---------------------------------------------------------------------------
+// MCP tool confirmation flow (gp-stdk)
+// ---------------------------------------------------------------------------
+
+func TestApp_Update_MCPConfirmMsg_InteractiveApprove(t *testing.T) {
+	app := NewApp()
+	app.SetHasUI(true)
+
+	ch := make(chan bool, 1)
+	app.Update(MCPConfirmMsg{
+		ServerName: "fs",
+		ToolName:   "write_file",
+		ResultCh:   ch,
+	})
+
+	if app.mcpConfirmCh == nil {
+		t.Fatal("mcpConfirmCh should be set after MCPConfirmMsg")
+	}
+
+	// Simulate user typing "y"
+	app.Update(editorSubmitMsg{text: "y"})
+
+	select {
+	case approved := <-ch:
+		if !approved {
+			t.Error("expected approval for 'y' input")
+		}
+	default:
+		t.Error("result channel should have a value")
+	}
+
+	if app.mcpConfirmCh != nil {
+		t.Error("mcpConfirmCh should be cleared after response")
+	}
+}
+
+func TestApp_Update_MCPConfirmMsg_InteractiveDeny(t *testing.T) {
+	app := NewApp()
+	app.SetHasUI(true)
+
+	ch := make(chan bool, 1)
+	app.Update(MCPConfirmMsg{
+		ServerName: "fs",
+		ToolName:   "delete_file",
+		ResultCh:   ch,
+	})
+
+	// Simulate user typing "n"
+	app.Update(editorSubmitMsg{text: "n"})
+
+	select {
+	case approved := <-ch:
+		if approved {
+			t.Error("expected denial for 'n' input")
+		}
+	default:
+		t.Error("result channel should have a value")
+	}
+}
+
+func TestApp_Update_MCPConfirmMsg_YesVariant(t *testing.T) {
+	app := NewApp()
+	app.SetHasUI(true)
+
+	ch := make(chan bool, 1)
+	app.Update(MCPConfirmMsg{
+		ServerName: "fs",
+		ToolName:   "write_file",
+		ResultCh:   ch,
+	})
+
+	app.Update(editorSubmitMsg{text: "  Yes  "})
+
+	select {
+	case approved := <-ch:
+		if !approved {
+			t.Error("expected approval for 'Yes' input")
+		}
+	default:
+		t.Error("result channel should have a value")
+	}
+}
+
+func TestApp_Update_MCPConfirmMsg_HeadlessMode(t *testing.T) {
+	app := NewApp()
+	app.SetHasUI(false)
+
+	ch := make(chan bool, 1)
+	app.Update(MCPConfirmMsg{
+		ServerName: "fs",
+		ToolName:   "write_file",
+		ResultCh:   ch,
+	})
+
+	select {
+	case approved := <-ch:
+		if approved {
+			t.Error("headless mode should deny MCP tool confirmation")
+		}
+	default:
+		t.Error("result channel should have a value immediately in headless mode")
+	}
+
+	if app.mcpConfirmCh != nil {
+		t.Error("mcpConfirmCh should not be set in headless mode")
+	}
+}
+
+func TestApp_Update_MCPConfirmMsg_QuitCleansUp(t *testing.T) {
+	app := NewApp()
+	app.SetHasUI(true)
+
+	ch := make(chan bool, 1)
+	app.Update(MCPConfirmMsg{
+		ServerName: "fs",
+		ToolName:   "write_file",
+		ResultCh:   ch,
+	})
+
+	if app.mcpConfirmCh == nil {
+		t.Fatal("mcpConfirmCh should be set")
+	}
+
+	// Quit the app — should unblock the channel with false.
+	app.Update(editorQuitMsg{})
+
+	select {
+	case approved := <-ch:
+		if approved {
+			t.Error("quit should deny pending MCP confirmation")
+		}
+	default:
+		t.Error("quit should unblock pending MCP confirmation")
+	}
+}
