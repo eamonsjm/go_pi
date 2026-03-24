@@ -17,6 +17,7 @@ import (
 	"github.com/ejm/go_pi/pkg/ai"
 	"github.com/ejm/go_pi/pkg/auth"
 	"github.com/ejm/go_pi/pkg/config"
+	"github.com/ejm/go_pi/pkg/mcp"
 	"github.com/ejm/go_pi/pkg/plugin"
 	"github.com/ejm/go_pi/pkg/rpc"
 	"github.com/ejm/go_pi/pkg/session"
@@ -185,6 +186,24 @@ func run() int {
 	skillTool := skill.NewSkillTool(skillRegistry, cfg.DefaultModel)
 	registry.Register(skillTool)
 
+	// Initialize MCP servers.
+	var mcpMgr *mcp.MCPManager
+	if len(cfg.MCPServers) > 0 {
+		mcpMgr = mcp.NewMCPManager(mcp.MCPManagerConfig{
+			ToolRegistry:  registry,
+			SkillRegistry: skillRegistry,
+			WorkingDir:    cwd,
+			ConfigDir:     cfg.ConfigDir,
+			ProjectPath:   cwd,
+			ClientName:    "gi",
+			ClientVersion: "0.1.0",
+		})
+		if err := mcpMgr.StartAll(context.Background(), cfg); err != nil {
+			log.Printf("Failed to start MCP servers: %v", err)
+		}
+		defer mcpMgr.Shutdown(context.Background())
+	}
+
 	sessionDir := cfg.SessionDir
 	if sessionDir == "" {
 		home, err := os.UserHomeDir()
@@ -215,7 +234,7 @@ func run() int {
 			log.Printf("Cannot use print mode: %v", providerErr)
 			return 1
 		}
-		agentLoop := makeAgentLoop(provider, registry, cfg, skillRegistry)
+		agentLoop := makeAgentLoop(provider, registry, cfg, skillRegistry, mcpMgr)
 		sessionMgr.NewSession()
 		prompt := *printFlag
 		if initialPrompt != "" {
@@ -233,7 +252,7 @@ func run() int {
 			log.Printf("Cannot use JSON mode: %v", providerErr)
 			return 1
 		}
-		agentLoop := makeAgentLoop(provider, registry, cfg, skillRegistry)
+		agentLoop := makeAgentLoop(provider, registry, cfg, skillRegistry, mcpMgr)
 		return rpc.RunJSONStream(agentLoop, initialPrompt)
 	}
 
@@ -243,7 +262,7 @@ func run() int {
 			log.Printf("Cannot use RPC mode: %v", providerErr)
 			return 1
 		}
-		agentLoop := makeAgentLoop(provider, registry, cfg, skillRegistry)
+		agentLoop := makeAgentLoop(provider, registry, cfg, skillRegistry, mcpMgr)
 		rpc.RunRPC(agentLoop)
 		return 0
 	}
@@ -251,7 +270,7 @@ func run() int {
 	// Create agent loop - may be nil provider if no API key configured
 	var agentLoop *agent.AgentLoop
 	if provider != nil {
-		agentLoop = makeAgentLoop(provider, registry, cfg, skillRegistry)
+		agentLoop = makeAgentLoop(provider, registry, cfg, skillRegistry, mcpMgr)
 	} else {
 		// Create a placeholder loop with no provider — submitting will show the error
 		placeholderPrompt := buildSystemPrompt()
@@ -512,21 +531,46 @@ func runPrintMode(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, promp
 	return 0
 }
 
-func makeAgentLoop(provider ai.Provider, registry *tools.Registry, cfg *config.Config, skillReg *skill.Registry) *agent.AgentLoop {
+func makeAgentLoop(provider ai.Provider, registry *tools.Registry, cfg *config.Config, skillReg *skill.Registry, mcpMgr *mcp.MCPManager) *agent.AgentLoop {
 	systemPrompt := buildSystemPrompt()
 	if skillReg != nil {
 		if idx := skill.SkillSystemReminder(skillReg); idx != "" {
 			systemPrompt += "\n\n<system-reminder>\n" + idx + "</system-reminder>"
 		}
 	}
-	return agent.NewAgentLoop(
-		provider,
-		registry,
+	if mcpMgr != nil {
+		if instr := mcpMgr.ServerInstructions(); instr != "" {
+			systemPrompt += "\n\n" + instr
+		}
+	}
+
+	opts := []agent.Option{
 		agent.WithModel(cfg.DefaultModel),
 		agent.WithMaxTokens(cfg.MaxTokens),
 		agent.WithThinking(ai.ThinkingLevel(cfg.ThinkingLevel)),
 		agent.WithSystemPrompt(systemPrompt),
-	)
+	}
+	if mcpMgr != nil {
+		opts = append(opts, agent.WithSystemMessageDrainer(mcpMgr.DrainSystemMessages))
+	}
+
+	loop := agent.NewAgentLoop(provider, registry, opts...)
+
+	// Register MCP permission hook AFTER RTK hooks (which are registered in
+	// NewAgentLoop) to preserve the original tool name for RTK translation.
+	if mcpMgr != nil {
+		permConfigs := make(map[string]*config.MCPPermissionConfig)
+		for name, srv := range cfg.MCPServers {
+			if srv != nil && srv.Permissions != nil {
+				permConfigs[name] = srv.Permissions
+			}
+		}
+		permHook := mcp.NewMCPPermissionHook(permConfigs, nil)
+		permHook.SetAnnotationSource(mcp.NewMCPAnnotationSource(mcpMgr.GetAnnotations))
+		loop.Hooks().Register(permHook)
+	}
+
+	return loop
 }
 
 func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg *config.Config, providerErr error, pluginMgr *plugin.Manager, authStore *auth.Store, authResolver *auth.Resolver, skillReg *skill.Registry, restoredSessionID string, restoredMsgs []ai.Message, initialPrompt string) int {

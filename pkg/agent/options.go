@@ -91,3 +91,13 @@ func WithWorkingDir(dir string) Option {
 		a.workingDir = dir
 	}
 }
+
+// WithSystemMessageDrainer sets a callback that the agent loop calls at
+// the start of each iteration to collect pending system messages (e.g.,
+// from MCP servers notifying about tool list changes). Returned messages
+// are injected as user-role messages before the next LLM turn.
+func WithSystemMessageDrainer(fn func() []string) Option {
+	return func(a *AgentLoop) {
+		a.drainSystemMessages = fn
+	}
+}

@@ -60,6 +60,11 @@ type AgentLoop struct {
 	// cancel is called to abort the current Prompt execution.
 	cancel context.CancelFunc
 
+	// drainSystemMessages, when set, is called at the start of each loop iteration
+	// to collect pending system messages (e.g. from MCP servers). Returned messages
+	// are injected as user-role messages before the next LLM turn.
+	drainSystemMessages func() []string
+
 	// steerCh allows injecting a steering message that interrupts tool execution.
 	steerCh chan string
 	// followUpCh allows queuing a follow-up user message processed after the loop ends.
@@ -209,6 +214,13 @@ func (a *AgentLoop) SetSystemPrompt(prompt string) {
 	a.systemPrompt = prompt
 }
 
+// Hooks returns the hook registry, allowing callers to register additional
+// hooks (e.g. MCP permission hooks) after construction.
+func (a *AgentLoop) Hooks() *tools.HookRegistry {
+	a.ensureInit()
+	return a.hooks
+}
+
 // Cancel aborts the current Prompt execution.
 func (a *AgentLoop) Cancel() {
 	a.mu.Lock()
@@ -308,6 +320,13 @@ steerDrained:
 	for {
 		if err := ctx.Err(); err != nil {
 			return fmt.Errorf("agent run: %w", err)
+		}
+
+		// Drain pending system messages (e.g. MCP tool list changes).
+		if a.drainSystemMessages != nil {
+			for _, sysMsg := range a.drainSystemMessages() {
+				a.appendMessage(ai.NewTextMessage(ai.RoleUser, sysMsg))
+			}
 		}
 
 		// Check if auto-compaction is needed before the next LLM call.
