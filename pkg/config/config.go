@@ -292,11 +292,21 @@ func mergeFromFile(cfg *Config, path string) error {
 		}
 	}
 
-	// Command aliases
+	// Command aliases (per-key merge with null-deletion, like MCP servers)
 	if v, ok := raw["aliases"]; ok {
-		var aliases map[string]string
+		var aliases map[string]*string
 		if json.Unmarshal(v, &aliases) == nil && aliases != nil {
-			cfg.Aliases = aliases
+			if cfg.Aliases == nil {
+				cfg.Aliases = make(map[string]string)
+			}
+			for name, val := range aliases {
+				if val == nil {
+					// null value disables an alias from a higher tier
+					delete(cfg.Aliases, name)
+				} else {
+					cfg.Aliases[name] = *val
+				}
+			}
 		}
 	}
 

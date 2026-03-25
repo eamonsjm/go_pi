@@ -512,6 +512,71 @@ func TestMergeFromFileNullValues(t *testing.T) {
 	}
 }
 
+func TestMergeFromFileAliases(t *testing.T) {
+	dir := t.TempDir()
+
+	// Global config with two aliases.
+	globalPath := filepath.Join(dir, "global.json")
+	globalData := []byte(`{
+		"aliases": {
+			"h": "help",
+			"s": "status"
+		}
+	}`)
+	if err := os.WriteFile(globalPath, globalData, 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	cfg := mustDefaultConfig(t)
+	if err := mergeFromFile(cfg, globalPath); err != nil {
+		t.Fatalf("mergeFromFile global: %v", err)
+	}
+
+	if len(cfg.Aliases) != 2 {
+		t.Fatalf("expected 2 aliases, got %d", len(cfg.Aliases))
+	}
+	if cfg.Aliases["h"] != "help" {
+		t.Errorf("h = %q, want %q", cfg.Aliases["h"], "help")
+	}
+
+	// Project config: override s, null-disable h, add new alias.
+	projectPath := filepath.Join(dir, "project.json")
+	projectData := []byte(`{
+		"aliases": {
+			"h": null,
+			"s": "git status",
+			"b": "build"
+		}
+	}`)
+	if err := os.WriteFile(projectPath, projectData, 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	if err := mergeFromFile(cfg, projectPath); err != nil {
+		t.Fatalf("mergeFromFile project: %v", err)
+	}
+
+	// h should be removed (null-disabled).
+	if _, ok := cfg.Aliases["h"]; ok {
+		t.Error("h should be null-disabled by project config")
+	}
+
+	// s should be overridden.
+	if cfg.Aliases["s"] != "git status" {
+		t.Errorf("s = %q, want %q", cfg.Aliases["s"], "git status")
+	}
+
+	// b should be added.
+	if cfg.Aliases["b"] != "build" {
+		t.Errorf("b = %q, want %q", cfg.Aliases["b"], "build")
+	}
+
+	// Total should be 2 (s and b).
+	if len(cfg.Aliases) != 2 {
+		t.Errorf("expected 2 aliases after merge, got %d", len(cfg.Aliases))
+	}
+}
+
 func TestMergeFromFileMCPServers(t *testing.T) {
 	dir := t.TempDir()
 
