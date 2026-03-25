@@ -6,10 +6,12 @@ import (
 	"errors"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
+	smithy "github.com/aws/smithy-go"
 )
 
 // --- Mock types for Stream/readEventStream tests ---
@@ -952,5 +954,115 @@ func TestStream_BuildInputError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "failed to build request") {
 		t.Errorf("expected 'failed to build request' in error, got: %v", err)
+	}
+}
+
+// --- Retry tests ---
+
+// smithyAPIError implements smithy.APIError for testing.
+type smithyAPIError struct {
+	code    string
+	message string
+}
+
+func (e *smithyAPIError) Error() string   { return e.code + ": " + e.message }
+func (e *smithyAPIError) ErrorCode() string   { return e.code }
+func (e *smithyAPIError) ErrorMessage() string { return e.message }
+func (e *smithyAPIError) ErrorFault() smithy.ErrorFault { return smithy.FaultServer }
+
+func TestIsBedrockRetryable(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"ThrottlingException", &smithyAPIError{code: "ThrottlingException", message: "rate exceeded"}, true},
+		{"TooManyRequestsException", &smithyAPIError{code: "TooManyRequestsException", message: "slow down"}, true},
+		{"ServiceUnavailableException", &smithyAPIError{code: "ServiceUnavailableException", message: "try later"}, true},
+		{"AccessDeniedException", &smithyAPIError{code: "AccessDeniedException", message: "forbidden"}, false},
+		{"ValidationException", &smithyAPIError{code: "ValidationException", message: "bad input"}, false},
+		{"plain error", errors.New("network timeout"), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isBedrockRetryable(tt.err); got != tt.want {
+				t.Errorf("isBedrockRetryable(%v) = %v, want %v", tt.err, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestStream_RetriesExhausted(t *testing.T) {
+	var attempts atomic.Int32
+	p := &BedrockProvider{
+		client: &mockBedrockClient{
+			fn: func(_ context.Context, _ *bedrockruntime.ConverseStreamInput, _ ...func(*bedrockruntime.Options)) (*bedrockruntime.ConverseStreamOutput, error) {
+				attempts.Add(1)
+				return nil, &smithyAPIError{code: "ThrottlingException", message: "rate exceeded"}
+			},
+		},
+	}
+
+	_, err := p.Stream(context.Background(), StreamRequest{
+		Model:    "test-model",
+		Messages: []Message{NewTextMessage(RoleUser, "Hello")},
+	})
+	if err == nil {
+		t.Fatal("expected error after retries exhausted")
+	}
+	if !strings.Contains(err.Error(), "request failed") {
+		t.Errorf("expected 'request failed' in error, got: %v", err)
+	}
+	// maxRetries is 2, so 3 total attempts
+	if got := attempts.Load(); got != 3 {
+		t.Errorf("expected 3 attempts (1 + 2 retries), got %d", got)
+	}
+}
+
+func TestStream_NoRetryOnNonRetryableError(t *testing.T) {
+	var attempts atomic.Int32
+	p := &BedrockProvider{
+		client: &mockBedrockClient{
+			fn: func(_ context.Context, _ *bedrockruntime.ConverseStreamInput, _ ...func(*bedrockruntime.Options)) (*bedrockruntime.ConverseStreamOutput, error) {
+				attempts.Add(1)
+				return nil, &smithyAPIError{code: "AccessDeniedException", message: "forbidden"}
+			},
+		},
+	}
+
+	_, err := p.Stream(context.Background(), StreamRequest{
+		Model:    "test-model",
+		Messages: []Message{NewTextMessage(RoleUser, "Hello")},
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if got := attempts.Load(); got != 1 {
+		t.Errorf("expected 1 attempt (no retries), got %d", got)
+	}
+}
+
+func TestStream_RetryRespectsContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	var attempts atomic.Int32
+	p := &BedrockProvider{
+		client: &mockBedrockClient{
+			fn: func(_ context.Context, _ *bedrockruntime.ConverseStreamInput, _ ...func(*bedrockruntime.Options)) (*bedrockruntime.ConverseStreamOutput, error) {
+				attempts.Add(1)
+				cancel() // cancel on first attempt
+				return nil, &smithyAPIError{code: "ThrottlingException", message: "rate exceeded"}
+			},
+		},
+	}
+
+	_, err := p.Stream(ctx, StreamRequest{
+		Model:    "test-model",
+		Messages: []Message{NewTextMessage(RoleUser, "Hello")},
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got: %v", err)
+	}
+	if got := attempts.Load(); got != 1 {
+		t.Errorf("expected 1 attempt before cancel, got %d", got)
 	}
 }
