@@ -73,7 +73,7 @@ func (r *HookRegistry) After(ctx context.Context, toolName string, params map[st
 
 	defer func() {
 		if r := recover(); r != nil {
-			retResult = ""
+			retResult = result // preserve original tool output
 			retErr = fmt.Errorf("after-hook %q panicked: %v", toolName, r)
 		}
 	}()

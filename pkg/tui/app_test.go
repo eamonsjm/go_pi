@@ -2442,3 +2442,27 @@ func TestApp_Update_MCPConfirmMsg_QuitCleansUp(t *testing.T) {
 		t.Error("quit should unblock pending MCP confirmation")
 	}
 }
+
+func TestApp_Update_SamplingConfirmMsg_QuitCleansUp(t *testing.T) {
+	app := NewApp()
+	app.SetHasUI(true)
+
+	ch := make(chan bool, 1)
+	app.Update(SamplingConfirmMsg{ServerName: "test-server", ResponseCh: ch})
+
+	if app.samplingConfirmCh == nil {
+		t.Fatal("samplingConfirmCh should be set")
+	}
+
+	// Quit the app — should unblock the channel with false.
+	app.Update(editorQuitMsg{})
+
+	select {
+	case approved := <-ch:
+		if approved {
+			t.Error("quit should deny pending sampling confirmation")
+		}
+	default:
+		t.Error("quit should unblock pending sampling confirmation")
+	}
+}

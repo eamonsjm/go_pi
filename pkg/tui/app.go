@@ -771,6 +771,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.mcpConfirmCh <- false
 			a.mcpConfirmCh = nil
 		}
+		if a.samplingConfirmCh != nil {
+			a.samplingConfirmCh <- false
+			a.samplingConfirmCh = nil
+		}
 		a.quitting = true
 		return a, tea.Quit
 
