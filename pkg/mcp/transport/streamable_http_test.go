@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -277,6 +278,61 @@ func TestStreamableHTTPCloseWithActiveSSEStream(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("Receive() blocked after Close() with active SSE stream")
+	}
+}
+
+func TestStreamableHTTPCloseStopsSSEGoroutines(t *testing.T) {
+	// Verify that Close() actually terminates parseSSEStream goroutines by
+	// closing response bodies, not just signaling done. Without body closure,
+	// goroutines block on scanner.Scan() until the server drops the connection.
+	holdConn := make(chan struct{})
+	streamReady := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher := w.(http.Flusher)
+		fmt.Fprint(w, "data: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}\n\n")
+		flusher.Flush()
+		close(streamReady)
+		<-holdConn
+	}))
+	defer server.Close()
+	defer close(holdConn)
+
+	tr := NewStreamableHTTP(server.URL, nil)
+
+	ctx := context.Background()
+	if err := tr.Send(ctx, json.RawMessage(`{"jsonrpc":"2.0","id":1,"method":"test"}`)); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	<-streamReady
+	select {
+	case <-tr.Receive():
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for SSE message")
+	}
+
+	// Snapshot goroutine count before close.
+	before := runtime.NumGoroutine()
+
+	if err := tr.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	// The parseSSEStream goroutine should exit promptly after Close()
+	// closes its response body.
+	deadline := time.After(2 * time.Second)
+	for {
+		after := runtime.NumGoroutine()
+		if after < before {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("goroutine leak: %d goroutines before Close, %d after (expected decrease)",
+				before, runtime.NumGoroutine())
+		case <-time.After(50 * time.Millisecond):
+		}
 	}
 }
 

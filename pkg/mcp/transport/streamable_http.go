@@ -46,6 +46,12 @@ type StreamableHTTP struct {
 	// and GET streams).
 	incoming chan json.RawMessage
 
+	// Active SSE response bodies tracked for cleanup in Close().
+	// parseSSEStream registers its body on entry; Close() closes all
+	// tracked bodies to unblock goroutines blocked on scanner.Scan().
+	activeBodyMu sync.Mutex
+	activeBodies []io.ReadCloser
+
 	closeMu sync.Mutex
 	closed  bool
 	done    chan struct{} // closed on Close() to signal writer goroutines
@@ -226,6 +232,16 @@ func (t *StreamableHTTP) Close() error {
 	close(t.done)
 	t.closeMu.Unlock()
 
+	// Close active SSE response bodies to unblock parseSSEStream goroutines
+	// that are blocked on scanner.Scan(). Without this, those goroutines
+	// leak until the remote server closes the connection.
+	t.activeBodyMu.Lock()
+	for _, body := range t.activeBodies {
+		_ = body.Close()
+	}
+	t.activeBodies = nil
+	t.activeBodyMu.Unlock()
+
 	// Close incoming so consumers unblock. Writer goroutines are signaled
 	// via done and guard sends with trySend.
 	close(t.incoming)
@@ -291,6 +307,11 @@ func (t *StreamableHTTP) trySend(msg json.RawMessage) (sent bool) {
 // streamName identifies the stream for event ID tracking ("get" or "post").
 // For "get" streams, clears getStreamActive on exit to allow reconnection.
 func (t *StreamableHTTP) parseSSEStream(body io.ReadCloser, streamName string) {
+	// Track this body so Close() can interrupt scanner.Scan() by closing it.
+	t.activeBodyMu.Lock()
+	t.activeBodies = append(t.activeBodies, body)
+	t.activeBodyMu.Unlock()
+
 	defer func() { _ = body.Close() }()
 	if streamName == "get" {
 		defer func() {
