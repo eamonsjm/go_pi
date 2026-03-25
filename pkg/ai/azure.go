@@ -70,7 +70,7 @@ func NewAzureOpenAIProvider(apiKey, endpoint, deployment string) (*AzureOpenAIPr
 		deployment: deployment,
 		apiVersion: apiVersion,
 		httpClient: client,
-		inner:      &OpenAIProvider{apiKey: apiKey, httpClient: client},
+		inner:      &OpenAIProvider{apiKey: apiKey, httpClient: client, providerName: "azure"},
 	}, nil
 }
 
