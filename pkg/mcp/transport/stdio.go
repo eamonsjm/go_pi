@@ -32,6 +32,7 @@ type Stdio struct {
 	stdin    io.WriteCloser
 	stdout   io.ReadCloser
 	incoming chan json.RawMessage
+	done     chan struct{} // closed on Close() to unblock readLoop sends
 	closed   bool
 }
 
@@ -44,6 +45,7 @@ func NewStdio(command string, args []string, env []string) *Stdio {
 		args:     args,
 		env:      env,
 		incoming: make(chan json.RawMessage, incomingBufferSize),
+		done:     make(chan struct{}),
 	}
 }
 
@@ -121,6 +123,7 @@ func (t *Stdio) Close() error {
 		return nil
 	}
 	t.closed = true
+	close(t.done)
 
 	if t.stdin != nil {
 		if err := t.stdin.Close(); err != nil {
@@ -163,7 +166,11 @@ func (t *Stdio) readLoop() {
 		// Copy the bytes since scanner reuses its buffer.
 		msg := make(json.RawMessage, len(line))
 		copy(msg, line)
-		t.incoming <- msg
+		select {
+		case t.incoming <- msg:
+		case <-t.done:
+			return
+		}
 	}
 	if err := scanner.Err(); err != nil {
 		log.Printf("mcp stdio: read error: %v", err)
