@@ -20,9 +20,10 @@ const (
 
 // OpenAIProvider implements the Provider interface for OpenAI's Chat Completions API.
 type OpenAIProvider struct {
-	apiKey     string
-	httpClient *http.Client
-	baseURL    string
+	apiKey       string
+	httpClient   *http.Client
+	baseURL      string
+	providerName string // used in error messages; defaults to "openai" if empty
 }
 
 // NewOpenAIProvider creates a new OpenAI provider.
@@ -43,25 +44,35 @@ func NewOpenAIProvider(apiKey string) (*OpenAIProvider, error) {
 
 func (p *OpenAIProvider) Name() string { return "openai" }
 
+// errPrefix returns the provider name for use in error messages and logs.
+// Defaults to "openai" when providerName is not set.
+func (p *OpenAIProvider) errPrefix() string {
+	if p.providerName != "" {
+		return p.providerName
+	}
+	return "openai"
+}
+
 // Stream sends a streaming request to the OpenAI Chat Completions API and
 // returns a channel of StreamEvents.
 func (p *OpenAIProvider) Stream(ctx context.Context, req StreamRequest) (<-chan StreamEvent, error) {
+	prefix := p.errPrefix()
 	body, err := p.buildRequestBody(req)
 	if err != nil {
-		return nil, fmt.Errorf("openai: failed to build request: %w", err)
+		return nil, fmt.Errorf("%s: failed to build request: %w", prefix, err)
 	}
 
 	for attempt := 0; ; attempt++ {
 		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL, bytes.NewReader(body))
 		if err != nil {
-			return nil, fmt.Errorf("openai: failed to create HTTP request: %w", err)
+			return nil, fmt.Errorf("%s: failed to create HTTP request: %w", prefix, err)
 		}
 		httpReq.Header.Set("Content-Type", "application/json")
 		httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
 
 		resp, err := p.httpClient.Do(httpReq)
 		if err != nil {
-			return nil, fmt.Errorf("openai: request failed: %w", err)
+			return nil, fmt.Errorf("%s: request failed: %w", prefix, err)
 		}
 
 		if resp.StatusCode == http.StatusOK {
@@ -77,12 +88,13 @@ func (p *OpenAIProvider) Stream(ctx context.Context, req StreamRequest) (<-chan 
 		}
 
 		apiErr := parseOpenAIError(resp.StatusCode, resp.Header, errBody)
+		apiErr.Provider = prefix
 		if (resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusServiceUnavailable) && attempt < maxRetries {
 			wait := apiErr.RetryAfter
 			if wait == 0 {
 				wait = (attempt + 1) * 2
 			}
-			log.Printf("openai: HTTP %d, retrying in %ds (attempt %d/%d)", resp.StatusCode, wait, attempt+1, maxRetries+1)
+			log.Printf("%s: HTTP %d, retrying in %ds (attempt %d/%d)", prefix, resp.StatusCode, wait, attempt+1, maxRetries+1)
 			select {
 			case <-time.After(time.Duration(wait) * time.Second):
 				continue
@@ -219,7 +231,7 @@ func (p *OpenAIProvider) buildRequestBody(req StreamRequest) ([]byte, error) {
 	for _, m := range req.Messages {
 		om, err := mapToOpenAIMessage(m)
 		if err != nil {
-			return nil, fmt.Errorf("openai: %w", err)
+			return nil, fmt.Errorf("%s: %w", p.errPrefix(), err)
 		}
 		msgs = append(msgs, om)
 	}
@@ -377,11 +389,12 @@ type toolCallState struct {
 }
 
 func (p *OpenAIProvider) readSSEStream(ctx context.Context, body io.ReadCloser, ch chan<- StreamEvent) {
+	prefix := p.errPrefix()
 	defer close(ch)
 	defer func() {
 		if r := recover(); r != nil {
 			select {
-			case ch <- StreamEvent{Type: EventError, Error: fmt.Errorf("openai: stream goroutine panicked: %v", r)}:
+			case ch <- StreamEvent{Type: EventError, Error: fmt.Errorf("%s: stream goroutine panicked: %v", prefix, r)}:
 			default:
 			}
 		}
@@ -424,7 +437,7 @@ func (p *OpenAIProvider) readSSEStream(ctx context.Context, body io.ReadCloser, 
 
 		var chunk oaiChunk
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-			trySend(ctx, ch, StreamEvent{Type: EventError, Error: fmt.Errorf("openai: failed to parse chunk: %w", err)})
+			trySend(ctx, ch, StreamEvent{Type: EventError, Error: fmt.Errorf("%s: failed to parse chunk: %w", prefix, err)})
 			return
 		}
 
@@ -510,7 +523,7 @@ func (p *OpenAIProvider) readSSEStream(ctx context.Context, body io.ReadCloser, 
 	}
 
 	if err := scanner.Err(); err != nil {
-		trySend(ctx, ch, StreamEvent{Type: EventError, Error: fmt.Errorf("openai: stream read error: %w", err)})
+		trySend(ctx, ch, StreamEvent{Type: EventError, Error: fmt.Errorf("%s: stream read error: %w", prefix, err)})
 		return
 	}
 

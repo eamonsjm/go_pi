@@ -28,9 +28,10 @@ func NewOpenRouterProvider(apiKey string) (*OpenRouterProvider, error) {
 		return nil, fmt.Errorf("openrouter: API key not set (provide key or set OPENROUTER_API_KEY)")
 	}
 	inner := &OpenAIProvider{
-		apiKey:     apiKey,
-		httpClient: &http.Client{},
-		baseURL:    openrouterAPIURL,
+		apiKey:       apiKey,
+		httpClient:   &http.Client{},
+		baseURL:      openrouterAPIURL,
+		providerName: "openrouter",
 	}
 	return &OpenRouterProvider{inner: inner}, nil
 }
