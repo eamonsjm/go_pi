@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ejm/go_pi/pkg/ai"
 	"github.com/ejm/go_pi/pkg/tools"
@@ -382,6 +383,46 @@ func TestDiscoverResourceTemplatesError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
+}
+
+func TestSubscriptionManagerTouchAfterClose(t *testing.T) {
+	// Regression test for gp-5puq: touch() must not panic on a nil subs map
+	// after close() has been called.
+	sm := newSubscriptionManager(nil) // nil client is fine -- touch returns before using it
+	sm.close()
+
+	// Before the fix this panicked with "assignment to entry in nil map".
+	sm.touch(context.Background(), "file:///test.txt")
+}
+
+func TestSubscriptionManagerTouchCloseRace(t *testing.T) {
+	// Exercise the close/touch race. We manually construct the manager and
+	// simulate close() by nilling subs under the lock. The URI is
+	// pre-populated so touch() hits the refresh path (no subscribe RPC
+	// needed, avoiding the need for a real MCPClient).
+	sm := &subscriptionManager{
+		subs: map[string]*subscription{
+			"file:///test.txt": {lastAccess: time.Now()},
+		},
+	}
+
+	closeDone := make(chan struct{})
+	go func() {
+		defer close(closeDone)
+		// Simulate the critical part of close(): nil out the subs map.
+		sm.mu.Lock()
+		sm.subs = nil
+		sm.mu.Unlock()
+	}()
+
+	// Hammer touch() concurrently. Some calls see the populated map and
+	// refresh; others see nil and return early. Without the nil-guard fix,
+	// the nil-map read in the refresh path would return (nil, false) then
+	// fall through to a nil-map write panic.
+	for i := 0; i < 100; i++ {
+		sm.touch(context.Background(), "file:///test.txt")
+	}
+	<-closeDone
 }
 
 func TestMCPResourceToolSchema(t *testing.T) {
