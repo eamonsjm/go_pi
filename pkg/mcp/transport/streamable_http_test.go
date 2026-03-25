@@ -137,6 +137,41 @@ func TestStreamableHTTPSSEMultiLineData(t *testing.T) {
 	}
 }
 
+func TestStreamableHTTPSendRejectsNon2xx(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		status int
+	}{
+		{"bad request", http.StatusBadRequest},
+		{"unauthorized", http.StatusUnauthorized},
+		{"too many requests", http.StatusTooManyRequests},
+		{"internal server error", http.StatusInternalServerError},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tc.status)
+				fmt.Fprintf(w, `{"error":"something went wrong"}`)
+			}))
+			defer server.Close()
+
+			tr := NewStreamableHTTP(server.URL, nil)
+
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			err := tr.Send(ctx, json.RawMessage(`{"jsonrpc":"2.0","id":1,"method":"test"}`))
+			if err == nil {
+				t.Fatalf("expected error for HTTP %d, got nil", tc.status)
+			}
+			want := fmt.Sprintf("HTTP %d", tc.status)
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("error %q should contain %q", err, want)
+			}
+		})
+	}
+}
+
 func TestStreamableHTTPBatchRejected(t *testing.T) {
 	tr := NewStreamableHTTP("http://unused", nil)
 	err := tr.Send(context.Background(), json.RawMessage(`[{"jsonrpc":"2.0"}]`))

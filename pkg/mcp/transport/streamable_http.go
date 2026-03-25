@@ -107,6 +107,16 @@ func (t *StreamableHTTP) Send(ctx context.Context, msg json.RawMessage) error {
 		return err
 	}
 
+	// Reject non-2xx responses before Content-Type dispatch. Without this
+	// check, error responses (400/401/429/500) that happen to carry a JSON
+	// Content-Type are silently forwarded to the incoming channel as if they
+	// were valid JSON-RPC messages.
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		return fmt.Errorf("HTTP %d from MCP server: %s", resp.StatusCode, body)
+	}
+
 	// Content-Type dispatch: handle both response formats.
 	ct := resp.Header.Get("Content-Type")
 	switch {
