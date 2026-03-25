@@ -889,6 +889,42 @@ func TestGeminiStatusToErrorType(t *testing.T) {
 	}
 }
 
+func TestGeminiStream_RetryAfterHeader(t *testing.T) {
+	attempts := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		w.Header().Set("Retry-After", "1")
+		w.WriteHeader(http.StatusTooManyRequests)
+		fmt.Fprint(w, `{"error":{"code":429,"message":"Resource exhausted","status":"RESOURCE_EXHAUSTED"}}`)
+	}))
+	defer srv.Close()
+
+	p := &GeminiProvider{
+		apiKey:     "test-key",
+		httpClient: srv.Client(),
+		baseURL:    srv.URL,
+	}
+
+	_, err := p.Stream(context.Background(), StreamRequest{
+		Model:    "gemini-2.0-flash",
+		Messages: []Message{NewTextMessage(RoleUser, "hi")},
+	})
+	if err == nil {
+		t.Fatal("expected error after retry exhaustion")
+	}
+
+	apiErr, ok := err.(*APIError)
+	if !ok {
+		t.Fatalf("expected *APIError, got %T", err)
+	}
+	if apiErr.RetryAfter != 1 {
+		t.Errorf("expected RetryAfter=1, got %d", apiErr.RetryAfter)
+	}
+	if attempts != maxRetries+1 {
+		t.Errorf("expected %d attempts, got %d", maxRetries+1, attempts)
+	}
+}
+
 func TestGeminiStream_ContextCancellation(t *testing.T) {
 	ready := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

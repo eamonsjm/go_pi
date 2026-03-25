@@ -77,9 +77,14 @@ func (p *GeminiProvider) Stream(ctx context.Context, req StreamRequest) (<-chan 
 			errBody = []byte(fmt.Sprintf("failed to read response body: %v", readErr))
 		}
 
+		apiErr := parseGeminiError(resp.StatusCode, resp.Header, errBody)
+
 		// Retry on 429 (rate limit) and 503 (overloaded).
 		if (resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusServiceUnavailable) && attempt < maxRetries {
-			wait := (attempt + 1) * 2
+			wait := apiErr.RetryAfter
+			if wait == 0 {
+				wait = (attempt + 1) * 2
+			}
 			log.Printf("gemini: HTTP %d, retrying in %ds (attempt %d/%d)", resp.StatusCode, wait, attempt+1, maxRetries+1)
 			select {
 			case <-time.After(time.Duration(wait) * time.Second):
@@ -89,7 +94,7 @@ func (p *GeminiProvider) Stream(ctx context.Context, req StreamRequest) (<-chan 
 			}
 		}
 
-		return nil, parseGeminiError(resp.StatusCode, resp.Header, errBody)
+		return nil, apiErr
 	}
 }
 
