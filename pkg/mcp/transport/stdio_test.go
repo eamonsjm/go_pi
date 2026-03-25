@@ -129,6 +129,58 @@ func TestStdioMalformedJSON(t *testing.T) {
 	}
 }
 
+func TestStdioCloseUnblocksFullChannel(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("skipping on windows (no cat)")
+	}
+
+	s := NewStdio("cat", nil, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := s.Connect(ctx); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+
+	// Fill the incoming channel buffer so readLoop blocks on the next send.
+	for i := 0; i < incomingBufferSize; i++ {
+		msg := json.RawMessage(`{"jsonrpc":"2.0","id":1,"method":"fill"}`)
+		if err := s.Send(ctx, msg); err != nil {
+			t.Fatalf("Send fill %d: %v", i, err)
+		}
+	}
+
+	// Send one more message — readLoop will read it from the scanner but
+	// block trying to send it to the full channel.
+	extra := json.RawMessage(`{"jsonrpc":"2.0","id":99,"method":"blocked"}`)
+	if err := s.Send(ctx, extra); err != nil {
+		t.Fatalf("Send extra: %v", err)
+	}
+
+	// Give readLoop time to read the extra message and block on channel send.
+	time.Sleep(100 * time.Millisecond)
+
+	// Close must unblock readLoop via the done channel. Without the fix,
+	// this would hang because readLoop is stuck on channel send and
+	// closing stdout has no effect on it.
+	done := make(chan struct{})
+	go func() {
+		s.Close()
+		// Drain the channel to confirm it gets closed.
+		for range s.Receive() {
+		}
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Success: Close unblocked readLoop.
+	case <-time.After(3 * time.Second):
+		t.Fatal("Close did not unblock readLoop stuck on full channel send")
+	}
+}
+
 func TestStdioMultipleMessages(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("skipping on windows (no cat)")
