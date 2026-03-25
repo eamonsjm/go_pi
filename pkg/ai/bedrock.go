@@ -3,12 +3,16 @@ package ai
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
+	"log"
+	"time"
 
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/document"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
+	smithy "github.com/aws/smithy-go"
 )
 
 // bedrockStreamer abstracts the Bedrock ConverseStream API call for testability.
@@ -49,20 +53,50 @@ func NewBedrockProvider(ctx context.Context, region string) (*BedrockProvider, e
 func (p *BedrockProvider) Name() string { return "bedrock" }
 
 // Stream sends a streaming request via the Bedrock Converse Stream API.
+// Retries automatically on AWS throttling (ThrottlingException,
+// TooManyRequestsException) and service unavailable errors.
 func (p *BedrockProvider) Stream(ctx context.Context, req StreamRequest) (<-chan StreamEvent, error) {
 	input, err := p.buildConverseInput(req)
 	if err != nil {
 		return nil, fmt.Errorf("bedrock: failed to build request: %w", err)
 	}
 
-	output, err := p.client.ConverseStream(ctx, input)
-	if err != nil {
-		return nil, fmt.Errorf("bedrock: request failed: %w", err)
-	}
+	for attempt := 0; ; attempt++ {
+		output, err := p.client.ConverseStream(ctx, input)
+		if err != nil {
+			if isBedrockRetryable(err) && attempt < maxRetries {
+				wait := (attempt + 1) * 2 // 2s, 4s
+				log.Printf("bedrock: %s, retrying in %ds (attempt %d/%d)", err, wait, attempt+1, maxRetries+1)
+				select {
+				case <-time.After(time.Duration(wait) * time.Second):
+					continue
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
+			}
+			return nil, fmt.Errorf("bedrock: request failed: %w", err)
+		}
 
-	ch := make(chan StreamEvent, 64)
-	go p.readEventStream(ctx, output.GetStream(), ch)
-	return ch, nil
+		ch := make(chan StreamEvent, 64)
+		go p.readEventStream(ctx, output.GetStream(), ch)
+		return ch, nil
+	}
+}
+
+// isBedrockRetryable returns true if the AWS error indicates a throttled or
+// temporarily unavailable condition that should be retried.
+func isBedrockRetryable(err error) bool {
+	var apiErr smithy.APIError
+	if !errors.As(err, &apiErr) {
+		return false
+	}
+	switch apiErr.ErrorCode() {
+	case "ThrottlingException",
+		"TooManyRequestsException",
+		"ServiceUnavailableException":
+		return true
+	}
+	return false
 }
 
 func (p *BedrockProvider) buildConverseInput(req StreamRequest) (*bedrockruntime.ConverseStreamInput, error) {
