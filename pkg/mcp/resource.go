@@ -508,8 +508,14 @@ func newSubscriptionManager(client *MCPClient) *subscriptionManager {
 }
 
 // touch subscribes to a resource (if not already) and refreshes the TTL.
+// It is safe to call after close() — a nil subs map means the manager is
+// shut down and the call is a no-op.
 func (sm *subscriptionManager) touch(ctx context.Context, uri string) {
 	sm.mu.Lock()
+	if sm.subs == nil {
+		sm.mu.Unlock()
+		return
+	}
 	existing, ok := sm.subs[uri]
 	if ok {
 		existing.lastAccess = time.Now()
