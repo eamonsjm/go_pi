@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -860,5 +861,76 @@ func TestMergeFromFileRTKNilBaseMerge(t *testing.T) {
 	}
 	if cfg.RTK.CompressionLevels["git"] != "low" {
 		t.Errorf("expected git compression 'low', got %q", cfg.RTK.CompressionLevels["git"])
+	}
+}
+func TestLoadConfigRejectsInvalidThinkingLevel(t *testing.T) {
+	globalDir := t.TempDir()
+	data := []byte(`{"thinking_level": "hight"}`)
+	if err := os.WriteFile(filepath.Join(globalDir, "settings.json"), data, 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	_, err := LoadConfig(WithConfigDir(globalDir))
+	if err == nil {
+		t.Fatal("expected error for invalid thinking_level")
+	}
+	if !strings.Contains(err.Error(), `invalid thinking_level "hight"`) {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestLoadConfigAcceptsValidThinkingLevels(t *testing.T) {
+	for _, level := range []string{"off", "low", "medium", "high"} {
+		t.Run(level, func(t *testing.T) {
+			globalDir := t.TempDir()
+			data := []byte(`{"thinking_level": "` + level + `"}`)
+			if err := os.WriteFile(filepath.Join(globalDir, "settings.json"), data, 0o600); err != nil {
+				t.Fatalf("WriteFile: %v", err)
+			}
+
+			cfg, err := LoadConfig(WithConfigDir(globalDir))
+			if err != nil {
+				t.Fatalf("LoadConfig: %v", err)
+			}
+			if cfg.ThinkingLevel != level {
+				t.Errorf("ThinkingLevel = %q, want %q", cfg.ThinkingLevel, level)
+			}
+		})
+	}
+}
+
+func TestLoadConfigRejectsInvalidProvider(t *testing.T) {
+	globalDir := t.TempDir()
+	data := []byte(`{"default_provider": "anthrpoic"}`)
+	if err := os.WriteFile(filepath.Join(globalDir, "settings.json"), data, 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	_, err := LoadConfig(WithConfigDir(globalDir))
+	if err == nil {
+		t.Fatal("expected error for invalid default_provider")
+	}
+	if !strings.Contains(err.Error(), `invalid default_provider "anthrpoic"`) {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestLoadConfigAcceptsAllValidProviders(t *testing.T) {
+	for _, provider := range ValidProviderNames() {
+		t.Run(provider, func(t *testing.T) {
+			globalDir := t.TempDir()
+			data := []byte(`{"default_provider": "` + provider + `"}`)
+			if err := os.WriteFile(filepath.Join(globalDir, "settings.json"), data, 0o600); err != nil {
+				t.Fatalf("WriteFile: %v", err)
+			}
+
+			cfg, err := LoadConfig(WithConfigDir(globalDir))
+			if err != nil {
+				t.Fatalf("LoadConfig: %v", err)
+			}
+			if cfg.DefaultProvider != provider {
+				t.Errorf("DefaultProvider = %q, want %q", cfg.DefaultProvider, provider)
+			}
+		})
 	}
 }
