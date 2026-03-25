@@ -27,12 +27,13 @@ type Stdio struct {
 	args    []string
 	env     []string // additional environment variables ("KEY=VALUE")
 
-	mu       sync.Mutex
-	cmd      *exec.Cmd
-	stdin    io.WriteCloser
-	stdout   io.ReadCloser
-	incoming chan json.RawMessage
-	closed   bool
+	mu        sync.Mutex
+	cmd       *exec.Cmd
+	stdin     io.WriteCloser
+	stdout    io.ReadCloser
+	incoming  chan json.RawMessage
+	connected bool
+	closed    bool
 }
 
 // NewStdio creates a new Stdio transport. The subprocess is not started until
@@ -54,6 +55,9 @@ func (t *Stdio) Connect(ctx context.Context) error {
 
 	if t.closed {
 		return fmt.Errorf("transport is closed")
+	}
+	if t.connected {
+		return fmt.Errorf("transport already connected")
 	}
 
 	cmd := exec.CommandContext(ctx, t.command, t.args...)
@@ -80,6 +84,7 @@ func (t *Stdio) Connect(ctx context.Context) error {
 	t.cmd = cmd
 	t.stdin = stdin
 	t.stdout = stdout
+	t.connected = true
 
 	go t.readLoop()
 	return nil
