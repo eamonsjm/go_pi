@@ -289,8 +289,8 @@ func TestHookRegistryAfterPanicRecovery(t *testing.T) {
 	if got := err.Error(); got != `after-hook "bash" panicked: boom in after` {
 		t.Errorf("unexpected error message: %s", got)
 	}
-	if result != "" {
-		t.Errorf("expected empty result after panic, got %q", result)
+	if result != "input" {
+		t.Errorf("expected original result preserved after panic, got %q", result)
 	}
 }
 
