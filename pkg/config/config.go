@@ -5,7 +5,17 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
+
+// validThinkingLevels is the set of accepted thinking_level values.
+// Mirrors the ai.ThinkingLevel constants without importing pkg/ai.
+var validThinkingLevels = map[string]bool{
+	"off":    true,
+	"low":    true,
+	"medium": true,
+	"high":   true,
+}
 
 // RTKConfig holds RTK-specific settings.
 type RTKConfig struct {
@@ -198,6 +208,34 @@ func LoadConfig(opts ...LoadConfigOption) (*Config, error) {
 		if srv != nil && srv.Origin == "" {
 			srv.Origin = "project"
 		}
+	}
+
+	// Validate ThinkingLevel against known values.
+	if !validThinkingLevels[cfg.ThinkingLevel] {
+		valid := make([]string, 0, len(validThinkingLevels))
+		for k := range validThinkingLevels {
+			valid = append(valid, k)
+		}
+		// sort for deterministic error message
+		for i := 1; i < len(valid); i++ {
+			for j := i; j > 0 && valid[j] < valid[j-1]; j-- {
+				valid[j], valid[j-1] = valid[j-1], valid[j]
+			}
+		}
+		return nil, fmt.Errorf("invalid thinking_level %q: must be one of %s", cfg.ThinkingLevel, strings.Join(valid, ", "))
+	}
+
+	// Validate DefaultProvider against known providers.
+	validProviders := ValidProviderNames()
+	providerOK := false
+	for _, p := range validProviders {
+		if cfg.DefaultProvider == p {
+			providerOK = true
+			break
+		}
+	}
+	if !providerOK {
+		return nil, fmt.Errorf("invalid default_provider %q: must be one of %s", cfg.DefaultProvider, strings.Join(validProviders, ", "))
 	}
 
 	return cfg, nil
