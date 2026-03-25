@@ -656,3 +656,144 @@ func TestMergeFromFileAllowProjectEnvVars(t *testing.T) {
 		t.Errorf("AllowProjectEnvVars = %v, want [DB_NAME, API_KEY]", cfg.AllowProjectEnvVars)
 	}
 }
+
+func TestMergeFromFileRTKMergesNotReplaces(t *testing.T) {
+	dir := t.TempDir()
+
+	// Global config: override some RTK scalars and add compression entries.
+	globalPath := filepath.Join(dir, "global.json")
+	globalData := []byte(`{
+		"rtk": {
+			"export_path": "/var/log/rtk",
+			"compression_levels": {
+				"custom-cmd": "high"
+			},
+			"enabled_categories": {
+				"custom-cat": true,
+				"test": false
+			}
+		}
+	}`)
+	if err := os.WriteFile(globalPath, globalData, 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	cfg := mustDefaultConfig(t)
+	defaultLevels := len(cfg.RTK.CompressionLevels)
+	defaultCats := len(cfg.RTK.EnabledCategories)
+
+	if err := mergeFromFile(cfg, globalPath); err != nil {
+		t.Fatalf("mergeFromFile global: %v", err)
+	}
+
+	// Defaults + 1 new key
+	if len(cfg.RTK.CompressionLevels) != defaultLevels+1 {
+		t.Fatalf("expected %d compression levels, got %d: %v",
+			defaultLevels+1, len(cfg.RTK.CompressionLevels), cfg.RTK.CompressionLevels)
+	}
+	// Defaults + 1 new key (test already exists in defaults, so only custom-cat is new)
+	if len(cfg.RTK.EnabledCategories) != defaultCats+1 {
+		t.Fatalf("expected %d enabled categories, got %d: %v",
+			defaultCats+1, len(cfg.RTK.EnabledCategories), cfg.RTK.EnabledCategories)
+	}
+	// test overridden to false by global
+	if cfg.RTK.EnabledCategories["test"] {
+		t.Error("test category should be overridden to false by global config")
+	}
+
+	levelsAfterGlobal := len(cfg.RTK.CompressionLevels)
+	catsAfterGlobal := len(cfg.RTK.EnabledCategories)
+
+	// Project config: override one scalar, add one map entry, override one map entry.
+	projectPath := filepath.Join(dir, "project.json")
+	projectData := []byte(`{
+		"rtk": {
+			"metrics_enabled": false,
+			"compression_levels": {
+				"docker": "high"
+			},
+			"enabled_categories": {
+				"test": true
+			}
+		}
+	}`)
+	if err := os.WriteFile(projectPath, projectData, 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	if err := mergeFromFile(cfg, projectPath); err != nil {
+		t.Fatalf("mergeFromFile project: %v", err)
+	}
+
+	// Scalar: metrics_enabled overridden to false.
+	if cfg.RTK.MetricsEnabled {
+		t.Error("RTK.MetricsEnabled should be false after project override")
+	}
+
+	// Scalar: enabled should be preserved (not in project config).
+	if !cfg.RTK.Enabled {
+		t.Error("RTK.Enabled should still be true (not in project config)")
+	}
+
+	// Scalar: export_path should be preserved from global.
+	if cfg.RTK.ExportPath != "/var/log/rtk" {
+		t.Errorf("RTK.ExportPath should be preserved, got %q", cfg.RTK.ExportPath)
+	}
+
+	// Map merge: previous levels preserved, docker added.
+	if len(cfg.RTK.CompressionLevels) != levelsAfterGlobal+1 {
+		t.Errorf("expected %d compression levels after project merge, got %d: %v",
+			levelsAfterGlobal+1, len(cfg.RTK.CompressionLevels), cfg.RTK.CompressionLevels)
+	}
+	if cfg.RTK.CompressionLevels["custom-cmd"] != "high" {
+		t.Errorf("custom-cmd compression level should be preserved as 'high', got %q", cfg.RTK.CompressionLevels["custom-cmd"])
+	}
+	if cfg.RTK.CompressionLevels["docker"] != "high" {
+		t.Errorf("docker compression level should be added as 'high', got %q", cfg.RTK.CompressionLevels["docker"])
+	}
+
+	// Map merge: test overridden back to true, all others preserved.
+	if len(cfg.RTK.EnabledCategories) != catsAfterGlobal {
+		t.Errorf("expected %d enabled categories (no new keys), got %d: %v",
+			catsAfterGlobal, len(cfg.RTK.EnabledCategories), cfg.RTK.EnabledCategories)
+	}
+	if !cfg.RTK.EnabledCategories["test"] {
+		t.Error("test category should be overridden to true by project config")
+	}
+	if !cfg.RTK.EnabledCategories["custom-cat"] {
+		t.Error("custom-cat should be preserved from global config")
+	}
+}
+
+func TestMergeFromFileRTKNilBaseMerge(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "settings.json")
+
+	// When cfg.RTK is nil, merging should create it from the file.
+	data := []byte(`{
+		"rtk": {
+			"enabled": true,
+			"compression_levels": {"git": "low"}
+		}
+	}`)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	cfg := mustDefaultConfig(t)
+	cfg.RTK = nil // Force nil to test the nil-base path.
+
+	if err := mergeFromFile(cfg, path); err != nil {
+		t.Fatalf("mergeFromFile: %v", err)
+	}
+
+	if cfg.RTK == nil {
+		t.Fatal("RTK should not be nil after merge")
+	}
+	if !cfg.RTK.Enabled {
+		t.Error("RTK.Enabled should be true")
+	}
+	if cfg.RTK.CompressionLevels["git"] != "low" {
+		t.Errorf("expected git compression 'low', got %q", cfg.RTK.CompressionLevels["git"])
+	}
+}

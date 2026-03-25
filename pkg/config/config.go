@@ -300,11 +300,46 @@ func mergeFromFile(cfg *Config, path string) error {
 		}
 	}
 
-	// RTK configuration
+	// RTK configuration — merge per-field, not replace
 	if v, ok := raw["rtk"]; ok {
 		var rtkCfg RTKConfig
 		if json.Unmarshal(v, &rtkCfg) == nil {
-			cfg.RTK = &rtkCfg
+			if cfg.RTK == nil {
+				cfg.RTK = &rtkCfg
+			} else {
+				// Merge scalar fields only when explicitly set in the file.
+				// Unmarshal into a raw map to detect which keys were present.
+				var rtkRaw map[string]json.RawMessage
+				if json.Unmarshal(v, &rtkRaw) == nil {
+					if _, ok := rtkRaw["enabled"]; ok {
+						cfg.RTK.Enabled = rtkCfg.Enabled
+					}
+					if _, ok := rtkRaw["metrics_enabled"]; ok {
+						cfg.RTK.MetricsEnabled = rtkCfg.MetricsEnabled
+					}
+					if _, ok := rtkRaw["export_path"]; ok {
+						cfg.RTK.ExportPath = rtkCfg.ExportPath
+					}
+
+					// Merge maps per-key
+					if rtkCfg.CompressionLevels != nil {
+						if cfg.RTK.CompressionLevels == nil {
+							cfg.RTK.CompressionLevels = make(map[string]string)
+						}
+						for k, v := range rtkCfg.CompressionLevels {
+							cfg.RTK.CompressionLevels[k] = v
+						}
+					}
+					if rtkCfg.EnabledCategories != nil {
+						if cfg.RTK.EnabledCategories == nil {
+							cfg.RTK.EnabledCategories = make(map[string]bool)
+						}
+						for k, v := range rtkCfg.EnabledCategories {
+							cfg.RTK.EnabledCategories[k] = v
+						}
+					}
+				}
+			}
 		}
 	}
 
