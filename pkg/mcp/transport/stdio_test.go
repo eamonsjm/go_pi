@@ -73,6 +73,27 @@ func TestStdioClose(t *testing.T) {
 	}
 }
 
+func TestStdioDoubleConnect(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("skipping on windows (no cat)")
+	}
+
+	s := NewStdio("cat", nil, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := s.Connect(ctx); err != nil {
+		t.Fatalf("first Connect: %v", err)
+	}
+	defer s.Close()
+
+	// Second Connect must fail.
+	if err := s.Connect(ctx); err == nil {
+		t.Fatal("expected error on second Connect, got nil")
+	}
+}
+
 func TestStdioSendBeforeConnect(t *testing.T) {
 	s := NewStdio("cat", nil, nil)
 	err := s.Send(context.Background(), json.RawMessage(`{}`))
