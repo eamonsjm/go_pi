@@ -259,10 +259,21 @@ func (p *GeminiProvider) buildRequestBody(req StreamRequest) ([]byte, error) {
 		}
 	}
 
+	// Build a lookup from ToolUseID → ToolName so that tool result blocks
+	// can resolve the original function name for Gemini's functionResponse.
+	toolNames := make(map[string]string)
+	for _, m := range req.Messages {
+		for _, cb := range m.Content {
+			if cb.Type == ContentTypeToolUse && cb.ToolUseID != "" {
+				toolNames[cb.ToolUseID] = cb.ToolName
+			}
+		}
+	}
+
 	// Messages.
 	body.Contents = make([]gemContent, 0, len(req.Messages))
 	for _, m := range req.Messages {
-		gc, err := mapToGeminiContent(m)
+		gc, err := mapToGeminiContent(m, toolNames)
 		if err != nil {
 			return nil, fmt.Errorf("converting message to Gemini content: %w", err)
 		}
@@ -285,7 +296,7 @@ func (p *GeminiProvider) buildRequestBody(req StreamRequest) ([]byte, error) {
 	return json.Marshal(body)
 }
 
-func mapToGeminiContent(m Message) (gemContent, error) {
+func mapToGeminiContent(m Message, toolNames map[string]string) (gemContent, error) {
 	gc := gemContent{}
 
 	switch m.Role {
@@ -332,11 +343,15 @@ func mapToGeminiContent(m Message) (gemContent, error) {
 
 		case ContentTypeToolResult:
 			gc.Role = "user"
+			funcName := toolNames[cb.ToolResultID]
+			if funcName == "" {
+				funcName = cb.ToolResultID // fallback to ID if name not found
+			}
 			if len(cb.ContentBlocks) > 0 {
 				// Rich tool result: emit functionResponse then inline_data parts.
 				gc.Parts = append(gc.Parts, gemPart{
 					FunctionResponse: &gemFuncResponse{
-						Name:     cb.ToolResultID,
+						Name:     funcName,
 						Response: map[string]any{"result": ""},
 					},
 				})
@@ -356,7 +371,7 @@ func mapToGeminiContent(m Message) (gemContent, error) {
 			} else {
 				gc.Parts = append(gc.Parts, gemPart{
 					FunctionResponse: &gemFuncResponse{
-						Name: cb.ToolResultID,
+						Name: funcName,
 						Response: map[string]any{
 							"result": cb.Content,
 						},

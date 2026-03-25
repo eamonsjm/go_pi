@@ -819,6 +819,113 @@ func TestGeminiBuildRequestBody_RichToolResult(t *testing.T) {
 	}
 }
 
+func TestGeminiBuildRequestBody_ToolResultUsesToolName(t *testing.T) {
+	p := &GeminiProvider{apiKey: "test"}
+
+	req := StreamRequest{
+		Model: "gemini-2.0-flash",
+		Messages: []Message{
+			// Assistant message with tool use — establishes the ID→name mapping.
+			{
+				Role: RoleAssistant,
+				Content: []ContentBlock{
+					{
+						Type:      ContentTypeToolUse,
+						ToolUseID: "toolu_01abc",
+						ToolName:  "get_weather",
+						Input:     map[string]any{"city": "Seattle"},
+					},
+				},
+			},
+			// User message with tool result referencing the tool use ID.
+			NewToolResultMessage("toolu_01abc", `{"temp":72}`, false),
+		},
+	}
+
+	data, err := p.buildRequestBody(req)
+	if err != nil {
+		t.Fatalf("buildRequestBody failed: %v", err)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(data, &body); err != nil {
+		t.Fatalf("failed to parse JSON: %v", err)
+	}
+
+	contents := body["contents"].([]any)
+	if len(contents) != 2 {
+		t.Fatalf("expected 2 contents, got %d", len(contents))
+	}
+
+	// Second content is the tool result message.
+	resultContent := contents[1].(map[string]any)
+	parts := resultContent["parts"].([]any)
+	if len(parts) != 1 {
+		t.Fatalf("expected 1 part, got %d", len(parts))
+	}
+
+	frPart := parts[0].(map[string]any)
+	funcResp, ok := frPart["functionResponse"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected functionResponse, got %v", frPart)
+	}
+
+	// The bug: name was "toolu_01abc" (the correlation ID).
+	// Fixed: name should be "get_weather" (the tool name).
+	if funcResp["name"] != "get_weather" {
+		t.Errorf("expected name 'get_weather', got %v", funcResp["name"])
+	}
+}
+
+func TestGeminiBuildRequestBody_RichToolResultUsesToolName(t *testing.T) {
+	p := &GeminiProvider{apiKey: "test"}
+
+	req := StreamRequest{
+		Model: "gemini-2.0-flash",
+		Messages: []Message{
+			{
+				Role: RoleAssistant,
+				Content: []ContentBlock{
+					{
+						Type:      ContentTypeToolUse,
+						ToolUseID: "toolu_02xyz",
+						ToolName:  "read_file",
+						Input:     map[string]any{"path": "/tmp/test"},
+					},
+				},
+			},
+			NewRichToolResultMessage("toolu_02xyz", []ContentBlock{
+				{Type: ContentTypeText, Text: "File contents:"},
+				{Type: ContentTypeImage, MediaType: "image/png", ImageData: "iVBOR"},
+			}, false),
+		},
+	}
+
+	data, err := p.buildRequestBody(req)
+	if err != nil {
+		t.Fatalf("buildRequestBody failed: %v", err)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(data, &body); err != nil {
+		t.Fatalf("failed to parse JSON: %v", err)
+	}
+
+	contents := body["contents"].([]any)
+	resultContent := contents[1].(map[string]any)
+	parts := resultContent["parts"].([]any)
+
+	frPart := parts[0].(map[string]any)
+	funcResp, ok := frPart["functionResponse"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected functionResponse, got %v", frPart)
+	}
+
+	if funcResp["name"] != "read_file" {
+		t.Errorf("expected name 'read_file', got %v", funcResp["name"])
+	}
+}
+
 func TestGeminiBuildRequestBody_ToolCallInputConversionError(t *testing.T) {
 	p := &GeminiProvider{apiKey: "test"}
 
