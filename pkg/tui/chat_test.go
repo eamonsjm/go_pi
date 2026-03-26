@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -571,6 +572,34 @@ func TestChatView_HandleEvent_AgentError_Nil(t *testing.T) {
 	})
 	if cv.blocks[0].text != "unknown error" {
 		t.Errorf("expected 'unknown error' for nil error, got %q", cv.blocks[0].text)
+	}
+}
+
+func TestChatView_HandleEvent_AgentError_ContextCanceled(t *testing.T) {
+	cv := NewChatView()
+
+	// Direct context.Canceled should be suppressed.
+	changed := cv.HandleEvent(agent.Event{
+		Type:  agent.EventAgentError,
+		Error: context.Canceled,
+	})
+	if changed {
+		t.Error("context.Canceled: expected changed=false (suppressed)")
+	}
+	if len(cv.blocks) != 0 {
+		t.Errorf("expected 0 blocks, got %d", len(cv.blocks))
+	}
+
+	// Wrapped context.Canceled should also be suppressed.
+	changed = cv.HandleEvent(agent.Event{
+		Type:  agent.EventAgentError,
+		Error: fmt.Errorf("prompt: agent turn: stream error: anthropic: stream read error: %w", context.Canceled),
+	})
+	if changed {
+		t.Error("wrapped context.Canceled: expected changed=false (suppressed)")
+	}
+	if len(cv.blocks) != 0 {
+		t.Errorf("expected 0 blocks after wrapped cancel, got %d", len(cv.blocks))
 	}
 }
 

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -342,6 +343,11 @@ func (c *ChatView) HandleEvent(ev agent.Event) bool {
 
 	// ---- errors ----
 	case agent.EventAgentError:
+		// Suppress context-canceled errors — these are expected when the
+		// user presses Ctrl+C or Escape to interrupt a running prompt.
+		if ev.Error != nil && errors.Is(ev.Error, context.Canceled) {
+			return false
+		}
 		msg := "unknown error"
 		if ev.Error != nil {
 			var apiErr *ai.APIError
