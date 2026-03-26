@@ -196,52 +196,8 @@ func (m *Manager) ListSessions(ctx context.Context) ([]SessionInfo, error) {
 			UpdatedAt: info.ModTime(),
 		}
 		// Read entries for creation time, count, preview, and branch count.
-		if f, err := os.Open(path); err == nil {
-			scanner := bufio.NewScanner(f)
-			scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
-			count := 0
-			var allEntries []Entry
-			for scanner.Scan() {
-				if err := ctx.Err(); err != nil {
-					_ = f.Close()
-					return nil, fmt.Errorf("list sessions: %w", err)
-				}
-				line := strings.TrimSpace(scanner.Text())
-				if line == "" {
-					continue
-				}
-				count++
-				var e Entry
-				if err := json.Unmarshal([]byte(line), &e); err != nil {
-					log.Printf("session: parse entry in %s: %v", path, err)
-					continue
-				}
-				allEntries = append(allEntries, e)
-				if count == 1 {
-					si.CreatedAt = e.Timestamp
-				}
-				// Track the last user message for preview.
-				if e.Type == "message" {
-					if msg, ok := entryToMessage(e); ok && msg.Role == ai.RoleUser {
-						text := msg.GetText()
-						if first, _, ok := strings.Cut(text, "\n"); ok {
-							si.Preview = first
-						} else {
-							si.Preview = text
-						}
-						si.Preview = truncatePreview(si.Preview, 80)
-					}
-				}
-			}
-			if err := scanner.Err(); err != nil {
-				log.Printf("session: read %s: %v", path, err)
-			}
-			si.Entries = count
-			normalizeParentIDs(allEntries)
-			si.Branches = len(findLeafEntries(allEntries))
-			if err := f.Close(); err != nil {
-				log.Printf("session: close %s: %v", path, err)
-			}
+		if err := readSessionFile(ctx, path, &si); err != nil {
+			return nil, err
 		}
 		sessions = append(sessions, si)
 	}
@@ -300,18 +256,8 @@ func (m *Manager) appendEntryLocked(ctx context.Context, entry Entry) error {
 	}
 
 	path := m.sessionPath(m.current)
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
-	if err != nil {
-		return fmt.Errorf("open session file: %w", err)
-	}
-
-	if _, err := f.Write(append(data, '\n')); err != nil {
-		_ = f.Close()
-		return fmt.Errorf("write entry: %w", err)
-	}
-
-	if err := f.Close(); err != nil {
-		return fmt.Errorf("close session file: %w", err)
+	if err := writeEntryToFile(path, data); err != nil {
+		return err
 	}
 
 	m.entries = append(m.entries, entry)
@@ -893,6 +839,83 @@ func (m *Manager) CollectUserPrompts(ctx context.Context, maxPrompts int) []stri
 		result[i] = p.text
 	}
 	return result
+}
+
+// writeEntryToFile appends a JSON line to the session file. It uses a named
+// return with deferred close so that both write and close errors are captured.
+func writeEntryToFile(path string, data []byte) (retErr error) {
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return fmt.Errorf("open session file: %w", err)
+	}
+	defer func() {
+		if cerr := f.Close(); cerr != nil && retErr == nil {
+			retErr = fmt.Errorf("close session file: %w", cerr)
+		}
+	}()
+
+	if _, err := f.Write(append(data, '\n')); err != nil {
+		return fmt.Errorf("write entry: %w", err)
+	}
+	return nil
+}
+
+// readSessionFile opens a session JSONL file and populates si with entry
+// count, creation time, preview, and branch count. The file handle is always
+// closed via defer, preventing leaks on early returns or panics.
+func readSessionFile(ctx context.Context, path string, si *SessionInfo) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil // skip unreadable files
+	}
+	defer func() {
+		if cerr := f.Close(); cerr != nil {
+			log.Printf("session: close %s: %v", path, cerr)
+		}
+	}()
+
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
+	count := 0
+	var allEntries []Entry
+	for scanner.Scan() {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("list sessions: %w", err)
+		}
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		count++
+		var e Entry
+		if err := json.Unmarshal([]byte(line), &e); err != nil {
+			log.Printf("session: parse entry in %s: %v", path, err)
+			continue
+		}
+		allEntries = append(allEntries, e)
+		if count == 1 {
+			si.CreatedAt = e.Timestamp
+		}
+		// Track the last user message for preview.
+		if e.Type == "message" {
+			if msg, ok := entryToMessage(e); ok && msg.Role == ai.RoleUser {
+				text := msg.GetText()
+				if first, _, ok := strings.Cut(text, "\n"); ok {
+					si.Preview = first
+				} else {
+					si.Preview = text
+				}
+				si.Preview = truncatePreview(si.Preview, 80)
+			}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		log.Printf("session: read %s: %v", path, err)
+	}
+	si.Entries = count
+	normalizeParentIDs(allEntries)
+	si.Branches = len(findLeafEntries(allEntries))
+	return nil
 }
 
 // --- internal ---------------------------------------------------------------
