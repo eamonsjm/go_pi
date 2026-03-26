@@ -65,7 +65,10 @@ func (t *Stdio) Connect(ctx context.Context) error {
 		return fmt.Errorf("transport already connected")
 	}
 
-	cmd := exec.CommandContext(ctx, t.command, t.args...)
+	// Use exec.Command (not exec.CommandContext) so the subprocess lifetime
+	// is not tied to the Connect context. The process lives until Close()
+	// is called. CommandContext would kill the subprocess if ctx expires.
+	cmd := exec.Command(t.command, t.args...)
 	if len(t.env) > 0 {
 		cmd.Env = append(cmd.Environ(), t.env...)
 	}

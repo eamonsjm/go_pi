@@ -526,3 +526,34 @@ func TestStreamableHTTPOpenServerStreamReconnect(t *testing.T) {
 		t.Errorf("Last-Event-ID on reconnect = %q, want %q", lastEventIDHeader, "evt-1")
 	}
 }
+
+func TestStreamableHTTPSendRejectsNon2xx(t *testing.T) {
+	tests := []struct {
+		name   string
+		status int
+	}{
+		{"401 Unauthorized", http.StatusUnauthorized},
+		{"403 Forbidden", http.StatusForbidden},
+		{"404 Not Found", http.StatusNotFound},
+		{"500 Internal Server Error", http.StatusInternalServerError},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tt.status)
+				fmt.Fprint(w, "error details")
+			}))
+			defer server.Close()
+
+			tr := NewStreamableHTTP(server.URL, nil)
+			err := tr.Send(context.Background(), json.RawMessage(`{"jsonrpc":"2.0","id":1,"method":"test"}`))
+			if err == nil {
+				t.Fatalf("expected error for HTTP %d, got nil", tt.status)
+			}
+			if !strings.Contains(err.Error(), fmt.Sprintf("HTTP %d", tt.status)) {
+				t.Errorf("error should mention HTTP %d: %v", tt.status, err)
+			}
+		})
+	}
+}

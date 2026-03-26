@@ -3,6 +3,8 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/ejm/go_pi/pkg/config"
@@ -193,6 +195,41 @@ func TestHandleSamplingRequest_InvalidParams(t *testing.T) {
 	}
 	if resp.Error.Code != ErrCodeInvalidParams {
 		t.Errorf("error code = %d, want %d", resp.Error.Code, ErrCodeInvalidParams)
+	}
+}
+
+func TestHandleSamplingRequest_ApprovalError(t *testing.T) {
+	mgr := &MCPManager{
+		servers:      make(map[string]*MCPServer),
+		toolRegistry: tools.NewRegistry(),
+		confirmSampling: func(serverName string, req SamplingRequest) (bool, error) {
+			return false, fmt.Errorf("UI crashed")
+		},
+	}
+	cfg := &config.MCPServerConfig{
+		Sampling: &config.SamplingConfig{Enabled: true, MaxTokens: 4096},
+	}
+	s, mt := testServer(t, cfg, mgr)
+
+	id := json.RawMessage(`7`)
+	params, _ := json.Marshal(SamplingRequest{MaxTokens: 100})
+	s.handleSamplingRequest(context.Background(), id, params)
+
+	sent := mt.getSent()
+	if len(sent) != 1 {
+		t.Fatalf("expected 1 response, got %d", len(sent))
+	}
+	var resp JSONRPCResponse
+	json.Unmarshal(sent[0], &resp)
+	if resp.Error == nil {
+		t.Fatal("expected error when confirm callback fails")
+	}
+	// Should mention "approval failed", not "user denied".
+	if !strings.Contains(resp.Error.Message, "approval failed") {
+		t.Errorf("error message should mention approval failure, got %q", resp.Error.Message)
+	}
+	if !strings.Contains(resp.Error.Message, "UI crashed") {
+		t.Errorf("error message should include underlying error, got %q", resp.Error.Message)
 	}
 }
 

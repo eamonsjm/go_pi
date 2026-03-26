@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 )
 
 // SamplingRequest is the params for a sampling/createMessage request from a server.
@@ -80,7 +81,12 @@ func (s *MCPServer) handleSamplingRequest(ctx context.Context, id json.RawMessag
 			return
 		}
 		approved, err := s.manager.confirmSampling(s.name, req)
-		if err != nil || !approved {
+		if err != nil {
+			s.respondError(ctx, id, ErrCodeInvalidRequest,
+				fmt.Sprintf("sampling approval failed for MCP server %q: %v", s.name, err))
+			return
+		}
+		if !approved {
 			s.respondError(ctx, id, ErrCodeInvalidRequest,
 				fmt.Sprintf("user denied sampling request from MCP server %q", s.name))
 			return
@@ -114,6 +120,7 @@ func (s *MCPServer) handleSamplingRequest(ctx context.Context, id json.RawMessag
 func (s *MCPServer) respondResult(ctx context.Context, id json.RawMessage, result any) {
 	resultJSON, err := json.Marshal(result)
 	if err != nil {
+		log.Printf("mcp: server %q: failed to marshal result for id %s: %v", s.name, string(id), err)
 		return
 	}
 	resp := JSONRPCResponse{
@@ -123,6 +130,7 @@ func (s *MCPServer) respondResult(ctx context.Context, id json.RawMessage, resul
 	}
 	data, err := json.Marshal(resp)
 	if err != nil {
+		log.Printf("mcp: server %q: failed to marshal response for id %s: %v", s.name, string(id), err)
 		return
 	}
 	_ = s.transport.Send(ctx, data)
@@ -140,6 +148,7 @@ func (s *MCPServer) respondError(ctx context.Context, id json.RawMessage, code i
 	}
 	data, err := json.Marshal(resp)
 	if err != nil {
+		log.Printf("mcp: server %q: failed to marshal error response for id %s: %v", s.name, string(id), err)
 		return
 	}
 	_ = s.transport.Send(ctx, data)

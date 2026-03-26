@@ -126,6 +126,18 @@ func (t *StreamableHTTP) Send(ctx context.Context, msg json.RawMessage) error {
 		return fmt.Errorf("HTTP %d from MCP server: %s", resp.StatusCode, body)
 	}
 
+	// Check for HTTP-level errors before content-type dispatch. Non-2xx
+	// responses indicate transport-level failures (auth, routing, server
+	// errors) that should be reported as errors, not silently parsed.
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if len(body) > 200 {
+			body = body[:200]
+		}
+		return fmt.Errorf("MCP server returned HTTP %d: %s", resp.StatusCode, string(body))
+	}
+
 	// Content-Type dispatch: handle both response formats.
 	ct := resp.Header.Get("Content-Type")
 	switch {
