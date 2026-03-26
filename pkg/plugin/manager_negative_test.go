@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -23,7 +24,7 @@ func TestDiscover_ManifestEmptyJSON(t *testing.T) {
 	reg := tools.NewRegistry()
 	m := NewManager(reg)
 
-	err := m.Discover([]string{dir})
+	err := m.Discover(context.Background(), []string{dir})
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
@@ -44,7 +45,7 @@ func TestDiscover_ManifestTruncatedJSON(t *testing.T) {
 	reg := tools.NewRegistry()
 	m := NewManager(reg)
 
-	err := m.Discover([]string{dir})
+	err := m.Discover(context.Background(), []string{dir})
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
@@ -64,7 +65,7 @@ func TestDiscover_ManifestArrayJSON(t *testing.T) {
 	reg := tools.NewRegistry()
 	m := NewManager(reg)
 
-	err := m.Discover([]string{dir})
+	err := m.Discover(context.Background(), []string{dir})
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
@@ -84,7 +85,7 @@ func TestDiscover_ManifestEmptyFile(t *testing.T) {
 	reg := tools.NewRegistry()
 	m := NewManager(reg)
 
-	err := m.Discover([]string{dir})
+	err := m.Discover(context.Background(), []string{dir})
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
@@ -104,7 +105,7 @@ func TestDiscover_ManifestBinaryGarbage(t *testing.T) {
 	reg := tools.NewRegistry()
 	m := NewManager(reg)
 
-	err := m.Discover([]string{dir})
+	err := m.Discover(context.Background(), []string{dir})
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
@@ -130,7 +131,7 @@ func TestDiscover_ManifestPointsToMissingExecutable(t *testing.T) {
 	reg := tools.NewRegistry()
 	m := NewManager(reg)
 
-	err := m.Discover([]string{dir})
+	err := m.Discover(context.Background(), []string{dir})
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
@@ -157,7 +158,7 @@ func TestDiscover_ManifestPointsToDirectory(t *testing.T) {
 	reg := tools.NewRegistry()
 	m := NewManager(reg)
 
-	err := m.Discover([]string{dir})
+	err := m.Discover(context.Background(), []string{dir})
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
@@ -181,7 +182,7 @@ func TestDiscover_ManifestRelativeExeMissing(t *testing.T) {
 	reg := tools.NewRegistry()
 	m := NewManager(reg)
 
-	err := m.Discover([]string{dir})
+	err := m.Discover(context.Background(), []string{dir})
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
@@ -218,7 +219,7 @@ func TestDiscover_ManifestRelativeExeResolved(t *testing.T) {
 	reg := tools.NewRegistry()
 	m := NewManager(reg)
 
-	err := m.Discover([]string{dir})
+	err := m.Discover(context.Background(), []string{dir})
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
@@ -308,7 +309,7 @@ func TestDiscover_MultipleDirsSomeInvalid(t *testing.T) {
 	m := NewManager(reg)
 
 	// Mix of nonexistent and valid directories.
-	err := m.Discover([]string{"/nonexistent/dir1", goodDir, "/nonexistent/dir2"})
+	err := m.Discover(context.Background(), []string{"/nonexistent/dir1", goodDir, "/nonexistent/dir2"})
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
@@ -343,7 +344,7 @@ func TestDiscover_MultipleDirsMixedPlugins(t *testing.T) {
 	reg := tools.NewRegistry()
 	m := NewManager(reg)
 
-	err := m.Discover([]string{dir1, dir2})
+	err := m.Discover(context.Background(), []string{dir1, dir2})
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
@@ -389,7 +390,7 @@ func TestShutdown_Idempotent(t *testing.T) {
 	data, _ := json.Marshal(Manifest{Name: "test", Executable: exeName})
 	os.WriteFile(filepath.Join(pluginDir, "plugin.json"), data, 0644)
 
-	m.Discover([]string{dir})
+	m.Discover(context.Background(), []string{dir})
 
 	// First shutdown.
 	m.Shutdown()

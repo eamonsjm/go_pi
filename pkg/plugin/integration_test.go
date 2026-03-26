@@ -473,7 +473,7 @@ func TestIntegration_ManagerDiscoverAndInitialize(t *testing.T) {
 	reg := tools.NewRegistry()
 	m := NewManager(reg)
 
-	if err := m.Discover([]string{dir}); err != nil {
+	if err := m.Discover(context.Background(), []string{dir}); err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
 

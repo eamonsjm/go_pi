@@ -54,7 +54,7 @@ func TestDiscover_NonExistentDir(t *testing.T) {
 	m := NewManager(reg)
 
 	// Non-existent directories should be silently skipped.
-	err := m.Discover([]string{"/no/such/directory/exists"})
+	err := m.Discover(context.Background(), []string{"/no/such/directory/exists"})
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestDiscover_EmptyDir(t *testing.T) {
 	reg := tools.NewRegistry()
 	m := NewManager(reg)
 
-	err := m.Discover([]string{dir})
+	err := m.Discover(context.Background(), []string{dir})
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
@@ -87,7 +87,7 @@ func TestDiscover_SkipsFiles(t *testing.T) {
 	reg := tools.NewRegistry()
 	m := NewManager(reg)
 
-	err := m.Discover([]string{dir})
+	err := m.Discover(context.Background(), []string{dir})
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
@@ -121,7 +121,7 @@ func TestDiscover_WithManifest(t *testing.T) {
 	reg := tools.NewRegistry()
 	m := NewManager(reg)
 
-	err := m.Discover([]string{dir})
+	err := m.Discover(context.Background(), []string{dir})
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
@@ -160,7 +160,7 @@ func TestDiscover_ManifestDefaultName(t *testing.T) {
 
 	reg := tools.NewRegistry()
 	m := NewManager(reg)
-	m.Discover([]string{dir})
+	m.Discover(context.Background(), []string{dir})
 
 	if len(m.plugins) != 1 {
 		t.Fatalf("plugins = %d, want 1", len(m.plugins))
@@ -185,7 +185,7 @@ func TestDiscover_BadManifest(t *testing.T) {
 	m := NewManager(reg)
 
 	// Should not return an error — individual plugin failures are logged and skipped.
-	err := m.Discover([]string{dir})
+	err := m.Discover(context.Background(), []string{dir})
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
@@ -203,7 +203,7 @@ func TestDiscover_NoManifestNoExecutable(t *testing.T) {
 	reg := tools.NewRegistry()
 	m := NewManager(reg)
 
-	err := m.Discover([]string{dir})
+	err := m.Discover(context.Background(), []string{dir})
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
@@ -225,7 +225,7 @@ func TestDiscover_ExecutableNotExecutable(t *testing.T) {
 
 	reg := tools.NewRegistry()
 	m := NewManager(reg)
-	m.Discover([]string{dir})
+	m.Discover(context.Background(), []string{dir})
 
 	if len(m.plugins) != 0 {
 		t.Errorf("plugins = %d, want 0 (not executable)", len(m.plugins))

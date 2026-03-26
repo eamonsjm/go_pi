@@ -149,7 +149,7 @@ func run() int {
 	if cwd != "" {
 		pluginDirs = append(pluginDirs, filepath.Join(cwd, ".gi", "plugins"))
 	}
-	if err := pluginMgr.Discover(pluginDirs); err != nil {
+	if err := pluginMgr.Discover(context.Background(), pluginDirs); err != nil {
 		log.Printf("Failed to discover plugins: %v", err)
 	}
 	if *pluginFlag != "" {

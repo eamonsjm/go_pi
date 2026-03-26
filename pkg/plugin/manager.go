@@ -58,8 +58,11 @@ func (m *Manager) SetRestartConfig(cfg *RestartConfig) {
 // examined for either a plugin.json manifest or a same-named executable.
 // Errors for individual plugins are logged but do not prevent other plugins
 // from loading.
-func (m *Manager) Discover(dirs []string) error {
+func (m *Manager) Discover(ctx context.Context, dirs []string) error {
 	for _, dir := range dirs {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		entries, err := os.ReadDir(dir)
 		if err != nil {
 			// Directory doesn't exist or isn't readable -- skip silently.
