@@ -2444,12 +2444,14 @@ func TestApp_Update_MCPConfirmMsg_QuitCleansUp(t *testing.T) {
 }
 
 func TestApp_Update_SamplingConfirmMsg_QuitCleansUp(t *testing.T) {
-func TestApp_Update_MCPConfirmMsg_DisplaysDescription(t *testing.T) {
 	app := NewApp()
 	app.SetHasUI(true)
 
 	ch := make(chan bool, 1)
-	app.Update(SamplingConfirmMsg{ServerName: "test-server", ResponseCh: ch})
+	app.Update(SamplingConfirmMsg{
+		ServerName: "test-server",
+		ResponseCh: ch,
+	})
 
 	if app.samplingConfirmCh == nil {
 		t.Fatal("samplingConfirmCh should be set")
@@ -2465,6 +2467,14 @@ func TestApp_Update_MCPConfirmMsg_DisplaysDescription(t *testing.T) {
 		}
 	default:
 		t.Error("quit should unblock pending sampling confirmation")
+	}
+}
+
+func TestApp_Update_MCPConfirmMsg_DisplaysDescription(t *testing.T) {
+	app := NewApp()
+	app.SetHasUI(true)
+
+	ch := make(chan bool, 1)
 	app.Update(MCPConfirmMsg{
 		ServerName:  "fs",
 		ToolName:    "write_file",
