@@ -107,16 +107,11 @@ func (gc *GateChecker) CheckCI(ctx context.Context) (*GateStatus, error) {
 
 		gs.WorkflowStatuses[workflowName] = run
 
-		// Check if workflow is still in progress
-		if run.Status == "in_progress" || run.Status == "queued" {
+		// Only a completed workflow with a success conclusion passes the gate.
+		// Any other status (in_progress, queued, requested, waiting, pending)
+		// or non-success conclusion must block the merge.
+		if run.Status != "completed" || run.Conclusion != "success" {
 			allPassed = false
-			continue
-		}
-
-		// Check if workflow completed successfully
-		if run.Status == "completed" && run.Conclusion != "success" {
-			allPassed = false
-			continue
 		}
 	}
 
