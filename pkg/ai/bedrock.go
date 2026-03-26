@@ -16,6 +16,9 @@ type bedrockStreamer interface {
 	ConverseStream(ctx context.Context, params *bedrockruntime.ConverseStreamInput, optFns ...func(*bedrockruntime.Options)) (*bedrockruntime.ConverseStreamOutput, error)
 }
 
+// Compile-time interface check.
+var _ Provider = (*BedrockProvider)(nil)
+
 // BedrockProvider implements the Provider interface for AWS Bedrock's Converse Stream API.
 // It supports the standard AWS credential chain (environment variables, shared config,
 // IAM roles, instance profiles).

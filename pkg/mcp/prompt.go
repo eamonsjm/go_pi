@@ -149,7 +149,7 @@ func (c *MCPClient) ListPrompts(ctx context.Context, cursor string) (*PromptsLis
 	}
 	result, err := c.Request(ctx, "prompts/list", params)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("prompts/list: %w", err)
 	}
 	var page PromptsListPage
 	if err := json.Unmarshal(result, &page); err != nil {
@@ -168,7 +168,7 @@ func (c *MCPClient) GetPrompt(ctx context.Context, name string, arguments map[st
 	}
 	result, err := c.Request(ctx, "prompts/get", params)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("prompts/get %q: %w", name, err)
 	}
 	var promptResult PromptsGetResult
 	if err := json.Unmarshal(result, &promptResult); err != nil {

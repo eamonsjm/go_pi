@@ -14,6 +14,9 @@ import (
 	"time"
 )
 
+// Compile-time interface check.
+var _ Transport = (*StreamableHTTP)(nil)
+
 // StreamableHTTP implements Transport for remote MCP servers over
 // Streamable HTTP per the MCP 2025-11-25 spec.
 //
@@ -104,7 +107,7 @@ func (t *StreamableHTTP) Send(ctx context.Context, msg json.RawMessage) error {
 
 	resp, err := t.httpClient.Do(req)
 	if err != nil {
-		return err
+		return fmt.Errorf("POST %s: %w", t.endpoint, err)
 	}
 
 	// Content-Type dispatch: handle both response formats.
@@ -193,7 +196,7 @@ func (t *StreamableHTTP) OpenServerStream(ctx context.Context) error {
 	resp, err := t.httpClient.Do(req)
 	if err != nil {
 		t.getStreamMu.Unlock()
-		return err
+		return fmt.Errorf("GET stream %s: %w", t.endpoint, err)
 	}
 	if resp.StatusCode != http.StatusOK {
 		_ = resp.Body.Close()
@@ -244,7 +247,7 @@ func (t *StreamableHTTP) Close() error {
 
 	req, err := http.NewRequestWithContext(ctx, "DELETE", t.endpoint, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("creating session termination request: %w", err)
 	}
 	req.Header.Set("Mcp-Session-Id", sessionID)
 	if negotiatedVersion != "" {

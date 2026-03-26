@@ -26,6 +26,9 @@ const (
 // OpenAIOAuth implements OAuthProvider for OpenAI using OAuth 2.0
 // authorization code grant with PKCE (RFC 7636).
 //
+// Compile-time interface check.
+var _ OAuthProvider = (*OpenAIOAuth)(nil)
+
 // Unlike Anthropic's code-paste flow, OpenAI uses a local HTTP server
 // callback: the user authorizes in the browser, gets redirected to
 // localhost, and the server captures the authorization code automatically.

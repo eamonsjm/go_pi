@@ -20,6 +20,9 @@ const (
 	incomingBufferSize = 64
 )
 
+// Compile-time interface check.
+var _ Transport = (*Stdio)(nil)
+
 // Stdio implements Transport for local MCP servers via subprocess stdin/stdout.
 // JSON-RPC 2.0 messages are newline-delimited per the MCP spec.
 type Stdio struct {
