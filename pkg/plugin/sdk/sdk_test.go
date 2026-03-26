@@ -243,11 +243,14 @@ func TestCommandExecution(t *testing.T) {
 	send(hostMessage{Type: "initialize", Config: &Config{}})
 	recv() // capabilities
 
-	send(hostMessage{Type: "command", Name: "greet", Args: "world"})
+	send(hostMessage{Type: "command", ID: "cmd_1", Name: "greet", Args: "world"})
 
 	result := recv()
 	if result.Type != "command_result" {
 		t.Fatalf("expected command_result, got %s", result.Type)
+	}
+	if result.ID != "cmd_1" {
+		t.Errorf("expected id cmd_1, got %s", result.ID)
 	}
 	if result.Text != "Hello world" {
 		t.Errorf("expected 'Hello world', got %s", result.Text)
@@ -424,11 +427,14 @@ func TestCommandPanicRecovery(t *testing.T) {
 	send(hostMessage{Type: "initialize", Config: &Config{}})
 	recv() // capabilities
 
-	send(hostMessage{Type: "command", Name: "explode", Args: ""})
+	send(hostMessage{Type: "command", ID: "cmd_panic", Name: "explode", Args: ""})
 
 	result := recv()
 	if result.Type != "command_result" {
 		t.Fatalf("expected command_result, got %s", result.Type)
+	}
+	if result.ID != "cmd_panic" {
+		t.Errorf("expected id cmd_panic, got %s", result.ID)
 	}
 	if !result.IsError {
 		t.Error("expected is_error=true for panicking command")
