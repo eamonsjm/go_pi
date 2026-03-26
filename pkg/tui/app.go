@@ -122,6 +122,12 @@ type App struct {
 	// prevents data races when these methods are called from external
 	// goroutines while View() reads the same fields on the main goroutine.
 	program *tea.Program
+
+	// programRunning is set to true once the Bubble Tea event loop starts
+	// (in Init). Send() on an unstarted tea.Program deadlocks because the
+	// msgs channel is unbuffered, so setters must write directly until the
+	// event loop is consuming messages.
+	programRunning bool
 }
 
 // AppOption configures an App during construction.
@@ -196,7 +202,7 @@ func NewApp(opts ...AppOption) *App {
 //     (steering / interrupt injection).
 //   - onCancel is called when the user presses Ctrl-C or Escape during a run.
 func (a *App) SetCallbacks(onSubmit, onSteer func(string), onCancel func()) {
-	if a.program != nil {
+	if a.programRunning {
 		a.program.Send(setCallbacksMsg{onSubmit: onSubmit, onSteer: onSteer, onCancel: onCancel})
 		return
 	}
@@ -208,7 +214,7 @@ func (a *App) SetCallbacks(onSubmit, onSteer func(string), onCancel func()) {
 // SetUIResponseCallback sets the callback for sending UI responses back to plugins.
 // Goroutine-safe when a tea.Program has been set via SetProgram.
 func (a *App) SetUIResponseCallback(onUIResponse func(*PluginUIResponseMsg)) {
-	if a.program != nil {
+	if a.programRunning {
 		a.program.Send(setUIResponseCallbackMsg{fn: onUIResponse})
 		return
 	}
@@ -218,7 +224,7 @@ func (a *App) SetUIResponseCallback(onUIResponse func(*PluginUIResponseMsg)) {
 // SetHasUI sets whether the TUI is running in interactive mode.
 // Goroutine-safe when a tea.Program has been set via SetProgram.
 func (a *App) SetHasUI(hasUI bool) {
-	if a.program != nil {
+	if a.programRunning {
 		a.program.Send(setHasUIMsg{hasUI: hasUI})
 		return
 	}
@@ -238,7 +244,7 @@ func (a *App) SetProgram(p *tea.Program) {
 // it is safe to call from any goroutine. Otherwise the header is mutated
 // directly (safe only before Program.Run).
 func (a *App) SetModel(name string) {
-	if a.program != nil {
+	if a.programRunning {
 		a.program.Send(setModelMsg{name: name})
 		return
 	}
@@ -248,7 +254,7 @@ func (a *App) SetModel(name string) {
 // SetThinking updates the thinking level indicator. Goroutine-safe when a
 // tea.Program has been set via SetProgram.
 func (a *App) SetThinking(level string) {
-	if a.program != nil {
+	if a.programRunning {
 		a.program.Send(setThinkingMsg{level: level})
 		return
 	}
@@ -258,7 +264,7 @@ func (a *App) SetThinking(level string) {
 // SetSession updates the session name in the header. Goroutine-safe when a
 // tea.Program has been set via SetProgram.
 func (a *App) SetSession(name string) {
-	if a.program != nil {
+	if a.programRunning {
 		a.program.Send(setSessionMsg{name: name})
 		return
 	}
@@ -295,7 +301,7 @@ func (a *App) ConfirmMCPTool(serverName, toolName, description string) (bool, er
 // (may be empty if unknown) and the model identifier.
 // Goroutine-safe when a tea.Program has been set via SetProgram.
 func (a *App) SetModelChangeCallback(fn func(provider, model string)) {
-	if a.program != nil {
+	if a.programRunning {
 		a.program.Send(setModelChangeCallbackMsg{fn: fn})
 		return
 	}
@@ -307,7 +313,7 @@ func (a *App) SetModelChangeCallback(fn func(provider, model string)) {
 // and wire the new provider into the agent loop.
 // Goroutine-safe when a tea.Program has been set via SetProgram.
 func (a *App) SetLoginSuccessCallback(fn func(provider string)) {
-	if a.program != nil {
+	if a.programRunning {
 		a.program.Send(setLoginSuccessCallbackMsg{fn: fn})
 		return
 	}
@@ -324,7 +330,7 @@ func (a *App) RegisterCommand(cmd *SlashCommand) {
 // initialises. Use this for CLI-provided initial messages (e.g. @filepath args).
 // Goroutine-safe when a tea.Program has been set via SetProgram.
 func (a *App) SetInitialPrompt(prompt string) {
-	if a.program != nil {
+	if a.programRunning {
 		a.program.Send(setInitialPromptMsg{prompt: prompt})
 		return
 	}
@@ -424,6 +430,7 @@ func (a *App) RegisterBuiltinCommands(ctx context.Context, agentLoop *agent.Loop
 
 // Init returns the initial command to start the cursor blink in the editor.
 func (a *App) Init() tea.Cmd {
+	a.programRunning = true
 	return nil
 }
 
