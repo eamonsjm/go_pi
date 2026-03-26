@@ -504,14 +504,15 @@ func (s *Server) handleLogMessage(params json.RawMessage) {
 // close shuts down the server connection.
 func (s *Server) close() error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	if s.closed {
+		s.mu.Unlock()
 		return nil
 	}
 	s.closed = true
+	s.mu.Unlock()
 
 	// Close resource subscriptions (sends unsubscribe RPCs before client shuts down).
+	// Done outside the lock so concurrent CallTool/ReadResource calls aren't blocked.
 	if s.subscriptions != nil {
 		s.subscriptions.close()
 	}
