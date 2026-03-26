@@ -754,6 +754,97 @@ func TestOllamaStream_RetryOn503(t *testing.T) {
 	}
 }
 
+// --- Gemini retry tests ---
+
+func TestGeminiStream_RetryOn429(t *testing.T) {
+	attempts := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		w.WriteHeader(http.StatusTooManyRequests)
+		fmt.Fprint(w, `{"error":{"code":429,"message":"Resource exhausted","status":"RESOURCE_EXHAUSTED"}}`)
+	}))
+	defer srv.Close()
+
+	p := &GeminiProvider{
+		apiKey:     "test-key",
+		httpClient: srv.Client(),
+		baseURL:    srv.URL,
+	}
+
+	_, err := p.Stream(context.Background(), StreamRequest{
+		Model:    "gemini-2.0-flash",
+		Messages: []Message{NewTextMessage(RoleUser, "hi")},
+	})
+	if err == nil {
+		t.Fatal("expected error after retry exhaustion")
+	}
+	if attempts != maxRetries+1 {
+		t.Errorf("expected %d attempts, got %d", maxRetries+1, attempts)
+	}
+}
+
+func TestGeminiStream_RetryRespectsRetryAfterHeader(t *testing.T) {
+	attempts := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		w.Header().Set("Retry-After", "1")
+		w.WriteHeader(http.StatusTooManyRequests)
+		fmt.Fprint(w, `{"error":{"code":429,"message":"Resource exhausted","status":"RESOURCE_EXHAUSTED"}}`)
+	}))
+	defer srv.Close()
+
+	p := &GeminiProvider{
+		apiKey:     "test-key",
+		httpClient: srv.Client(),
+		baseURL:    srv.URL,
+	}
+
+	_, err := p.Stream(context.Background(), StreamRequest{
+		Model:    "gemini-2.0-flash",
+		Messages: []Message{NewTextMessage(RoleUser, "hi")},
+	})
+	if err == nil {
+		t.Fatal("expected error after retry exhaustion")
+	}
+	apiErr, ok := err.(*APIError)
+	if !ok {
+		t.Fatalf("expected *APIError, got %T", err)
+	}
+	if apiErr.RetryAfter != 1 {
+		t.Errorf("expected RetryAfter=1, got %d", apiErr.RetryAfter)
+	}
+	if attempts != maxRetries+1 {
+		t.Errorf("expected %d attempts, got %d", maxRetries+1, attempts)
+	}
+}
+
+func TestGeminiStream_NoRetryOn401(t *testing.T) {
+	attempts := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		w.WriteHeader(http.StatusUnauthorized)
+		fmt.Fprint(w, `{"error":{"code":401,"message":"API key invalid","status":"UNAUTHENTICATED"}}`)
+	}))
+	defer srv.Close()
+
+	p := &GeminiProvider{
+		apiKey:     "test-key",
+		httpClient: srv.Client(),
+		baseURL:    srv.URL,
+	}
+
+	_, err := p.Stream(context.Background(), StreamRequest{
+		Model:    "gemini-2.0-flash",
+		Messages: []Message{NewTextMessage(RoleUser, "hi")},
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if attempts != 1 {
+		t.Errorf("expected 1 attempt (no retry for auth errors), got %d", attempts)
+	}
+}
+
 func TestOllamaStream_NoRetryOn404(t *testing.T) {
 	attempts := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
