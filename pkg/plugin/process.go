@@ -263,6 +263,8 @@ func (p *PluginProcess) readLoop() {
 			default:
 				log.Printf("plugin %s: dropped heartbeat_ack (channel full)", p.name)
 			}
+		default:
+			log.Printf("plugin %s: ignoring unrecognized message type %q", p.name, msg.Type)
 		}
 	}
 }

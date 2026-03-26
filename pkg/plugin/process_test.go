@@ -854,6 +854,41 @@ func TestReadLoop_LogsMalformedJSON(t *testing.T) {
 	}
 }
 
+func TestReadLoop_LogsUnrecognizedType(t *testing.T) {
+	input := `{"type":"unknown_thing","content":"x"}` + "\n" +
+		`{"type":"tool_result","content":"ok"}` + "\n"
+
+	p := newTestProcess("test-unrecognized", input)
+
+	var buf strings.Builder
+	log.SetOutput(&buf)
+	t.Cleanup(func() {
+		log.SetOutput(os.Stderr)
+	})
+
+	p.readLoop()
+
+	logOutput := buf.String()
+	if !strings.Contains(logOutput, "test-unrecognized") {
+		t.Errorf("log output missing plugin name, got: %q", logOutput)
+	}
+	if !strings.Contains(logOutput, "unrecognized message type") {
+		t.Errorf("log output missing 'unrecognized message type', got: %q", logOutput)
+	}
+	if !strings.Contains(logOutput, "unknown_thing") {
+		t.Errorf("log output missing type name 'unknown_thing', got: %q", logOutput)
+	}
+
+	// Valid message after the unknown type should still be delivered.
+	msg, ok := <-p.responseCh
+	if !ok {
+		t.Fatal("responseCh closed before delivering valid message")
+	}
+	if msg.Type != "tool_result" || msg.Content != "ok" {
+		t.Errorf("got message %+v, want tool_result with content 'ok'", msg)
+	}
+}
+
 func TestReadLoop_SkipsBadJSON(t *testing.T) {
 	p := startTestPlugin(t, "bad_json")
 
