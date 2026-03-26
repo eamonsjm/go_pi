@@ -30,39 +30,37 @@ func TestFormatTokens(t *testing.T) {
 	}
 }
 
-func TestEstimateCost(t *testing.T) {
-	// Zero usage = zero cost.
-	cost := estimateCost(ai.Usage{})
-	if cost != 0 {
-		t.Errorf("expected 0, got %f", cost)
-	}
-
+func TestFooterCostUsesModelPricing(t *testing.T) {
+	// Default (empty model) falls back to Sonnet rates.
 	// 1M input tokens (no cache) = $3.00
-	cost = estimateCost(ai.Usage{InputTokens: 1_000_000})
+	cost := calculateCost(ai.Usage{InputTokens: 1_000_000}, "")
 	if cost < 2.99 || cost > 3.01 {
-		t.Errorf("expected ~3.00, got %f", cost)
+		t.Errorf("default model: expected ~3.00, got %f", cost)
 	}
 
-	// 1M output tokens = $15.00
-	cost = estimateCost(ai.Usage{OutputTokens: 1_000_000})
+	// Opus pricing: 1M input = $15.00
+	cost = calculateCost(ai.Usage{InputTokens: 1_000_000}, "claude-opus-4-6")
 	if cost < 14.99 || cost > 15.01 {
-		t.Errorf("expected ~15.00, got %f", cost)
+		t.Errorf("opus input: expected ~15.00, got %f", cost)
 	}
 
-	// Cache read discount: 1M input with 500k cache-read.
-	// Non-cached: 500k * $3/M = $1.50
-	// Cached: 500k * $0.30/M = $0.15
-	// Total: $1.65
-	cost = estimateCost(ai.Usage{InputTokens: 1_000_000, CacheRead: 500_000})
-	if cost < 1.64 || cost > 1.66 {
-		t.Errorf("expected ~1.65, got %f", cost)
+	// Opus output: 1M output = $75.00
+	cost = calculateCost(ai.Usage{OutputTokens: 1_000_000}, "claude-opus-4-6")
+	if cost < 74.99 || cost > 75.01 {
+		t.Errorf("opus output: expected ~75.00, got %f", cost)
+	}
+
+	// Sonnet cache write is included: 1M cache-write = $3.75
+	cost = calculateCost(ai.Usage{CacheWrite: 1_000_000}, "claude-sonnet-4-6")
+	if cost < 3.74 || cost > 3.76 {
+		t.Errorf("sonnet cache-write: expected ~3.75, got %f", cost)
 	}
 }
 
-func TestEstimateCost_NeverNegative(t *testing.T) {
+func TestFooterCostNeverNegative(t *testing.T) {
 	// CacheRead > InputTokens: input component must clamp to zero,
 	// leaving only the cache-read cost.
-	cost := estimateCost(ai.Usage{InputTokens: 100, CacheRead: 1000})
+	cost := calculateCost(ai.Usage{InputTokens: 100, CacheRead: 1000}, "claude-sonnet-4-6")
 	if cost < 0 {
 		t.Errorf("cost should never be negative, got %f", cost)
 	}

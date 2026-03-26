@@ -16,6 +16,7 @@ type Footer struct {
 	width      int
 	cwd        string
 	usage      ai.Usage
+	model      string  // current model name for cost calculation
 	contextPct float64 // 0..100
 	maxContext int     // max context tokens for the model
 }
@@ -28,6 +29,11 @@ func NewFooter() *Footer {
 		cwd:        cwd,
 		maxContext: 200_000, // sensible default
 	}
+}
+
+// SetModel updates the model name used for cost calculation.
+func (f *Footer) SetModel(model string) {
+	f.model = model
 }
 
 // SetWidth adjusts the footer to the given terminal width.
@@ -60,8 +66,8 @@ func (f *Footer) View() string {
 		formatTokens(f.usage.OutputTokens),
 	)
 
-	// Cost estimate (rough: $3/M input, $15/M output for Sonnet).
-	cost := estimateCost(f.usage)
+	// Cost estimate using model-aware pricing.
+	cost := calculateCost(f.usage, f.model)
 	costStr := fmt.Sprintf("$%.2f", cost)
 
 	// Context usage.
@@ -111,20 +117,4 @@ func formatTokens(n int) string {
 	}
 }
 
-// estimateCost gives a rough USD estimate based on Claude Sonnet pricing.
-// Input: $3/M tokens, Output: $15/M tokens, Cache-read: $0.30/M.
-func estimateCost(u ai.Usage) float64 {
-	nonCached := u.InputTokens - u.CacheRead
-	if nonCached < 0 {
-		nonCached = 0
-	}
-	input := float64(nonCached) * 3.0 / 1_000_000
-	cacheRead := float64(u.CacheRead) * 0.30 / 1_000_000
-	output := float64(u.OutputTokens) * 15.0 / 1_000_000
-	total := input + cacheRead + output
-	if total < 0 {
-		total = 0
-	}
-	return total
-}
 
