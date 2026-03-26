@@ -11,14 +11,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ejm/go_pi/pkg/refinery_gate"
+	"github.com/ejm/go_pi/pkg/refinerygate"
 )
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
 
-func run(args []string, stdout, stderr io.Writer, opts ...refinery_gate.GateOption) int {
+func run(args []string, stdout, stderr io.Writer, opts ...refinerygate.GateOption) int {
 	fs := flag.NewFlagSet("refinery-gate-check", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 
@@ -58,7 +58,7 @@ func run(args []string, stdout, stderr io.Writer, opts ...refinery_gate.GateOpti
 	defer stop()
 
 	// Create gate checker and run CI check
-	checker := refinery_gate.NewGateChecker(*owner, *repo, *token, *branch, workflows, opts...)
+	checker := refinerygate.NewGateChecker(*owner, *repo, *token, *branch, workflows, opts...)
 	status, err := checker.CheckCI(ctx)
 
 	if err != nil {

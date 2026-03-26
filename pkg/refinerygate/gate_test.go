@@ -1,4 +1,4 @@
-package refinery_gate
+package refinerygate
 
 import (
 	"context"
