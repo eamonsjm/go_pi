@@ -172,16 +172,21 @@ func startPlugin(name, path string) (*PluginProcess, error) {
 // Called after Start() for both initial spawn and respawn. No-op if memLimitMB
 // is zero or the platform does not support rlimit.
 func (p *PluginProcess) applyMemoryLimit() {
-	if p.memLimitMB <= 0 {
+	p.mu.Lock()
+	limitMB := p.memLimitMB
+	cmd := p.cmd
+	p.mu.Unlock()
+
+	if limitMB <= 0 {
 		return
 	}
-	if p.cmd == nil || p.cmd.Process == nil {
+	if cmd == nil || cmd.Process == nil {
 		return
 	}
-	pid := p.cmd.Process.Pid
-	if err := setMemoryLimit(pid, p.memLimitMB); err != nil {
+	pid := cmd.Process.Pid
+	if err := setMemoryLimit(pid, limitMB); err != nil {
 		log.Printf("plugin %s: failed to set memory limit (%d MB): %v",
-			p.name, p.memLimitMB, err)
+			p.name, limitMB, err)
 	}
 }
 
@@ -359,7 +364,9 @@ func (p *PluginProcess) waitResponse(ctx context.Context, timeout time.Duration)
 // Initialize sends the initialize message and waits for a capabilities response.
 // The config is saved for automatic re-initialization on restart.
 func (p *PluginProcess) Initialize(ctx context.Context, cfg PluginConfig) error {
+	p.mu.Lock()
 	p.pluginCfg = cfg
+	p.mu.Unlock()
 
 	if err := p.Send(HostMessage{
 		Type:   "initialize",
@@ -721,7 +728,9 @@ func (p *PluginProcess) SetTimeouts(cfg TimeoutConfig) {
 // called before the process is started for it to take effect on spawn. On
 // restart, the limit is re-applied to the new process.
 func (p *PluginProcess) SetMemoryLimit(limitMB int64) {
+	p.mu.Lock()
 	p.memLimitMB = limitMB
+	p.mu.Unlock()
 }
 
 // Name returns the plugin's display name.
@@ -958,7 +967,10 @@ func (p *PluginProcess) respawn(ctx context.Context) error {
 	p.applyMemoryLimit()
 
 	// Re-initialize the plugin with the saved config.
-	if err := p.Initialize(ctx, p.pluginCfg); err != nil {
+	p.mu.Lock()
+	savedCfg := p.pluginCfg
+	p.mu.Unlock()
+	if err := p.Initialize(ctx, savedCfg); err != nil {
 		if killErr := cmd.Process.Kill(); killErr != nil {
 			log.Printf("plugin %s: cleanup: failed to kill process after re-init failure: %v", p.name, killErr)
 		}

@@ -82,7 +82,9 @@ func (m *Manager) SetRestartConfig(cfg *RestartConfig) {
 // SetApprover sets the function called before loading plugins from untrusted
 // sources (project-local directories). If nil, untrusted plugins are blocked.
 func (m *Manager) SetApprover(fn PluginApprover) {
+	m.mu.Lock()
 	m.approver = fn
+	m.mu.Unlock()
 }
 
 // Discover scans the given directories for plugins. Each subdirectory is
@@ -93,6 +95,10 @@ func (m *Manager) SetApprover(fn PluginApprover) {
 // Errors for individual plugins are logged but do not prevent other plugins
 // from loading.
 func (m *Manager) Discover(ctx context.Context, dirs []DiscoverDir) error {
+	m.mu.RLock()
+	approver := m.approver
+	m.mu.RUnlock()
+
 	for _, dd := range dirs {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -112,11 +118,11 @@ func (m *Manager) Discover(ctx context.Context, dirs []DiscoverDir) error {
 
 			// Project-local plugins require explicit approval.
 			if dd.Source == SourceProjectLocal {
-				if m.approver == nil {
+				if approver == nil {
 					log.Printf("plugin: skipping unapproved project-local plugin %s (no approver configured)", entry.Name())
 					continue
 				}
-				approved, err := m.approver(entry.Name(), pluginDir)
+				approved, err := approver(entry.Name(), pluginDir)
 				if err != nil {
 					log.Printf("plugin: approval error for %s: %v", entry.Name(), err)
 					continue

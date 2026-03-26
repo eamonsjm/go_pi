@@ -154,7 +154,8 @@ type MCPClient struct {
 	onNotification NotificationHandler
 	onRequest      RequestHandler
 
-	// Set after successful initialize handshake.
+	// Set after successful initialize handshake; protected by initMu.
+	initMu            sync.RWMutex
 	negotiatedVersion string
 	serverCaps        ServerCapabilities
 	serverInfo        ImplementationInfo
@@ -380,31 +381,41 @@ func (c *MCPClient) Initialize(ctx context.Context, clientName, clientVersion st
 	}
 
 	// Store negotiated state.
+	c.initMu.Lock()
 	c.negotiatedVersion = initResult.ProtocolVersion
 	c.serverCaps = initResult.Capabilities
 	c.serverInfo = initResult.ServerInfo
 	c.instructions = initResult.Instructions
+	c.initMu.Unlock()
 
 	return &initResult, nil
 }
 
 // NegotiatedVersion returns the protocol version agreed upon during initialization.
 func (c *MCPClient) NegotiatedVersion() string {
+	c.initMu.RLock()
+	defer c.initMu.RUnlock()
 	return c.negotiatedVersion
 }
 
 // ServerCapabilities returns the server's capabilities from the initialize response.
 func (c *MCPClient) ServerCapabilities() ServerCapabilities {
+	c.initMu.RLock()
+	defer c.initMu.RUnlock()
 	return c.serverCaps
 }
 
 // ServerInfo returns the server's implementation info from the initialize response.
 func (c *MCPClient) ServerInfo() ImplementationInfo {
+	c.initMu.RLock()
+	defer c.initMu.RUnlock()
 	return c.serverInfo
 }
 
 // Instructions returns the server's instructions string from the initialize response.
 func (c *MCPClient) Instructions() string {
+	c.initMu.RLock()
+	defer c.initMu.RUnlock()
 	return c.instructions
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"sync"
 
 	"github.com/ejm/go_pi/pkg/config"
 )
@@ -18,11 +19,10 @@ type ConfirmToolFunc func(serverName, toolName, description string) (bool, error
 // interactive confirmation.
 type MCPPermissionHook struct {
 	configs map[string]*config.MCPPermissionConfig // server name -> config
-	confirm ConfirmToolFunc                        // UI callback for interactive approval
 
-	// annotationSource provides tool annotations for permission decisions.
-	// May be nil if no annotation source is available.
-	annotationSource AnnotationSource
+	mu               sync.RWMutex       // protects confirm and annotationSource
+	confirm          ConfirmToolFunc    // UI callback for interactive approval
+	annotationSource AnnotationSource   // may be nil if no annotation source is available
 }
 
 // AnnotationSource provides access to tool annotations by server and tool name.
@@ -41,12 +41,16 @@ func NewMCPPermissionHook(configs map[string]*config.MCPPermissionConfig, confir
 // SetConfirm sets (or replaces) the interactive confirmation callback.
 // This allows wiring the callback after construction, e.g. once the TUI is ready.
 func (h *MCPPermissionHook) SetConfirm(fn ConfirmToolFunc) {
+	h.mu.Lock()
 	h.confirm = fn
+	h.mu.Unlock()
 }
 
 // SetAnnotationSource sets the annotation source for permission decisions.
 func (h *MCPPermissionHook) SetAnnotationSource(src AnnotationSource) {
+	h.mu.Lock()
 	h.annotationSource = src
+	h.mu.Unlock()
 }
 
 // BeforeExecute checks permissions before an MCP tool executes.
@@ -63,6 +67,11 @@ func (h *MCPPermissionHook) BeforeExecute(_ context.Context, toolName string, _ 
 		return nil // not an MCP tool
 	}
 
+	h.mu.RLock()
+	confirm := h.confirm
+	annotationSource := h.annotationSource
+	h.mu.RUnlock()
+
 	cfg := h.configs[server]
 
 	// Deny takes precedence over everything.
@@ -76,21 +85,21 @@ func (h *MCPPermissionHook) BeforeExecute(_ context.Context, toolName string, _ 
 	}
 
 	// Annotation-based bypass: explicitly read-only tools skip confirmation.
-	if h.annotationSource != nil {
-		annotations := h.annotationSource.GetAnnotations(server, tool)
+	if annotationSource != nil {
+		annotations := annotationSource.GetAnnotations(server, tool)
 		if AnnotationReadOnly(annotations) {
 			return nil
 		}
 	}
 
 	// Default: require user confirmation.
-	if h.confirm == nil {
+	if confirm == nil {
 		// No confirmation callback available (non-interactive mode).
 		// Conservative default: deny.
 		return fmt.Errorf("MCP tool %q on server %q requires confirmation but no interactive session is available", tool, server)
 	}
 
-	approved, err := h.confirm(server, tool, "MCP tool execution")
+	approved, err := confirm(server, tool, "MCP tool execution")
 	if err != nil {
 		return fmt.Errorf("confirmation error for MCP tool %q on server %q: %w", tool, server, err)
 	}

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
 )
 
 // Store manages persisted authentication credentials for all providers.
@@ -14,6 +15,7 @@ import (
 // to prevent concurrent refresh races.
 type Store struct {
 	path     string                 // path to auth.json
+	mu       sync.RWMutex           // protects entries
 	entries  map[string]*Credential // provider ID → credential
 	lockFile *os.File               // held while locked; nil when unlocked
 }
@@ -74,7 +76,9 @@ func (s *Store) Load() error {
 	if entries == nil {
 		entries = make(map[string]*Credential)
 	}
+	s.mu.Lock()
 	s.entries = entries
+	s.mu.Unlock()
 	return nil
 }
 
@@ -87,12 +91,16 @@ func (s *Store) loadLegacy(data []byte) error {
 	if err := json.Unmarshal(data, &legacy); err != nil {
 		return fmt.Errorf("parse legacy auth store: %w", err)
 	}
+	entries := make(map[string]*Credential, len(legacy.Keys))
 	for provider, key := range legacy.Keys {
-		s.entries[provider] = &Credential{
+		entries[provider] = &Credential{
 			Type: CredentialAPIKey,
 			Key:  key,
 		}
 	}
+	s.mu.Lock()
+	s.entries = entries
+	s.mu.Unlock()
 	return s.Save()
 }
 
@@ -104,7 +112,9 @@ func (s *Store) Save() error {
 		return fmt.Errorf("create auth dir: %w", err)
 	}
 
+	s.mu.RLock()
 	data, err := json.MarshalIndent(s.entries, "", "  ")
+	s.mu.RUnlock()
 	if err != nil {
 		return fmt.Errorf("marshal auth store: %w", err)
 	}
@@ -117,26 +127,36 @@ func (s *Store) Save() error {
 
 // Get returns the credential for a provider, or nil if not stored.
 func (s *Store) Get(provider string) *Credential {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return s.entries[provider]
 }
 
 // HasCredential reports whether credentials are stored for a provider.
 func (s *Store) HasCredential(provider string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return s.entries[provider] != nil
 }
 
 // Set stores a credential for a provider (in memory; call Save to persist).
 func (s *Store) Set(provider string, cred *Credential) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.entries[provider] = cred
 }
 
 // Delete removes a provider's credential (in memory; call Save to persist).
 func (s *Store) Delete(provider string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	delete(s.entries, provider)
 }
 
 // Providers returns the sorted list of provider IDs that have stored credentials.
 func (s *Store) Providers() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	out := make([]string, 0, len(s.entries))
 	for k := range s.entries {
 		out = append(out, k)
