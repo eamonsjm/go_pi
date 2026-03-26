@@ -9,9 +9,9 @@ import (
 	"github.com/ejm/go_pi/pkg/tools"
 )
 
-func TestNewMCPManager(t *testing.T) {
+func TestNewManager(t *testing.T) {
 	reg := tools.NewRegistry()
-	mgr := NewMCPManager(MCPManagerConfig{
+	mgr := NewManager(ManagerConfig{
 		ToolRegistry:  reg,
 		WorkingDir:    "/home/user/project",
 		ConfigDir:     "/home/user/.gi",
@@ -21,7 +21,7 @@ func TestNewMCPManager(t *testing.T) {
 	})
 
 	if mgr == nil {
-		t.Fatal("NewMCPManager returned nil")
+		t.Fatal("NewManager returned nil")
 	}
 	if mgr.workingDir != "/home/user/project" {
 		t.Errorf("workingDir = %q, want %q", mgr.workingDir, "/home/user/project")
@@ -33,7 +33,7 @@ func TestNewMCPManager(t *testing.T) {
 
 func TestInjectSystemMessage(t *testing.T) {
 	reg := tools.NewRegistry()
-	mgr := NewMCPManager(MCPManagerConfig{ToolRegistry: reg})
+	mgr := NewManager(ManagerConfig{ToolRegistry: reg})
 
 	// Inject a message.
 	mgr.injectSystemMessage("test message 1")
@@ -56,7 +56,7 @@ func TestInjectSystemMessage(t *testing.T) {
 
 func TestInjectSystemMessageOverflow(t *testing.T) {
 	reg := tools.NewRegistry()
-	mgr := NewMCPManager(MCPManagerConfig{ToolRegistry: reg})
+	mgr := NewManager(ManagerConfig{ToolRegistry: reg})
 
 	// Inject maxPendingMessages + 5 messages.
 	for i := 0; i < maxPendingMessages+5; i++ {
@@ -76,21 +76,21 @@ func TestInjectSystemMessageOverflow(t *testing.T) {
 
 func TestServerInstructions(t *testing.T) {
 	reg := tools.NewRegistry()
-	mgr := NewMCPManager(MCPManagerConfig{ToolRegistry: reg})
+	mgr := NewManager(ManagerConfig{ToolRegistry: reg})
 
 	// Add mock servers directly.
 	mgr.mu.Lock()
-	mgr.servers["server1"] = &MCPServer{
+	mgr.servers["server1"] = &Server{
 		name:         "server1",
 		config:       &config.MCPServerConfig{},
 		instructions: "Use this server for file operations.",
 	}
-	mgr.servers["server2"] = &MCPServer{
+	mgr.servers["server2"] = &Server{
 		name:         "server2",
 		config:       &config.MCPServerConfig{Instructions: "ignore"},
 		instructions: "Ignored instructions.",
 	}
-	mgr.servers["server3"] = &MCPServer{
+	mgr.servers["server3"] = &Server{
 		name:         "server3",
 		config:       &config.MCPServerConfig{},
 		instructions: "<script>alert('xss')</script>",
@@ -123,11 +123,11 @@ func TestServerInstructions(t *testing.T) {
 
 func TestServerInstructionsLengthCap(t *testing.T) {
 	reg := tools.NewRegistry()
-	mgr := NewMCPManager(MCPManagerConfig{ToolRegistry: reg})
+	mgr := NewManager(ManagerConfig{ToolRegistry: reg})
 
 	longInstr := strings.Repeat("x", 3000)
 	mgr.mu.Lock()
-	mgr.servers["long"] = &MCPServer{
+	mgr.servers["long"] = &Server{
 		name:         "long",
 		config:       &config.MCPServerConfig{},
 		instructions: longInstr,
@@ -147,17 +147,17 @@ func TestServerInstructionsLengthCap(t *testing.T) {
 
 func TestShutdownClearsMaps(t *testing.T) {
 	reg := tools.NewRegistry()
-	mgr := NewMCPManager(MCPManagerConfig{ToolRegistry: reg})
+	mgr := NewManager(ManagerConfig{ToolRegistry: reg})
 
 	// Populate servers directly (no real transport needed for this test).
 	mgr.mu.Lock()
-	mgr.servers["s1"] = &MCPServer{
+	mgr.servers["s1"] = &Server{
 		name:    "s1",
 		config:  &config.MCPServerConfig{},
 		manager: mgr,
 		closed:  true, // already closed — avoids nil transport deref
 	}
-	mgr.servers["s2"] = &MCPServer{
+	mgr.servers["s2"] = &Server{
 		name:    "s2",
 		config:  &config.MCPServerConfig{},
 		manager: mgr,
@@ -200,7 +200,7 @@ func TestDiffToolCount(t *testing.T) {
 
 func TestHandleRootsList(t *testing.T) {
 	reg := tools.NewRegistry()
-	mgr := NewMCPManager(MCPManagerConfig{
+	mgr := NewManager(ManagerConfig{
 		ToolRegistry: reg,
 		WorkingDir:   "/home/user/project",
 	})

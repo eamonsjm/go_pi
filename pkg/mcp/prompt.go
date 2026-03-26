@@ -10,53 +10,53 @@ import (
 	"github.com/ejm/go_pi/pkg/skill"
 )
 
-// MCPPromptArgument preserves the required/optional distinction from MCP prompts.
-type MCPPromptArgument struct {
+// PromptArgument preserves the required/optional distinction from MCP prompts.
+type PromptArgument struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
 	Required    bool   `json:"required,omitempty"`
 }
 
-// MCPPromptInfo is the wire format of a prompt from prompts/list.
-type MCPPromptInfo struct {
+// PromptInfo is the wire format of a prompt from prompts/list.
+type PromptInfo struct {
 	Name        string              `json:"name"`
 	Description string              `json:"description,omitempty"`
-	Arguments   []MCPPromptArgument `json:"arguments,omitempty"`
+	Arguments   []PromptArgument `json:"arguments,omitempty"`
 }
 
 // PromptsListPage is the response from prompts/list.
 type PromptsListPage struct {
-	Prompts    []MCPPromptInfo `json:"prompts"`
+	Prompts    []PromptInfo `json:"prompts"`
 	NextCursor string          `json:"nextCursor,omitempty"`
 }
 
-// MCPPromptMessage is a single message returned by prompts/get.
-type MCPPromptMessage struct {
+// PromptMessage is a single message returned by prompts/get.
+type PromptMessage struct {
 	Role    string         `json:"role"`
-	Content MCPContentItem `json:"content"`
+	Content ContentItem `json:"content"`
 }
 
 // PromptsGetResult is the response from prompts/get.
 type PromptsGetResult struct {
 	Description string             `json:"description,omitempty"`
-	Messages    []MCPPromptMessage `json:"messages"`
+	Messages    []PromptMessage `json:"messages"`
 }
 
 // PromptGetter can execute a prompts/get RPC on an MCP server.
-// MCPServer implements this; defined as an interface for testability.
+// Server implements this; defined as an interface for testability.
 type PromptGetter interface {
 	ServerName() string
 	GetPrompt(ctx context.Context, name string, arguments map[string]string) (*PromptsGetResult, error)
 }
 
-// BridgePrompt creates a skill.Skill from an MCPPromptInfo, bridging MCP
+// BridgePrompt creates a skill.Skill from an PromptInfo, bridging MCP
 // prompts into the skill registry. The skill's Source is "mcp" and
 // UserInvocable is true so it appears in the skill list.
 //
 // When getter is non-nil, the skill's Executor calls prompts/get on the
 // MCP server and returns the rendered messages. When getter is nil (e.g.,
 // in tests that only check metadata), the skill falls back to a static body.
-func BridgePrompt(serverName string, info MCPPromptInfo, getter PromptGetter) *skill.Skill {
+func BridgePrompt(serverName string, info PromptInfo, getter PromptGetter) *skill.Skill {
 	name := "mcp__" + serverName + "__" + info.Name
 
 	// Convert MCP arguments to skill arguments.
@@ -142,7 +142,7 @@ func DiscoverPrompts(
 }
 
 // ListPrompts sends a prompts/list request via the MCP client with pagination.
-func (c *MCPClient) ListPrompts(ctx context.Context, cursor string) (*PromptsListPage, error) {
+func (c *Client) ListPrompts(ctx context.Context, cursor string) (*PromptsListPage, error) {
 	params := map[string]any{}
 	if cursor != "" {
 		params["cursor"] = cursor
@@ -159,7 +159,7 @@ func (c *MCPClient) ListPrompts(ctx context.Context, cursor string) (*PromptsLis
 }
 
 // GetPrompt sends a prompts/get request for a specific prompt with arguments.
-func (c *MCPClient) GetPrompt(ctx context.Context, name string, arguments map[string]string) (*PromptsGetResult, error) {
+func (c *Client) GetPrompt(ctx context.Context, name string, arguments map[string]string) (*PromptsGetResult, error) {
 	params := map[string]any{
 		"name": name,
 	}
@@ -179,7 +179,7 @@ func (c *MCPClient) GetPrompt(ctx context.Context, name string, arguments map[st
 
 // ValidatePromptArgs checks that all required arguments are present.
 // Returns an error listing missing required arguments.
-func ValidatePromptArgs(args []MCPPromptArgument, provided map[string]string) error {
+func ValidatePromptArgs(args []PromptArgument, provided map[string]string) error {
 	var missing []string
 	for _, a := range args {
 		if a.Required {
@@ -195,7 +195,7 @@ func ValidatePromptArgs(args []MCPPromptArgument, provided map[string]string) er
 }
 
 // GetPrompt implements PromptGetter by delegating to the MCP client.
-func (s *MCPServer) GetPrompt(ctx context.Context, name string, arguments map[string]string) (*PromptsGetResult, error) {
+func (s *Server) GetPrompt(ctx context.Context, name string, arguments map[string]string) (*PromptsGetResult, error) {
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
@@ -207,7 +207,7 @@ func (s *MCPServer) GetPrompt(ctx context.Context, name string, arguments map[st
 }
 
 // discoverAndRegisterPrompts discovers prompts and registers them in the skill registry.
-func (s *MCPServer) discoverAndRegisterPrompts(ctx context.Context) error {
+func (s *Server) discoverAndRegisterPrompts(ctx context.Context) error {
 	if s.manager.skillRegistry == nil {
 		return nil
 	}
@@ -227,13 +227,13 @@ func (s *MCPServer) discoverAndRegisterPrompts(ctx context.Context) error {
 }
 
 // diffSkillCount returns the number of skills added and removed between old and new slices.
-func diffSkillCount(old, new []*skill.Skill) (added, removed int) {
+func diffSkillCount(old, cur []*skill.Skill) (added, removed int) {
 	oldNames := make(map[string]struct{}, len(old))
 	for _, s := range old {
 		oldNames[s.Name] = struct{}{}
 	}
-	newNames := make(map[string]struct{}, len(new))
-	for _, s := range new {
+	newNames := make(map[string]struct{}, len(cur))
+	for _, s := range cur {
 		newNames[s.Name] = struct{}{}
 	}
 	for n := range newNames {

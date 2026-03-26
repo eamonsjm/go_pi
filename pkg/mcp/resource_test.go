@@ -15,17 +15,17 @@ import (
 // mockResourceReader implements ResourceReader for testing.
 type mockResourceReader struct {
 	name   string
-	result *MCPResourceReadResult
+	result *ResourceReadResult
 	err    error
 }
 
 func (m *mockResourceReader) ServerName() string { return m.name }
-func (m *mockResourceReader) ReadResource(_ context.Context, _ string) (*MCPResourceReadResult, error) {
+func (m *mockResourceReader) ReadResource(_ context.Context, _ string) (*ResourceReadResult, error) {
 	return m.result, m.err
 }
 
-func TestMCPResourceToolImplementsRichTool(t *testing.T) {
-	tool := &MCPResourceTool{
+func TestResourceToolImplementsRichTool(t *testing.T) {
+	tool := &ResourceTool{
 		server: &mockResourceReader{name: "fs"},
 		name:   "mcp__fs__read_resource",
 		desc:   "Read a resource",
@@ -39,16 +39,16 @@ func TestMCPResourceToolImplementsRichTool(t *testing.T) {
 	}
 }
 
-func TestMCPResourceToolExecuteRichText(t *testing.T) {
+func TestResourceToolExecuteRichText(t *testing.T) {
 	server := &mockResourceReader{
 		name: "fs",
-		result: &MCPResourceReadResult{
-			Contents: []MCPResourceContent{
+		result: &ResourceReadResult{
+			Contents: []ResourceContent{
 				{URI: "file:///test.txt", Text: "hello world"},
 			},
 		},
 	}
-	tool := &MCPResourceTool{server: server, name: "mcp__fs__read_resource"}
+	tool := &ResourceTool{server: server, name: "mcp__fs__read_resource"}
 
 	blocks, err := tool.ExecuteRich(context.Background(), map[string]any{"uri": "file:///test.txt"})
 	if err != nil {
@@ -62,17 +62,17 @@ func TestMCPResourceToolExecuteRichText(t *testing.T) {
 	}
 }
 
-func TestMCPResourceToolExecuteRichImage(t *testing.T) {
+func TestResourceToolExecuteRichImage(t *testing.T) {
 	imgData := base64.StdEncoding.EncodeToString([]byte("fakepng"))
 	server := &mockResourceReader{
 		name: "fs",
-		result: &MCPResourceReadResult{
-			Contents: []MCPResourceContent{
+		result: &ResourceReadResult{
+			Contents: []ResourceContent{
 				{URI: "file:///img.png", MimeType: "image/png", Blob: imgData},
 			},
 		},
 	}
-	tool := &MCPResourceTool{server: server, name: "mcp__fs__read_resource"}
+	tool := &ResourceTool{server: server, name: "mcp__fs__read_resource"}
 
 	blocks, err := tool.ExecuteRich(context.Background(), map[string]any{"uri": "file:///img.png"})
 	if err != nil {
@@ -92,8 +92,8 @@ func TestMCPResourceToolExecuteRichImage(t *testing.T) {
 	}
 }
 
-func TestMCPResourceToolExecuteRichMissingURI(t *testing.T) {
-	tool := &MCPResourceTool{
+func TestResourceToolExecuteRichMissingURI(t *testing.T) {
+	tool := &ResourceTool{
 		server: &mockResourceReader{name: "fs"},
 		name:   "mcp__fs__read_resource",
 	}
@@ -107,12 +107,12 @@ func TestMCPResourceToolExecuteRichMissingURI(t *testing.T) {
 	}
 }
 
-func TestMCPResourceToolExecuteRichTransportError(t *testing.T) {
+func TestResourceToolExecuteRichTransportError(t *testing.T) {
 	server := &mockResourceReader{
 		name: "fs",
 		err:  errors.New("connection refused"),
 	}
-	tool := &MCPResourceTool{server: server, name: "mcp__fs__read_resource"}
+	tool := &ResourceTool{server: server, name: "mcp__fs__read_resource"}
 
 	_, err := tool.ExecuteRich(context.Background(), map[string]any{"uri": "file:///x"})
 	if err == nil || err.Error() != "connection refused" {
@@ -120,17 +120,17 @@ func TestMCPResourceToolExecuteRichTransportError(t *testing.T) {
 	}
 }
 
-func TestMCPResourceToolExecuteFlatten(t *testing.T) {
+func TestResourceToolExecuteFlatten(t *testing.T) {
 	server := &mockResourceReader{
 		name: "fs",
-		result: &MCPResourceReadResult{
-			Contents: []MCPResourceContent{
+		result: &ResourceReadResult{
+			Contents: []ResourceContent{
 				{URI: "file:///a.txt", Text: "part 1"},
 				{URI: "file:///b.txt", Text: "part 2"},
 			},
 		},
 	}
-	tool := &MCPResourceTool{server: server, name: "mcp__fs__read_resource"}
+	tool := &ResourceTool{server: server, name: "mcp__fs__read_resource"}
 
 	result, err := tool.Execute(context.Background(), map[string]any{"uri": "file:///a.txt"})
 	if err != nil {
@@ -144,8 +144,8 @@ func TestMCPResourceToolExecuteFlatten(t *testing.T) {
 func TestConvertResourceResultTextTruncation(t *testing.T) {
 	// Create text larger than maxResourceTextBytes.
 	bigText := strings.Repeat("x", maxResourceTextBytes+100)
-	result := &MCPResourceReadResult{
-		Contents: []MCPResourceContent{
+	result := &ResourceReadResult{
+		Contents: []ResourceContent{
 			{URI: "file:///big.txt", Text: bigText},
 		},
 	}
@@ -167,8 +167,8 @@ func TestConvertResourceResultTextTruncation(t *testing.T) {
 func TestConvertResourceResultBinarySizeCap(t *testing.T) {
 	// Create binary content larger than maxResourceBinaryBytes.
 	bigBlob := base64.StdEncoding.EncodeToString(make([]byte, maxResourceBinaryBytes+100))
-	result := &MCPResourceReadResult{
-		Contents: []MCPResourceContent{
+	result := &ResourceReadResult{
+		Contents: []ResourceContent{
 			{URI: "file:///big.bin", MimeType: "application/octet-stream", Blob: bigBlob},
 		},
 	}
@@ -186,8 +186,8 @@ func TestConvertResourceResultBinarySizeCap(t *testing.T) {
 }
 
 func TestConvertResourceResultInvalidBase64(t *testing.T) {
-	result := &MCPResourceReadResult{
-		Contents: []MCPResourceContent{
+	result := &ResourceReadResult{
+		Contents: []ResourceContent{
 			{URI: "file:///bad.bin", Blob: "not-valid-base64!!!"},
 		},
 	}
@@ -203,8 +203,8 @@ func TestConvertResourceResultInvalidBase64(t *testing.T) {
 
 func TestConvertResourceResultBinaryNonImage(t *testing.T) {
 	data := base64.StdEncoding.EncodeToString([]byte("PDF content"))
-	result := &MCPResourceReadResult{
-		Contents: []MCPResourceContent{
+	result := &ResourceReadResult{
+		Contents: []ResourceContent{
 			{URI: "file:///doc.pdf", MimeType: "application/pdf", Blob: data},
 		},
 	}
@@ -222,11 +222,11 @@ func TestConvertResourceResultBinaryNonImage(t *testing.T) {
 }
 
 func TestBuildResourceDescription(t *testing.T) {
-	resources := []MCPResourceInfo{
+	resources := []ResourceInfo{
 		{URI: "file:///config.json", Name: "config", Description: "App configuration"},
 		{URI: "file:///data.csv", Name: "data"},
 	}
-	templates := []MCPResourceTemplate{
+	templates := []ResourceTemplate{
 		{URITemplate: "file:///{path}", Name: "file", Description: "Read any file"},
 	}
 
@@ -261,9 +261,9 @@ func TestBuildResourceDescriptionEmpty(t *testing.T) {
 
 func TestBuildResourceDescriptionTruncation(t *testing.T) {
 	// More than 50 resources should be truncated.
-	resources := make([]MCPResourceInfo, 55)
+	resources := make([]ResourceInfo, 55)
 	for i := range resources {
-		resources[i] = MCPResourceInfo{URI: "file:///r" + strings.Repeat("x", i)}
+		resources[i] = ResourceInfo{URI: "file:///r" + strings.Repeat("x", i)}
 	}
 
 	desc := buildResourceDescription("big", resources, nil)
@@ -274,8 +274,8 @@ func TestBuildResourceDescriptionTruncation(t *testing.T) {
 
 func TestBridgeResource(t *testing.T) {
 	server := &mockResourceReader{name: "myserver"}
-	resources := []MCPResourceInfo{{URI: "file:///test.txt", Name: "test"}}
-	templates := []MCPResourceTemplate{{URITemplate: "file:///{path}", Name: "file"}}
+	resources := []ResourceInfo{{URI: "file:///test.txt", Name: "test"}}
+	templates := []ResourceTemplate{{URITemplate: "file:///{path}", Name: "file"}}
 
 	tool := BridgeResource(server, resources, templates)
 
@@ -300,12 +300,12 @@ func TestDiscoverResourcesPagination(t *testing.T) {
 		switch cursor {
 		case "":
 			return &ResourcesListPage{
-				Resources:  []MCPResourceInfo{{URI: "file:///a.txt", Name: "a"}},
+				Resources:  []ResourceInfo{{URI: "file:///a.txt", Name: "a"}},
 				NextCursor: "page2",
 			}, nil
 		case "page2":
 			return &ResourcesListPage{
-				Resources: []MCPResourceInfo{{URI: "file:///b.txt", Name: "b"}},
+				Resources: []ResourceInfo{{URI: "file:///b.txt", Name: "b"}},
 			}, nil
 		default:
 			t.Fatalf("unexpected cursor %q", cursor)
@@ -349,12 +349,12 @@ func TestDiscoverResourceTemplatesPagination(t *testing.T) {
 		switch cursor {
 		case "":
 			return &ResourceTemplatesListPage{
-				ResourceTemplates: []MCPResourceTemplate{{URITemplate: "file:///{path}", Name: "file"}},
+				ResourceTemplates: []ResourceTemplate{{URITemplate: "file:///{path}", Name: "file"}},
 				NextCursor:        "page2",
 			}, nil
 		case "page2":
 			return &ResourceTemplatesListPage{
-				ResourceTemplates: []MCPResourceTemplate{{URITemplate: "db:///{table}", Name: "table"}},
+				ResourceTemplates: []ResourceTemplate{{URITemplate: "db:///{table}", Name: "table"}},
 			}, nil
 		default:
 			t.Fatalf("unexpected cursor %q", cursor)
@@ -399,7 +399,7 @@ func TestSubscriptionManagerTouchCloseRace(t *testing.T) {
 	// Exercise the close/touch race. We manually construct the manager and
 	// simulate close() by nilling subs under the lock. The URI is
 	// pre-populated so touch() hits the refresh path (no subscribe RPC
-	// needed, avoiding the need for a real MCPClient).
+	// needed, avoiding the need for a real Client).
 	sm := &subscriptionManager{
 		subs: map[string]*subscription{
 			"file:///test.txt": {lastAccess: time.Now()},
@@ -425,8 +425,8 @@ func TestSubscriptionManagerTouchCloseRace(t *testing.T) {
 	<-closeDone
 }
 
-func TestMCPResourceToolSchema(t *testing.T) {
-	tool := &MCPResourceTool{
+func TestResourceToolSchema(t *testing.T) {
+	tool := &ResourceTool{
 		server: &mockResourceReader{name: "fs"},
 		name:   "mcp__fs__read_resource",
 	}

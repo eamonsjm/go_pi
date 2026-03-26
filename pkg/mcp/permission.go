@@ -13,11 +13,11 @@ import (
 // Returns true if approved.
 type ConfirmToolFunc func(serverName, toolName, description string) (bool, error)
 
-// MCPPermissionHook implements tools.Hook for MCP tool permission checks.
+// PermissionHook implements tools.Hook for MCP tool permission checks.
 // It intercepts MCP tool execution (tools with "mcp__" prefix) and enforces
 // deny lists, auto-approve lists, annotation-based read-only bypass, and
 // interactive confirmation.
-type MCPPermissionHook struct {
+type PermissionHook struct {
 	configs map[string]*config.MCPPermissionConfig // server name -> config
 
 	mu               sync.RWMutex       // protects confirm and annotationSource
@@ -30,9 +30,9 @@ type AnnotationSource interface {
 	GetAnnotations(serverName, toolName string) *ToolAnnotations
 }
 
-// NewMCPPermissionHook creates a new permission hook.
-func NewMCPPermissionHook(configs map[string]*config.MCPPermissionConfig, confirm ConfirmToolFunc) *MCPPermissionHook {
-	return &MCPPermissionHook{
+// NewPermissionHook creates a new permission hook.
+func NewPermissionHook(configs map[string]*config.MCPPermissionConfig, confirm ConfirmToolFunc) *PermissionHook {
+	return &PermissionHook{
 		configs: configs,
 		confirm: confirm,
 	}
@@ -40,14 +40,14 @@ func NewMCPPermissionHook(configs map[string]*config.MCPPermissionConfig, confir
 
 // SetConfirm sets (or replaces) the interactive confirmation callback.
 // This allows wiring the callback after construction, e.g. once the TUI is ready.
-func (h *MCPPermissionHook) SetConfirm(fn ConfirmToolFunc) {
+func (h *PermissionHook) SetConfirm(fn ConfirmToolFunc) {
 	h.mu.Lock()
 	h.confirm = fn
 	h.mu.Unlock()
 }
 
 // SetAnnotationSource sets the annotation source for permission decisions.
-func (h *MCPPermissionHook) SetAnnotationSource(src AnnotationSource) {
+func (h *PermissionHook) SetAnnotationSource(src AnnotationSource) {
 	h.mu.Lock()
 	h.annotationSource = src
 	h.mu.Unlock()
@@ -61,8 +61,8 @@ func (h *MCPPermissionHook) SetAnnotationSource(src AnnotationSource) {
 //  3. Auto-approve list → allow
 //  4. Annotation readOnlyHint=true → allow
 //  5. Interactive confirmation → allow/deny
-func (h *MCPPermissionHook) BeforeExecute(_ context.Context, toolName string, _ map[string]any) error {
-	server, tool := parseMCPToolName(toolName)
+func (h *PermissionHook) BeforeExecute(_ context.Context, toolName string, _ map[string]any) error {
+	server, tool := parseToolName(toolName)
 	if server == "" {
 		return nil // not an MCP tool
 	}
@@ -110,23 +110,23 @@ func (h *MCPPermissionHook) BeforeExecute(_ context.Context, toolName string, _ 
 }
 
 // AfterExecute is a no-op for the permission hook.
-func (h *MCPPermissionHook) AfterExecute(_ context.Context, _ string, _ map[string]any, result string, err error) (string, error) {
+func (h *PermissionHook) AfterExecute(_ context.Context, _ string, _ map[string]any, result string, err error) (string, error) {
 	return result, err
 }
 
-// MCPAnnotationSource implements AnnotationSource by looking up tools in the
+// AnnotationLookup implements AnnotationSource by looking up tools in the
 // tools.Registry.
-type MCPAnnotationSource struct {
+type AnnotationLookup struct {
 	getAnnotations func(serverName, toolName string) *ToolAnnotations
 }
 
-// NewMCPAnnotationSource creates an annotation source backed by a lookup function.
-func NewMCPAnnotationSource(fn func(serverName, toolName string) *ToolAnnotations) *MCPAnnotationSource {
-	return &MCPAnnotationSource{getAnnotations: fn}
+// NewAnnotationLookup creates an annotation source backed by a lookup function.
+func NewAnnotationLookup(fn func(serverName, toolName string) *ToolAnnotations) *AnnotationLookup {
+	return &AnnotationLookup{getAnnotations: fn}
 }
 
 // GetAnnotations returns annotations for the given server/tool combination.
-func (s *MCPAnnotationSource) GetAnnotations(serverName, toolName string) *ToolAnnotations {
+func (s *AnnotationLookup) GetAnnotations(serverName, toolName string) *ToolAnnotations {
 	if s.getAnnotations == nil {
 		return nil
 	}

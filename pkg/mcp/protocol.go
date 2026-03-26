@@ -142,9 +142,9 @@ type RootsCapability struct {
 // SamplingCapability describes the client's sampling support.
 type SamplingCapability struct{}
 
-// MCPClient is a JSON-RPC 2.0 client for the MCP protocol. It correlates
+// Client is a JSON-RPC 2.0 client for the MCP protocol. It correlates
 // requests with responses using a pending map and a demux goroutine.
-type MCPClient struct {
+type Client struct {
 	transport transport.Transport
 	nextID    atomic.Int64
 
@@ -164,11 +164,11 @@ type MCPClient struct {
 	done chan struct{} // closed when demux goroutine exits
 }
 
-// NewMCPClient creates a new MCP client using the given transport.
+// NewClient creates a new MCP client using the given transport.
 // The transport must already be connected (Connect called).
 // onNotification is called for server-sent notifications; may be nil.
-func NewMCPClient(t transport.Transport, onNotification NotificationHandler) *MCPClient {
-	c := &MCPClient{
+func NewClient(t transport.Transport, onNotification NotificationHandler) *Client {
+	c := &Client{
 		transport:      t,
 		pending:        make(map[string]*pendingRequest),
 		onNotification: onNotification,
@@ -180,7 +180,7 @@ func NewMCPClient(t transport.Transport, onNotification NotificationHandler) *MC
 
 // demux reads messages from the transport and dispatches them: responses go
 // to their pending request channel, notifications go to the handler.
-func (c *MCPClient) demux() {
+func (c *Client) demux() {
 	defer close(c.done)
 
 	for msg := range c.transport.Receive() {
@@ -253,13 +253,13 @@ func (c *MCPClient) demux() {
 }
 
 // newRequestID returns a unique monotonically increasing request ID.
-func (c *MCPClient) newRequestID() int64 {
+func (c *Client) newRequestID() int64 {
 	return c.nextID.Add(1)
 }
 
 // Request sends a JSON-RPC request and waits for the response. It returns the
 // raw result on success or a *JSONRPCError if the server returned an error.
-func (c *MCPClient) Request(ctx context.Context, method string, params any) (json.RawMessage, error) {
+func (c *Client) Request(ctx context.Context, method string, params any) (json.RawMessage, error) {
 	id := c.newRequestID()
 	idJSON, _ := json.Marshal(id)
 
@@ -314,7 +314,7 @@ func (c *MCPClient) Request(ctx context.Context, method string, params any) (jso
 }
 
 // Notify sends a JSON-RPC notification (no id, no response expected).
-func (c *MCPClient) Notify(ctx context.Context, method string, params any) error {
+func (c *Client) Notify(ctx context.Context, method string, params any) error {
 	var paramsJSON json.RawMessage
 	if params != nil {
 		var err error
@@ -349,7 +349,7 @@ type initializeParams struct {
 //
 // clientName and clientVersion identify this client to the server.
 // caps describes the client's capabilities (roots, sampling).
-func (c *MCPClient) Initialize(ctx context.Context, clientName, clientVersion string, caps ClientCapabilities) (*InitializeResult, error) {
+func (c *Client) Initialize(ctx context.Context, clientName, clientVersion string, caps ClientCapabilities) (*InitializeResult, error) {
 	params := initializeParams{
 		ProtocolVersion: supportedVersions[0], // offer latest
 		Capabilities:    caps,
@@ -392,35 +392,35 @@ func (c *MCPClient) Initialize(ctx context.Context, clientName, clientVersion st
 }
 
 // NegotiatedVersion returns the protocol version agreed upon during initialization.
-func (c *MCPClient) NegotiatedVersion() string {
+func (c *Client) NegotiatedVersion() string {
 	c.initMu.RLock()
 	defer c.initMu.RUnlock()
 	return c.negotiatedVersion
 }
 
 // ServerCapabilities returns the server's capabilities from the initialize response.
-func (c *MCPClient) ServerCapabilities() ServerCapabilities {
+func (c *Client) ServerCapabilities() ServerCapabilities {
 	c.initMu.RLock()
 	defer c.initMu.RUnlock()
 	return c.serverCaps
 }
 
 // ServerInfo returns the server's implementation info from the initialize response.
-func (c *MCPClient) ServerInfo() ImplementationInfo {
+func (c *Client) ServerInfo() ImplementationInfo {
 	c.initMu.RLock()
 	defer c.initMu.RUnlock()
 	return c.serverInfo
 }
 
 // Instructions returns the server's instructions string from the initialize response.
-func (c *MCPClient) Instructions() string {
+func (c *Client) Instructions() string {
 	c.initMu.RLock()
 	defer c.initMu.RUnlock()
 	return c.instructions
 }
 
 // Close shuts down the demux goroutine and the underlying transport.
-func (c *MCPClient) Close() error {
+func (c *Client) Close() error {
 	err := c.transport.Close()
 	// Wait for demux to finish (it exits when the transport's Receive channel closes).
 	<-c.done

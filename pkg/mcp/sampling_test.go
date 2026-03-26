@@ -12,11 +12,11 @@ import (
 	"github.com/ejm/go_pi/pkg/tools"
 )
 
-// testServer creates an MCPServer with the given config and manager settings for testing.
-func testServer(t *testing.T, cfg *config.MCPServerConfig, mgr *MCPManager) (*MCPServer, *mockTransport) {
+// testServer creates a Server with the given config and manager settings for testing.
+func testServer(t *testing.T, cfg *config.MCPServerConfig, mgr *Manager) (*Server, *mockTransport) {
 	t.Helper()
 	mt := newMockTransport()
-	s := &MCPServer{
+	s := &Server{
 		name:      "test",
 		config:    cfg,
 		transport: mt,
@@ -26,8 +26,8 @@ func testServer(t *testing.T, cfg *config.MCPServerConfig, mgr *MCPManager) (*MC
 }
 
 func TestHandleSamplingRequest_Disabled(t *testing.T) {
-	mgr := &MCPManager{
-		servers:      make(map[string]*MCPServer),
+	mgr := &Manager{
+		servers:      make(map[string]*Server),
 		toolRegistry: tools.NewRegistry(),
 	}
 	cfg := &config.MCPServerConfig{} // no sampling config
@@ -49,8 +49,8 @@ func TestHandleSamplingRequest_Disabled(t *testing.T) {
 }
 
 func TestHandleSamplingRequest_EnabledNoApproval(t *testing.T) {
-	mgr := &MCPManager{
-		servers:      make(map[string]*MCPServer),
+	mgr := &Manager{
+		servers:      make(map[string]*Server),
 		toolRegistry: tools.NewRegistry(),
 	}
 	cfg := &config.MCPServerConfig{
@@ -78,12 +78,12 @@ func TestHandleSamplingRequest_SkipApproval(t *testing.T) {
 	handler := func(ctx context.Context, serverName string, req SamplingRequest) (*SamplingResponse, error) {
 		return &SamplingResponse{
 			Role:    "assistant",
-			Content: MCPContentItem{Type: "text", Text: "hello"},
+			Content: ContentItem{Type: "text", Text: "hello"},
 			Model:   "test-model",
 		}, nil
 	}
-	mgr := &MCPManager{
-		servers:         make(map[string]*MCPServer),
+	mgr := &Manager{
+		servers:         make(map[string]*Server),
 		toolRegistry:    tools.NewRegistry(),
 		samplingHandler: handler,
 	}
@@ -122,12 +122,12 @@ func TestHandleSamplingRequest_MaxTokensCapped(t *testing.T) {
 		capturedReq = req
 		return &SamplingResponse{
 			Role:    "assistant",
-			Content: MCPContentItem{Type: "text", Text: "ok"},
+			Content: ContentItem{Type: "text", Text: "ok"},
 			Model:   "test",
 		}, nil
 	}
-	mgr := &MCPManager{
-		servers:         make(map[string]*MCPServer),
+	mgr := &Manager{
+		servers:         make(map[string]*Server),
 		toolRegistry:    tools.NewRegistry(),
 		samplingHandler: handler,
 	}
@@ -150,8 +150,8 @@ func TestHandleSamplingRequest_MaxTokensCapped(t *testing.T) {
 }
 
 func TestHandleSamplingRequest_ApprovalDenied(t *testing.T) {
-	mgr := &MCPManager{
-		servers:      make(map[string]*MCPServer),
+	mgr := &Manager{
+		servers:      make(map[string]*Server),
 		toolRegistry: tools.NewRegistry(),
 		confirmSampling: func(serverName string, req SamplingRequest) (bool, error) {
 			return false, nil
@@ -175,8 +175,8 @@ func TestHandleSamplingRequest_ApprovalDenied(t *testing.T) {
 }
 
 func TestHandleSamplingRequest_InvalidParams(t *testing.T) {
-	mgr := &MCPManager{
-		servers:      make(map[string]*MCPServer),
+	mgr := &Manager{
+		servers:      make(map[string]*Server),
 		toolRegistry: tools.NewRegistry(),
 	}
 	cfg := &config.MCPServerConfig{
@@ -199,8 +199,8 @@ func TestHandleSamplingRequest_InvalidParams(t *testing.T) {
 }
 
 func TestHandleSamplingRequest_ApprovalError(t *testing.T) {
-	mgr := &MCPManager{
-		servers:      make(map[string]*MCPServer),
+	mgr := &Manager{
+		servers:      make(map[string]*Server),
 		toolRegistry: tools.NewRegistry(),
 		confirmSampling: func(serverName string, req SamplingRequest) (bool, error) {
 			return false, fmt.Errorf("UI crashed")

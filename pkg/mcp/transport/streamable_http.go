@@ -174,7 +174,7 @@ func (t *StreamableHTTP) Send(ctx context.Context, msg json.RawMessage) error {
 }
 
 // SetNegotiatedVersion stores the protocol version from the initialize
-// handshake. Called by MCPServer after processing the initialize response.
+// handshake. Called by Server after processing the initialize response.
 func (t *StreamableHTTP) SetNegotiatedVersion(version string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -245,7 +245,7 @@ func (t *StreamableHTTP) Receive() <-chan json.RawMessage {
 }
 
 // Close terminates the HTTP session via DELETE and releases resources.
-// It closes the incoming channel so consumers (e.g. MCPClient.demux) exit
+// It closes the incoming channel so consumers (e.g. Client.demux) exit
 // their range loops cleanly.
 func (t *StreamableHTTP) Close() error {
 	t.closeMu.Lock()

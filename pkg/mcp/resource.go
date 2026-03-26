@@ -29,8 +29,8 @@ const (
 
 // --- Wire format types ---
 
-// MCPResourceInfo is the wire format of a resource from resources/list.
-type MCPResourceInfo struct {
+// ResourceInfo is the wire format of a resource from resources/list.
+type ResourceInfo struct {
 	URI         string           `json:"uri"`
 	Name        string           `json:"name"`
 	Title       string           `json:"title,omitempty"`
@@ -39,9 +39,9 @@ type MCPResourceInfo struct {
 	Annotations *ToolAnnotations `json:"annotations,omitempty"`
 }
 
-// MCPResourceTemplate is the wire format of a resource template from
+// ResourceTemplate is the wire format of a resource template from
 // resources/templates/list. URITemplate follows RFC 6570.
-type MCPResourceTemplate struct {
+type ResourceTemplate struct {
 	URITemplate string           `json:"uriTemplate"`
 	Name        string           `json:"name"`
 	Title       string           `json:"title,omitempty"`
@@ -52,65 +52,65 @@ type MCPResourceTemplate struct {
 
 // ResourcesListPage is the response from resources/list.
 type ResourcesListPage struct {
-	Resources  []MCPResourceInfo `json:"resources"`
+	Resources  []ResourceInfo `json:"resources"`
 	NextCursor string            `json:"nextCursor,omitempty"`
 }
 
 // ResourceTemplatesListPage is the response from resources/templates/list.
 type ResourceTemplatesListPage struct {
-	ResourceTemplates []MCPResourceTemplate `json:"resourceTemplates"`
+	ResourceTemplates []ResourceTemplate `json:"resourceTemplates"`
 	NextCursor        string                `json:"nextCursor,omitempty"`
 }
 
-// MCPResourceContent is a content item in a resources/read response.
-type MCPResourceContent struct {
+// ResourceContent is a content item in a resources/read response.
+type ResourceContent struct {
 	URI      string `json:"uri"`
 	MimeType string `json:"mimeType,omitempty"`
 	Text     string `json:"text,omitempty"`
 	Blob     string `json:"blob,omitempty"` // base64-encoded binary
 }
 
-// MCPResourceReadResult is the response from resources/read.
-type MCPResourceReadResult struct {
-	Contents []MCPResourceContent `json:"contents"`
+// ResourceReadResult is the response from resources/read.
+type ResourceReadResult struct {
+	Contents []ResourceContent `json:"contents"`
 }
 
 // --- ResourceReader interface ---
 
 // ResourceReader is the interface for reading resources on an MCP server.
-// MCPServer implements this; defined as interface for testability.
+// Server implements this; defined as interface for testability.
 type ResourceReader interface {
 	ServerName() string
-	ReadResource(ctx context.Context, uri string) (*MCPResourceReadResult, error)
+	ReadResource(ctx context.Context, uri string) (*ResourceReadResult, error)
 }
 
-// --- MCPResourceTool ---
+// --- ResourceTool ---
 
-// MCPResourceTool implements tools.RichTool for reading MCP server resources.
+// ResourceTool implements tools.RichTool for reading MCP server resources.
 // Each MCP server that advertises resources gets one instance named
 // "mcp__<server>__read_resource".
-type MCPResourceTool struct {
+type ResourceTool struct {
 	server    ResourceReader
 	name      string // namespaced: "mcp__servername__read_resource"
 	desc      string
-	resources []MCPResourceInfo
-	templates []MCPResourceTemplate
+	resources []ResourceInfo
+	templates []ResourceTemplate
 }
 
 // Compile-time interface checks.
 var (
-	_ tools.Tool     = (*MCPResourceTool)(nil)
-	_ tools.RichTool = (*MCPResourceTool)(nil)
+	_ tools.Tool     = (*ResourceTool)(nil)
+	_ tools.RichTool = (*ResourceTool)(nil)
 )
 
 // Name returns the namespaced tool name.
-func (t *MCPResourceTool) Name() string { return t.name }
+func (t *ResourceTool) Name() string { return t.name }
 
 // Description returns the tool description including available resources.
-func (t *MCPResourceTool) Description() string { return t.desc }
+func (t *ResourceTool) Description() string { return t.desc }
 
 // Schema returns the JSON Schema for the tool's input.
-func (t *MCPResourceTool) Schema() any {
+func (t *ResourceTool) Schema() any {
 	return map[string]any{
 		"type": "object",
 		"properties": map[string]any{
@@ -124,7 +124,7 @@ func (t *MCPResourceTool) Schema() any {
 }
 
 // Execute implements tools.Tool by delegating to ExecuteRich and flattening.
-func (t *MCPResourceTool) Execute(ctx context.Context, params map[string]any) (string, error) {
+func (t *ResourceTool) Execute(ctx context.Context, params map[string]any) (string, error) {
 	blocks, err := t.ExecuteRich(ctx, params)
 	if err != nil {
 		return "", err
@@ -148,7 +148,7 @@ func (t *MCPResourceTool) Execute(ctx context.Context, params map[string]any) (s
 }
 
 // ExecuteRich implements tools.RichTool -- reads a resource and returns content blocks.
-func (t *MCPResourceTool) ExecuteRich(ctx context.Context, params map[string]any) ([]ai.ContentBlock, error) {
+func (t *ResourceTool) ExecuteRich(ctx context.Context, params map[string]any) ([]ai.ContentBlock, error) {
 	uri, _ := params["uri"].(string)
 	if uri == "" {
 		return nil, fmt.Errorf("uri parameter is required")
@@ -163,7 +163,7 @@ func (t *MCPResourceTool) ExecuteRich(ctx context.Context, params map[string]any
 }
 
 // convertResourceResult maps resource contents to ai.ContentBlock, enforcing size caps.
-func convertResourceResult(result *MCPResourceReadResult) []ai.ContentBlock {
+func convertResourceResult(result *ResourceReadResult) []ai.ContentBlock {
 	blocks := make([]ai.ContentBlock, 0, len(result.Contents))
 	for _, item := range result.Contents {
 		if item.Blob != "" {
@@ -176,7 +176,7 @@ func convertResourceResult(result *MCPResourceReadResult) []ai.ContentBlock {
 }
 
 // convertBlobContent handles binary resource content with size cap enforcement.
-func convertBlobContent(item MCPResourceContent) []ai.ContentBlock {
+func convertBlobContent(item ResourceContent) []ai.ContentBlock {
 	decoded, err := base64.StdEncoding.DecodeString(item.Blob)
 	if err != nil {
 		return []ai.ContentBlock{{
@@ -206,7 +206,7 @@ func convertBlobContent(item MCPResourceContent) []ai.ContentBlock {
 }
 
 // convertTextContent handles text resource content with size cap enforcement.
-func convertTextContent(item MCPResourceContent) ai.ContentBlock {
+func convertTextContent(item ResourceContent) ai.ContentBlock {
 	text := item.Text
 	if len(text) > maxResourceTextBytes {
 		text = text[:maxResourceTextBytes] + fmt.Sprintf("\n[truncated at %d bytes]", maxResourceTextBytes)
@@ -218,7 +218,7 @@ func convertTextContent(item MCPResourceContent) ai.ContentBlock {
 }
 
 // buildResourceDescription creates the tool description including available resources.
-func buildResourceDescription(serverName string, resources []MCPResourceInfo, templates []MCPResourceTemplate) string {
+func buildResourceDescription(serverName string, resources []ResourceInfo, templates []ResourceTemplate) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Read a resource from MCP server %q. Provide a resource URI.", serverName)
 
@@ -265,10 +265,10 @@ func buildResourceDescription(serverName string, resources []MCPResourceInfo, te
 	return b.String()
 }
 
-// BridgeResource creates an MCPResourceTool from discovered resources and templates.
-func BridgeResource(server ResourceReader, resources []MCPResourceInfo, templates []MCPResourceTemplate) *MCPResourceTool {
-	name := buildMCPToolName(server.ServerName(), "read_resource")
-	return &MCPResourceTool{
+// BridgeResource creates an ResourceTool from discovered resources and templates.
+func BridgeResource(server ResourceReader, resources []ResourceInfo, templates []ResourceTemplate) *ResourceTool {
+	name := buildToolName(server.ServerName(), "read_resource")
+	return &ResourceTool{
 		server:    server,
 		name:      name,
 		desc:      buildResourceDescription(server.ServerName(), resources, templates),
@@ -284,8 +284,8 @@ func BridgeResource(server ResourceReader, resources []MCPResourceInfo, template
 func DiscoverResources(
 	ctx context.Context,
 	listResources func(ctx context.Context, cursor string) (*ResourcesListPage, error),
-) ([]MCPResourceInfo, error) {
-	var all []MCPResourceInfo
+) ([]ResourceInfo, error) {
+	var all []ResourceInfo
 	var cursor string
 	for pages := 0; pages < maxPaginationPages; pages++ {
 		page, err := listResources(ctx, cursor)
@@ -306,8 +306,8 @@ func DiscoverResources(
 func DiscoverResourceTemplates(
 	ctx context.Context,
 	listTemplates func(ctx context.Context, cursor string) (*ResourceTemplatesListPage, error),
-) ([]MCPResourceTemplate, error) {
-	var all []MCPResourceTemplate
+) ([]ResourceTemplate, error) {
+	var all []ResourceTemplate
 	var cursor string
 	for pages := 0; pages < maxPaginationPages; pages++ {
 		page, err := listTemplates(ctx, cursor)
@@ -323,10 +323,10 @@ func DiscoverResourceTemplates(
 	return all, nil
 }
 
-// --- MCPClient resource methods ---
+// --- Client resource methods ---
 
 // ListResources sends a resources/list request with pagination.
-func (c *MCPClient) ListResources(ctx context.Context, cursor string) (*ResourcesListPage, error) {
+func (c *Client) ListResources(ctx context.Context, cursor string) (*ResourcesListPage, error) {
 	params := map[string]any{}
 	if cursor != "" {
 		params["cursor"] = cursor
@@ -343,7 +343,7 @@ func (c *MCPClient) ListResources(ctx context.Context, cursor string) (*Resource
 }
 
 // ListResourceTemplates sends a resources/templates/list request with pagination.
-func (c *MCPClient) ListResourceTemplates(ctx context.Context, cursor string) (*ResourceTemplatesListPage, error) {
+func (c *Client) ListResourceTemplates(ctx context.Context, cursor string) (*ResourceTemplatesListPage, error) {
 	params := map[string]any{}
 	if cursor != "" {
 		params["cursor"] = cursor
@@ -360,13 +360,13 @@ func (c *MCPClient) ListResourceTemplates(ctx context.Context, cursor string) (*
 }
 
 // ReadResourceRaw sends a resources/read request for the given URI.
-func (c *MCPClient) ReadResourceRaw(ctx context.Context, uri string) (*MCPResourceReadResult, error) {
+func (c *Client) ReadResourceRaw(ctx context.Context, uri string) (*ResourceReadResult, error) {
 	params := map[string]any{"uri": uri}
 	result, err := c.Request(ctx, "resources/read", params)
 	if err != nil {
 		return nil, fmt.Errorf("resources/read %q: %w", uri, err)
 	}
-	var readResult MCPResourceReadResult
+	var readResult ResourceReadResult
 	if err := json.Unmarshal(result, &readResult); err != nil {
 		return nil, fmt.Errorf("parsing resources/read response: %w", err)
 	}
@@ -374,7 +374,7 @@ func (c *MCPClient) ReadResourceRaw(ctx context.Context, uri string) (*MCPResour
 }
 
 // SubscribeResource sends a resources/subscribe request.
-func (c *MCPClient) SubscribeResource(ctx context.Context, uri string) error {
+func (c *Client) SubscribeResource(ctx context.Context, uri string) error {
 	params := map[string]any{"uri": uri}
 	_, err := c.Request(ctx, "resources/subscribe", params)
 	if err != nil {
@@ -384,7 +384,7 @@ func (c *MCPClient) SubscribeResource(ctx context.Context, uri string) error {
 }
 
 // UnsubscribeResource sends a resources/unsubscribe request.
-func (c *MCPClient) UnsubscribeResource(ctx context.Context, uri string) error {
+func (c *Client) UnsubscribeResource(ctx context.Context, uri string) error {
 	params := map[string]any{"uri": uri}
 	_, err := c.Request(ctx, "resources/unsubscribe", params)
 	if err != nil {
@@ -393,11 +393,11 @@ func (c *MCPClient) UnsubscribeResource(ctx context.Context, uri string) error {
 	return nil
 }
 
-// --- MCPServer resource methods ---
+// --- Server resource methods ---
 
 // ReadResource implements ResourceReader -- reads a resource via the MCP client
 // and manages subscriptions (subscribes on first access, refreshes TTL).
-func (s *MCPServer) ReadResource(ctx context.Context, uri string) (*MCPResourceReadResult, error) {
+func (s *Server) ReadResource(ctx context.Context, uri string) (*ResourceReadResult, error) {
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
@@ -420,7 +420,7 @@ func (s *MCPServer) ReadResource(ctx context.Context, uri string) (*MCPResourceR
 
 // discoverAndRegisterResources discovers resources/templates and registers the
 // read_resource tool. Only called if the server advertises resource capability.
-func (s *MCPServer) discoverAndRegisterResources(ctx context.Context) error {
+func (s *Server) discoverAndRegisterResources(ctx context.Context) error {
 	resources, err := DiscoverResources(ctx, func(ctx context.Context, cursor string) (*ResourcesListPage, error) {
 		return s.client.ListResources(ctx, cursor)
 	})
@@ -454,7 +454,7 @@ func (s *MCPServer) discoverAndRegisterResources(ctx context.Context) error {
 }
 
 // handleResourcesListChanged re-discovers resources and updates the tool.
-func (s *MCPServer) handleResourcesListChanged() {
+func (s *Server) handleResourcesListChanged() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -468,7 +468,7 @@ func (s *MCPServer) handleResourcesListChanged() {
 }
 
 // handleResourcesUpdated handles a notification that a subscribed resource changed.
-func (s *MCPServer) handleResourcesUpdated(params json.RawMessage) {
+func (s *Server) handleResourcesUpdated(params json.RawMessage) {
 	var notification struct {
 		URI string `json:"uri"`
 	}
@@ -495,13 +495,13 @@ type subscription struct {
 type subscriptionManager struct {
 	mu     sync.Mutex
 	subs   map[string]*subscription // URI -> subscription
-	client *MCPClient
+	client *Client
 	cancel context.CancelFunc
 	done   chan struct{}
 }
 
 // newSubscriptionManager creates a subscription manager and starts the reaper goroutine.
-func newSubscriptionManager(client *MCPClient) *subscriptionManager {
+func newSubscriptionManager(client *Client) *subscriptionManager {
 	ctx, cancel := context.WithCancel(context.Background())
 	sm := &subscriptionManager{
 		subs:   make(map[string]*subscription),

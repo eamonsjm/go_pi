@@ -51,9 +51,9 @@ func (m *mockTransport) getSent() []json.RawMessage {
 	return cp
 }
 
-func TestMCPClientRequestResponse(t *testing.T) {
+func TestClientRequestResponse(t *testing.T) {
 	mt := newMockTransport()
-	client := NewMCPClient(mt, nil)
+	client := NewClient(mt, nil)
 	defer client.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -83,9 +83,9 @@ func TestMCPClientRequestResponse(t *testing.T) {
 	}
 }
 
-func TestMCPClientRequestError(t *testing.T) {
+func TestClientRequestError(t *testing.T) {
 	mt := newMockTransport()
-	client := NewMCPClient(mt, nil)
+	client := NewClient(mt, nil)
 	defer client.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -110,7 +110,7 @@ func TestMCPClientRequestError(t *testing.T) {
 	}
 }
 
-func TestMCPClientNotification(t *testing.T) {
+func TestClientNotification(t *testing.T) {
 	mt := newMockTransport()
 
 	type notif struct {
@@ -118,7 +118,7 @@ func TestMCPClientNotification(t *testing.T) {
 		params json.RawMessage
 	}
 	ch := make(chan notif, 1)
-	client := NewMCPClient(mt, func(method string, params json.RawMessage) {
+	client := NewClient(mt, func(method string, params json.RawMessage) {
 		ch <- notif{method, params}
 	})
 	defer client.Close()
@@ -139,9 +139,9 @@ func TestMCPClientNotification(t *testing.T) {
 	}
 }
 
-func TestMCPClientNotify(t *testing.T) {
+func TestClientNotify(t *testing.T) {
 	mt := newMockTransport()
-	client := NewMCPClient(mt, nil)
+	client := NewClient(mt, nil)
 	defer client.Close()
 
 	ctx := context.Background()
@@ -169,9 +169,9 @@ func TestMCPClientNotify(t *testing.T) {
 	}
 }
 
-func TestMCPClientRequestTimeout(t *testing.T) {
+func TestClientRequestTimeout(t *testing.T) {
 	mt := newMockTransport()
-	client := NewMCPClient(mt, nil)
+	client := NewClient(mt, nil)
 	defer client.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
@@ -187,9 +187,9 @@ func TestMCPClientRequestTimeout(t *testing.T) {
 	}
 }
 
-func TestMCPClientInitialize(t *testing.T) {
+func TestClientInitialize(t *testing.T) {
 	mt := newMockTransport()
-	client := NewMCPClient(mt, nil)
+	client := NewClient(mt, nil)
 	defer client.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -260,9 +260,9 @@ func TestMCPClientInitialize(t *testing.T) {
 	}
 }
 
-func TestMCPClientInitializeUnsupportedVersion(t *testing.T) {
+func TestClientInitializeUnsupportedVersion(t *testing.T) {
 	mt := newMockTransport()
-	client := NewMCPClient(mt, nil)
+	client := NewClient(mt, nil)
 	defer client.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -287,9 +287,9 @@ func TestMCPClientInitializeUnsupportedVersion(t *testing.T) {
 	}
 }
 
-func TestMCPClientInitializeOlderSupportedVersion(t *testing.T) {
+func TestClientInitializeOlderSupportedVersion(t *testing.T) {
 	mt := newMockTransport()
-	client := NewMCPClient(mt, nil)
+	client := NewClient(mt, nil)
 	defer client.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -318,9 +318,9 @@ func TestMCPClientInitializeOlderSupportedVersion(t *testing.T) {
 	}
 }
 
-func TestMCPClientConcurrentRequests(t *testing.T) {
+func TestClientConcurrentRequests(t *testing.T) {
 	mt := newMockTransport()
-	client := NewMCPClient(mt, nil)
+	client := NewClient(mt, nil)
 	defer client.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -424,9 +424,9 @@ func TestIsVersionSupported(t *testing.T) {
 	}
 }
 
-func TestMCPClientRequestHandlerDoesNotBlockDemux(t *testing.T) {
+func TestClientRequestHandlerDoesNotBlockDemux(t *testing.T) {
 	mt := newMockTransport()
-	client := NewMCPClient(mt, nil)
+	client := NewClient(mt, nil)
 	defer client.Close()
 
 	// Install a request handler that blocks until released.
@@ -476,9 +476,9 @@ func TestMCPClientRequestHandlerDoesNotBlockDemux(t *testing.T) {
 	close(handlerRelease)
 }
 
-func TestMCPClientTransportCloseDuringRequest(t *testing.T) {
+func TestClientTransportCloseDuringRequest(t *testing.T) {
 	mt := newMockTransport()
-	client := NewMCPClient(mt, nil)
+	client := NewClient(mt, nil)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

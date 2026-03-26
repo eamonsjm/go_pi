@@ -103,21 +103,21 @@ func (a *autoResponder) setupInitialize(caps ServerCapabilities, instructions st
 }
 
 // setupToolsList registers an auto-handler for tools/list.
-func (a *autoResponder) setupToolsList(toolInfos []MCPToolInfo) {
+func (a *autoResponder) setupToolsList(toolInfos []ToolInfo) {
 	a.setHandler("tools/list", func(id json.RawMessage, _ json.RawMessage) {
 		a.respond(id, ToolsListPage{Tools: toolInfos})
 	})
 }
 
 // setupPromptsList registers an auto-handler for prompts/list.
-func (a *autoResponder) setupPromptsList(prompts []MCPPromptInfo) {
+func (a *autoResponder) setupPromptsList(prompts []PromptInfo) {
 	a.setHandler("prompts/list", func(id json.RawMessage, _ json.RawMessage) {
 		a.respond(id, PromptsListPage{Prompts: prompts})
 	})
 }
 
 // setupResourcesList registers an auto-handler for resources/list.
-func (a *autoResponder) setupResourcesList(resources []MCPResourceInfo) {
+func (a *autoResponder) setupResourcesList(resources []ResourceInfo) {
 	a.setHandler("resources/list", func(id json.RawMessage, _ json.RawMessage) {
 		a.respond(id, ResourcesListPage{Resources: resources})
 	})
@@ -126,22 +126,22 @@ func (a *autoResponder) setupResourcesList(resources []MCPResourceInfo) {
 // setupToolsCall registers an auto-handler for tools/call.
 func (a *autoResponder) setupToolsCall(resultText string, isError bool) {
 	a.setHandler("tools/call", func(id json.RawMessage, _ json.RawMessage) {
-		a.respond(id, MCPToolResult{
-			Content: []MCPContentItem{{Type: "text", Text: resultText}},
+		a.respond(id, ToolResult{
+			Content: []ContentItem{{Type: "text", Text: resultText}},
 			IsError: isError,
 		})
 	})
 }
 
-// buildTestServer creates an MCPManager with a single auto-responding mock
+// buildTestServer creates a Manager with a single auto-responding mock
 // server. The server is initialized and registered in the manager.
-func buildTestServer(t *testing.T, name string, cfg *config.MCPServerConfig, ar *autoResponder) (*MCPManager, *MCPServer) {
+func buildTestServer(t *testing.T, name string, cfg *config.MCPServerConfig, ar *autoResponder) (*Manager, *Server) {
 	t.Helper()
 
 	reg := tools.NewRegistry()
 	skillReg := skill.NewRegistry()
 
-	mgr := NewMCPManager(MCPManagerConfig{
+	mgr := NewManager(ManagerConfig{
 		ToolRegistry:  reg,
 		SkillRegistry: skillReg,
 		WorkingDir:    "/test/project",
@@ -151,7 +151,7 @@ func buildTestServer(t *testing.T, name string, cfg *config.MCPServerConfig, ar 
 		ClientVersion: "0.0.1",
 	})
 
-	server := newMCPServer(name, cfg, ar, mgr)
+	server := newServer(name, cfg, ar, mgr)
 
 	if err := server.initialize(context.Background()); err != nil {
 		t.Fatalf("initialize failed: %v", err)
@@ -203,7 +203,7 @@ func TestIntegration_ToolBridging(t *testing.T) {
 	ar := newAutoResponder()
 	boolTrue := true
 	ar.setupInitialize(ServerCapabilities{Tools: &ToolCapability{ListChanged: true}}, "")
-	ar.setupToolsList([]MCPToolInfo{
+	ar.setupToolsList([]ToolInfo{
 		{
 			Name:        "read_file",
 			Description: "Read a file",
@@ -255,7 +255,7 @@ func TestIntegration_ToolBridging(t *testing.T) {
 func TestIntegration_RichToolError(t *testing.T) {
 	ar := newAutoResponder()
 	ar.setupInitialize(ServerCapabilities{Tools: &ToolCapability{}}, "")
-	ar.setupToolsList([]MCPToolInfo{
+	ar.setupToolsList([]ToolInfo{
 		{Name: "fail_tool", Description: "Always fails", InputSchema: map[string]any{"type": "object"}},
 	})
 	ar.setupToolsCall("permission denied: /etc/shadow", true)
@@ -274,7 +274,7 @@ func TestIntegration_RichToolError(t *testing.T) {
 
 	richTool, ok := tool.(tools.RichTool)
 	if !ok {
-		t.Fatal("MCPTool should implement RichTool")
+		t.Fatal("Tool should implement RichTool")
 	}
 
 	// Execute — the mock returns isError=true.
@@ -292,7 +292,7 @@ func TestIntegration_RichToolError(t *testing.T) {
 func TestIntegration_ConcurrentToolCalls(t *testing.T) {
 	ar := newAutoResponder()
 	ar.setupInitialize(ServerCapabilities{Tools: &ToolCapability{}}, "")
-	ar.setupToolsList([]MCPToolInfo{
+	ar.setupToolsList([]ToolInfo{
 		{Name: "echo", Description: "Echo tool", InputSchema: map[string]any{"type": "object"}},
 	})
 
@@ -305,8 +305,8 @@ func TestIntegration_ConcurrentToolCalls(t *testing.T) {
 		callMu.Unlock()
 		// Small delay to simulate real server work.
 		time.Sleep(10 * time.Millisecond)
-		ar.respond(id, MCPToolResult{
-			Content: []MCPContentItem{{Type: "text", Text: fmt.Sprintf("result-%d", n)}},
+		ar.respond(id, ToolResult{
+			Content: []ContentItem{{Type: "text", Text: fmt.Sprintf("result-%d", n)}},
 		})
 	})
 
@@ -359,7 +359,7 @@ func TestIntegration_ListChangedRediscovery(t *testing.T) {
 	ar.setupInitialize(ServerCapabilities{Tools: &ToolCapability{ListChanged: true}}, "")
 
 	// Initial tool list.
-	ar.setupToolsList([]MCPToolInfo{
+	ar.setupToolsList([]ToolInfo{
 		{Name: "tool_a", Description: "Tool A", InputSchema: map[string]any{"type": "object"}},
 	})
 
@@ -375,7 +375,7 @@ func TestIntegration_ListChangedRediscovery(t *testing.T) {
 	}
 
 	// Update tool list for re-discovery.
-	ar.setupToolsList([]MCPToolInfo{
+	ar.setupToolsList([]ToolInfo{
 		{Name: "tool_a", Description: "Tool A v2", InputSchema: map[string]any{"type": "object"}},
 		{Name: "tool_b", Description: "Tool B", InputSchema: map[string]any{"type": "object"}},
 	})
@@ -408,14 +408,14 @@ func TestIntegration_ListChangedRediscovery(t *testing.T) {
 func TestIntegration_PermissionHook(t *testing.T) {
 	reg := tools.NewRegistry()
 	boolTrue := true
-	reg.Register(&MCPTool{
+	reg.Register(&Tool{
 		name:         "mcp__fs__read_file",
 		originalName: "read_file",
 		desc:         "Read",
 		inputSchema:  map[string]any{"type": "object"},
 		annotations:  &ToolAnnotations{ReadOnlyHint: &boolTrue},
 	})
-	reg.Register(&MCPTool{
+	reg.Register(&Tool{
 		name:         "mcp__fs__delete_file",
 		originalName: "delete_file",
 		desc:         "Delete",
@@ -429,11 +429,11 @@ func TestIntegration_PermissionHook(t *testing.T) {
 		},
 	}
 
-	hook := NewMCPPermissionHook(permConfigs, func(server, tool, desc string) (bool, error) {
+	hook := NewPermissionHook(permConfigs, func(server, tool, desc string) (bool, error) {
 		return false, nil
 	})
-	mgr := NewMCPManager(MCPManagerConfig{ToolRegistry: reg})
-	hook.SetAnnotationSource(NewMCPAnnotationSource(mgr.GetAnnotations))
+	mgr := NewManager(ManagerConfig{ToolRegistry: reg})
+	hook.SetAnnotationSource(NewAnnotationLookup(mgr.GetAnnotations))
 
 	ctx := context.Background()
 
@@ -458,7 +458,7 @@ func TestIntegration_PermissionHook(t *testing.T) {
 func TestIntegration_PermissionHookAnnotationBypass(t *testing.T) {
 	reg := tools.NewRegistry()
 	boolTrue := true
-	reg.Register(&MCPTool{
+	reg.Register(&Tool{
 		name:         "mcp__db__query",
 		originalName: "query",
 		desc:         "Query",
@@ -466,12 +466,12 @@ func TestIntegration_PermissionHookAnnotationBypass(t *testing.T) {
 		annotations:  &ToolAnnotations{ReadOnlyHint: &boolTrue},
 	})
 
-	hook := NewMCPPermissionHook(nil, func(server, tool, desc string) (bool, error) {
+	hook := NewPermissionHook(nil, func(server, tool, desc string) (bool, error) {
 		t.Error("confirm should not be called for read-only tool")
 		return false, nil
 	})
-	mgr := NewMCPManager(MCPManagerConfig{ToolRegistry: reg})
-	hook.SetAnnotationSource(NewMCPAnnotationSource(mgr.GetAnnotations))
+	mgr := NewManager(ManagerConfig{ToolRegistry: reg})
+	hook.SetAnnotationSource(NewAnnotationLookup(mgr.GetAnnotations))
 
 	if err := hook.BeforeExecute(context.Background(), "mcp__db__query", nil); err != nil {
 		t.Errorf("read-only tool should bypass confirmation: %v", err)
@@ -479,7 +479,7 @@ func TestIntegration_PermissionHookAnnotationBypass(t *testing.T) {
 }
 
 func TestIntegration_PermissionHookNonInteractive(t *testing.T) {
-	hook := NewMCPPermissionHook(nil, nil)
+	hook := NewPermissionHook(nil, nil)
 	err := hook.BeforeExecute(context.Background(), "mcp__srv__dangerous_tool", nil)
 	if err == nil {
 		t.Error("destructive tool should be denied in non-interactive mode")
@@ -496,7 +496,7 @@ func TestIntegration_PermissionDenyOverridesAutoApprove(t *testing.T) {
 			Deny:        []string{"dangerous"},
 		},
 	}
-	hook := NewMCPPermissionHook(permConfigs, func(server, tool, desc string) (bool, error) {
+	hook := NewPermissionHook(permConfigs, func(server, tool, desc string) (bool, error) {
 		t.Error("confirm should not be called for denied tool")
 		return true, nil
 	})
@@ -523,7 +523,7 @@ func TestIntegration_SamplingApproval(t *testing.T) {
 
 	var samplingCalled bool
 	var samplingMaxTokens int
-	mgr := NewMCPManager(MCPManagerConfig{
+	mgr := NewManager(ManagerConfig{
 		ToolRegistry:  reg,
 		SkillRegistry: skillReg,
 		WorkingDir:    "/test",
@@ -534,7 +534,7 @@ func TestIntegration_SamplingApproval(t *testing.T) {
 			samplingMaxTokens = req.MaxTokens
 			return &SamplingResponse{
 				Role:    "assistant",
-				Content: MCPContentItem{Type: "text", Text: "sampled"},
+				Content: ContentItem{Type: "text", Text: "sampled"},
 				Model:   "test-model",
 			}, nil
 		},
@@ -543,7 +543,7 @@ func TestIntegration_SamplingApproval(t *testing.T) {
 		},
 	})
 
-	server := newMCPServer("samp", cfg, ar, mgr)
+	server := newServer("samp", cfg, ar, mgr)
 	if err := server.initialize(context.Background()); err != nil {
 		t.Fatalf("initialize: %v", err)
 	}
@@ -555,7 +555,7 @@ func TestIntegration_SamplingApproval(t *testing.T) {
 
 	// Simulate a sampling request with maxTokens > cap.
 	sampReq := SamplingRequest{
-		Messages:  []SamplingMessage{{Role: "user", Content: MCPContentItem{Type: "text", Text: "hello"}}},
+		Messages:  []SamplingMessage{{Role: "user", Content: ContentItem{Type: "text", Text: "hello"}}},
 		MaxTokens: 1000,
 	}
 	sampReqJSON, _ := json.Marshal(sampReq)
@@ -577,7 +577,7 @@ func TestIntegration_SamplingDenied(t *testing.T) {
 		Sampling: &config.SamplingConfig{Enabled: true, MaxTokens: 500},
 	}
 
-	mgr := NewMCPManager(MCPManagerConfig{
+	mgr := NewManager(ManagerConfig{
 		ToolRegistry: tools.NewRegistry(),
 		ClientName:   "gi-test",
 		ConfirmSampling: func(serverName string, req SamplingRequest) (bool, error) {
@@ -585,7 +585,7 @@ func TestIntegration_SamplingDenied(t *testing.T) {
 		},
 	})
 
-	server := newMCPServer("samp", cfg, ar, mgr)
+	server := newServer("samp", cfg, ar, mgr)
 	if err := server.initialize(context.Background()); err != nil {
 		t.Fatalf("initialize: %v", err)
 	}
@@ -595,7 +595,7 @@ func TestIntegration_SamplingDenied(t *testing.T) {
 	defer mgr.Shutdown(context.Background())
 
 	sampReq := SamplingRequest{
-		Messages:  []SamplingMessage{{Role: "user", Content: MCPContentItem{Type: "text", Text: "hello"}}},
+		Messages:  []SamplingMessage{{Role: "user", Content: ContentItem{Type: "text", Text: "hello"}}},
 		MaxTokens: 100,
 	}
 	sampReqJSON, _ := json.Marshal(sampReq)
@@ -622,9 +622,9 @@ func TestIntegration_SamplingDisabled(t *testing.T) {
 	ar.setupInitialize(ServerCapabilities{}, "")
 
 	cfg := &config.MCPServerConfig{} // no sampling config
-	mgr := NewMCPManager(MCPManagerConfig{ToolRegistry: tools.NewRegistry(), ClientName: "gi-test"})
+	mgr := NewManager(ManagerConfig{ToolRegistry: tools.NewRegistry(), ClientName: "gi-test"})
 
-	server := newMCPServer("nosamp", cfg, ar, mgr)
+	server := newServer("nosamp", cfg, ar, mgr)
 	if err := server.initialize(context.Background()); err != nil {
 		t.Fatalf("initialize: %v", err)
 	}
@@ -633,7 +633,7 @@ func TestIntegration_SamplingDisabled(t *testing.T) {
 	mgr.mu.Unlock()
 	defer mgr.Shutdown(context.Background())
 
-	sampReq := SamplingRequest{Messages: []SamplingMessage{{Role: "user", Content: MCPContentItem{Type: "text", Text: "hello"}}}}
+	sampReq := SamplingRequest{Messages: []SamplingMessage{{Role: "user", Content: ContentItem{Type: "text", Text: "hello"}}}}
 	sampReqJSON, _ := json.Marshal(sampReq)
 	server.handleSamplingRequest(context.Background(), json.RawMessage(`101`), sampReqJSON)
 
@@ -664,9 +664,9 @@ func TestIntegration_VersionNegotiation(t *testing.T) {
 	})
 
 	reg := tools.NewRegistry()
-	mgr := NewMCPManager(MCPManagerConfig{ToolRegistry: reg, ClientName: "gi-test", ClientVersion: "0.0.1"})
+	mgr := NewManager(ManagerConfig{ToolRegistry: reg, ClientName: "gi-test", ClientVersion: "0.0.1"})
 
-	server := newMCPServer("oldserver", &config.MCPServerConfig{}, ar, mgr)
+	server := newServer("oldserver", &config.MCPServerConfig{}, ar, mgr)
 	if err := server.initialize(context.Background()); err != nil {
 		t.Fatalf("initialize with older version should succeed: %v", err)
 	}
@@ -692,9 +692,9 @@ func TestIntegration_VersionNegotiationUnsupported(t *testing.T) {
 	})
 
 	reg := tools.NewRegistry()
-	mgr := NewMCPManager(MCPManagerConfig{ToolRegistry: reg, ClientName: "gi-test", ClientVersion: "0.0.1"})
+	mgr := NewManager(ManagerConfig{ToolRegistry: reg, ClientName: "gi-test", ClientVersion: "0.0.1"})
 
-	server := newMCPServer("badver", &config.MCPServerConfig{}, ar, mgr)
+	server := newServer("badver", &config.MCPServerConfig{}, ar, mgr)
 	err := server.initialize(context.Background())
 	if err == nil {
 		t.Fatal("expected error for unsupported version")
@@ -747,7 +747,7 @@ func TestIntegration_PaginationLimits(t *testing.T) {
 		pageMu.Unlock()
 
 		page := ToolsListPage{
-			Tools: []MCPToolInfo{
+			Tools: []ToolInfo{
 				{Name: fmt.Sprintf("tool_%d", n), Description: "paginated", InputSchema: map[string]any{"type": "object"}},
 			},
 		}
@@ -775,7 +775,7 @@ func TestIntegration_PaginationLimits(t *testing.T) {
 func TestIntegration_ToolCallTimeout(t *testing.T) {
 	ar := newAutoResponder()
 	ar.setupInitialize(ServerCapabilities{Tools: &ToolCapability{}}, "")
-	ar.setupToolsList([]MCPToolInfo{
+	ar.setupToolsList([]ToolInfo{
 		{Name: "slow", Description: "Slow tool", InputSchema: map[string]any{"type": "object"}},
 	})
 	// Do NOT set up tools/call handler — let it hang.
@@ -800,7 +800,7 @@ func TestIntegration_ToolCallTimeout(t *testing.T) {
 }
 
 func TestIntegration_DrainSystemMessages(t *testing.T) {
-	mgr := NewMCPManager(MCPManagerConfig{ToolRegistry: tools.NewRegistry()})
+	mgr := NewManager(ManagerConfig{ToolRegistry: tools.NewRegistry()})
 
 	mgr.injectSystemMessage("[MCP server fs tools updated — 1 added, 0 removed, 3 total]")
 	mgr.injectSystemMessage("[MCP server db restarted]")
@@ -820,15 +820,15 @@ func TestIntegration_DrainSystemMessages(t *testing.T) {
 }
 
 func TestIntegration_ServerInstructionsInjection(t *testing.T) {
-	mgr := NewMCPManager(MCPManagerConfig{ToolRegistry: tools.NewRegistry()})
+	mgr := NewManager(ManagerConfig{ToolRegistry: tools.NewRegistry()})
 
 	mgr.mu.Lock()
-	mgr.servers["helper"] = &MCPServer{
+	mgr.servers["helper"] = &Server{
 		name:         "helper",
 		config:       &config.MCPServerConfig{},
 		instructions: "Use this server for database queries.",
 	}
-	mgr.servers["ignored"] = &MCPServer{
+	mgr.servers["ignored"] = &Server{
 		name:         "ignored",
 		config:       &config.MCPServerConfig{Instructions: "ignore"},
 		instructions: "Should not appear.",
@@ -853,7 +853,7 @@ func TestIntegration_ResourceSubscribeUnsubscribe(t *testing.T) {
 	ar.setupInitialize(ServerCapabilities{
 		Resources: &ResourceCapability{Subscribe: true, ListChanged: true},
 	}, "")
-	ar.setupResourcesList([]MCPResourceInfo{
+	ar.setupResourcesList([]ResourceInfo{
 		{URI: "file:///test.txt", Name: "test.txt", MimeType: "text/plain"},
 	})
 	ar.setHandler("resources/templates/list", func(id json.RawMessage, _ json.RawMessage) {
@@ -902,7 +902,7 @@ func TestIntegration_ResourceReadExecution(t *testing.T) {
 		ar.setupInitialize(ServerCapabilities{
 			Resources: &ResourceCapability{Subscribe: true, ListChanged: true},
 		}, "")
-		ar.setupResourcesList([]MCPResourceInfo{
+		ar.setupResourcesList([]ResourceInfo{
 			{URI: "file:///hello.txt", Name: "hello.txt", MimeType: "text/plain"},
 		})
 		ar.setHandler("resources/templates/list", func(id json.RawMessage, _ json.RawMessage) {
@@ -919,8 +919,8 @@ func TestIntegration_ResourceReadExecution(t *testing.T) {
 				URI string `json:"uri"`
 			}
 			_ = json.Unmarshal(params, &p)
-			ar.respond(id, MCPResourceReadResult{
-				Contents: []MCPResourceContent{
+			ar.respond(id, ResourceReadResult{
+				Contents: []ResourceContent{
 					{URI: p.URI, MimeType: "text/plain", Text: "hello from resource"},
 				},
 			})
@@ -977,7 +977,7 @@ func TestIntegration_ResourceReadExecution(t *testing.T) {
 		ar.setupInitialize(ServerCapabilities{
 			Resources: &ResourceCapability{},
 		}, "")
-		ar.setupResourcesList([]MCPResourceInfo{
+		ar.setupResourcesList([]ResourceInfo{
 			{URI: "file:///big.txt", Name: "big.txt"},
 		})
 		ar.setHandler("resources/templates/list", func(id json.RawMessage, _ json.RawMessage) {
@@ -986,8 +986,8 @@ func TestIntegration_ResourceReadExecution(t *testing.T) {
 
 		bigText := strings.Repeat("A", maxResourceTextBytes+500)
 		ar.setHandler("resources/read", func(id json.RawMessage, _ json.RawMessage) {
-			ar.respond(id, MCPResourceReadResult{
-				Contents: []MCPResourceContent{
+			ar.respond(id, ResourceReadResult{
+				Contents: []ResourceContent{
 					{URI: "file:///big.txt", Text: bigText},
 				},
 			})
@@ -1027,7 +1027,7 @@ func TestIntegration_ResourceReadExecution(t *testing.T) {
 		ar.setupInitialize(ServerCapabilities{
 			Resources: &ResourceCapability{},
 		}, "")
-		ar.setupResourcesList([]MCPResourceInfo{
+		ar.setupResourcesList([]ResourceInfo{
 			{URI: "file:///huge.bin", Name: "huge.bin", MimeType: "application/octet-stream"},
 		})
 		ar.setHandler("resources/templates/list", func(id json.RawMessage, _ json.RawMessage) {
@@ -1036,8 +1036,8 @@ func TestIntegration_ResourceReadExecution(t *testing.T) {
 
 		oversizedBlob := base64.StdEncoding.EncodeToString(make([]byte, maxResourceBinaryBytes+100))
 		ar.setHandler("resources/read", func(id json.RawMessage, _ json.RawMessage) {
-			ar.respond(id, MCPResourceReadResult{
-				Contents: []MCPResourceContent{
+			ar.respond(id, ResourceReadResult{
+				Contents: []ResourceContent{
 					{URI: "file:///huge.bin", MimeType: "application/octet-stream", Blob: oversizedBlob},
 				},
 			})
@@ -1075,7 +1075,7 @@ func TestIntegration_ResourceReadExecution(t *testing.T) {
 		ar.setupInitialize(ServerCapabilities{
 			Resources: &ResourceCapability{},
 		}, "")
-		ar.setupResourcesList([]MCPResourceInfo{
+		ar.setupResourcesList([]ResourceInfo{
 			{URI: "file:///photo.png", Name: "photo.png", MimeType: "image/png"},
 		})
 		ar.setHandler("resources/templates/list", func(id json.RawMessage, _ json.RawMessage) {
@@ -1084,8 +1084,8 @@ func TestIntegration_ResourceReadExecution(t *testing.T) {
 
 		imgData := base64.StdEncoding.EncodeToString([]byte("fakepngdata"))
 		ar.setHandler("resources/read", func(id json.RawMessage, _ json.RawMessage) {
-			ar.respond(id, MCPResourceReadResult{
-				Contents: []MCPResourceContent{
+			ar.respond(id, ResourceReadResult{
+				Contents: []ResourceContent{
 					{URI: "file:///photo.png", MimeType: "image/png", Blob: imgData},
 				},
 			})
@@ -1135,7 +1135,7 @@ func TestIntegration_ResourceReadExecution(t *testing.T) {
 		ar.setupInitialize(ServerCapabilities{
 			Resources: &ResourceCapability{},
 		}, "")
-		ar.setupResourcesList([]MCPResourceInfo{
+		ar.setupResourcesList([]ResourceInfo{
 			{URI: "file:///secret.txt", Name: "secret.txt"},
 		})
 		ar.setHandler("resources/templates/list", func(id json.RawMessage, _ json.RawMessage) {
@@ -1210,18 +1210,18 @@ func TestIntegration_ToolNameParsing(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		server, tool := parseMCPToolName(tt.input)
+		server, tool := parseToolName(tt.input)
 		if server != tt.wantServer || tool != tt.wantTool {
-			t.Errorf("parseMCPToolName(%q) = (%q, %q), want (%q, %q)",
+			t.Errorf("parseToolName(%q) = (%q, %q), want (%q, %q)",
 				tt.input, server, tool, tt.wantServer, tt.wantTool)
 		}
 	}
 }
 
-func TestIntegration_BuildMCPToolName(t *testing.T) {
-	name := buildMCPToolName("fs", "read_file")
+func TestIntegration_BuildToolName(t *testing.T) {
+	name := buildToolName("fs", "read_file")
 	if name != "mcp__fs__read_file" {
-		t.Errorf("buildMCPToolName = %q, want mcp__fs__read_file", name)
+		t.Errorf("buildToolName = %q, want mcp__fs__read_file", name)
 	}
 }
 
@@ -1229,7 +1229,7 @@ func TestIntegration_MultipleServers(t *testing.T) {
 	reg := tools.NewRegistry()
 	skillReg := skill.NewRegistry()
 
-	mgr := NewMCPManager(MCPManagerConfig{
+	mgr := NewManager(ManagerConfig{
 		ToolRegistry:  reg,
 		SkillRegistry: skillReg,
 		WorkingDir:    "/test",
@@ -1240,11 +1240,11 @@ func TestIntegration_MultipleServers(t *testing.T) {
 	// Server 1.
 	ar1 := newAutoResponder()
 	ar1.setupInitialize(ServerCapabilities{Tools: &ToolCapability{}}, "Server 1 instructions")
-	ar1.setupToolsList([]MCPToolInfo{
+	ar1.setupToolsList([]ToolInfo{
 		{Name: "tool_x", Description: "Tool X from S1", InputSchema: map[string]any{"type": "object"}},
 	})
 
-	srv1 := newMCPServer("s1", &config.MCPServerConfig{}, ar1, mgr)
+	srv1 := newServer("s1", &config.MCPServerConfig{}, ar1, mgr)
 	if err := srv1.initialize(context.Background()); err != nil {
 		t.Fatalf("s1 initialize: %v", err)
 	}
@@ -1255,11 +1255,11 @@ func TestIntegration_MultipleServers(t *testing.T) {
 	// Server 2.
 	ar2 := newAutoResponder()
 	ar2.setupInitialize(ServerCapabilities{Tools: &ToolCapability{}}, "Server 2 instructions")
-	ar2.setupToolsList([]MCPToolInfo{
+	ar2.setupToolsList([]ToolInfo{
 		{Name: "tool_x", Description: "Tool X from S2", InputSchema: map[string]any{"type": "object"}},
 	})
 
-	srv2 := newMCPServer("s2", &config.MCPServerConfig{}, ar2, mgr)
+	srv2 := newServer("s2", &config.MCPServerConfig{}, ar2, mgr)
 	if err := srv2.initialize(context.Background()); err != nil {
 		t.Fatalf("s2 initialize: %v", err)
 	}
@@ -1303,7 +1303,7 @@ func TestIntegration_MultipleServers(t *testing.T) {
 func TestIntegration_PromptsListChanged(t *testing.T) {
 	ar := newAutoResponder()
 	ar.setupInitialize(ServerCapabilities{Prompts: &PromptCapability{ListChanged: true}}, "")
-	ar.setupPromptsList([]MCPPromptInfo{
+	ar.setupPromptsList([]PromptInfo{
 		{Name: "greet", Description: "Greeting prompt"},
 	})
 
@@ -1323,7 +1323,7 @@ func TestIntegration_PromptsListChanged(t *testing.T) {
 	}
 
 	// Update prompts.
-	ar.setupPromptsList([]MCPPromptInfo{
+	ar.setupPromptsList([]PromptInfo{
 		{Name: "greet", Description: "Updated greeting"},
 		{Name: "farewell", Description: "Farewell prompt"},
 	})

@@ -39,7 +39,7 @@ func TestExecuteSampling(t *testing.T) {
 
 	req := mcp.SamplingRequest{
 		Messages: []mcp.SamplingMessage{
-			{Role: "user", Content: mcp.MCPContentItem{Type: "text", Text: "say hello"}},
+			{Role: "user", Content: mcp.ContentItem{Type: "text", Text: "say hello"}},
 		},
 		MaxTokens: 100,
 	}
@@ -68,7 +68,7 @@ func TestExecuteSampling_StreamError(t *testing.T) {
 	}
 
 	req := mcp.SamplingRequest{
-		Messages:  []mcp.SamplingMessage{{Role: "user", Content: mcp.MCPContentItem{Type: "text", Text: "hello"}}},
+		Messages:  []mcp.SamplingMessage{{Role: "user", Content: mcp.ContentItem{Type: "text", Text: "hello"}}},
 		MaxTokens: 100,
 	}
 

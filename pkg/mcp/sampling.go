@@ -22,7 +22,7 @@ type SamplingRequest struct {
 // SamplingMessage is a message in a sampling request.
 type SamplingMessage struct {
 	Role    string         `json:"role"`
-	Content MCPContentItem `json:"content"`
+	Content ContentItem `json:"content"`
 }
 
 // ModelPreferences describes the server's model preferences for sampling.
@@ -41,7 +41,7 @@ type ModelHint struct {
 // SamplingResponse is the response to a sampling/createMessage request.
 type SamplingResponse struct {
 	Role    string         `json:"role"`
-	Content MCPContentItem `json:"content"`
+	Content ContentItem `json:"content"`
 	Model   string         `json:"model"`
 }
 
@@ -59,7 +59,7 @@ type ConfirmSamplingFunc func(serverName string, req SamplingRequest) (bool, err
 //   - Sampling must be enabled for the server
 //   - If SkipApproval is false (default), requires interactive approval
 //   - MaxTokens is capped to the configured limit
-func (s *MCPServer) handleSamplingRequest(ctx context.Context, id json.RawMessage, params json.RawMessage) {
+func (s *Server) handleSamplingRequest(ctx context.Context, id json.RawMessage, params json.RawMessage) {
 	var req SamplingRequest
 	if err := json.Unmarshal(params, &req); err != nil {
 		s.respondError(ctx, id, ErrCodeInvalidParams, "invalid sampling params: "+err.Error())
@@ -117,7 +117,7 @@ func (s *MCPServer) handleSamplingRequest(ctx context.Context, id json.RawMessag
 }
 
 // respondResult sends a JSON-RPC success response.
-func (s *MCPServer) respondResult(ctx context.Context, id json.RawMessage, result any) {
+func (s *Server) respondResult(ctx context.Context, id json.RawMessage, result any) {
 	resultJSON, err := json.Marshal(result)
 	if err != nil {
 		log.Printf("mcp: server %q: failed to marshal result for id %s: %v", s.name, string(id), err)
@@ -137,7 +137,7 @@ func (s *MCPServer) respondResult(ctx context.Context, id json.RawMessage, resul
 }
 
 // respondError sends a JSON-RPC error response.
-func (s *MCPServer) respondError(ctx context.Context, id json.RawMessage, code int, message string) {
+func (s *Server) respondError(ctx context.Context, id json.RawMessage, code int, message string) {
 	resp := JSONRPCResponse{
 		JSONRPC: "2.0",
 		ID:      id,

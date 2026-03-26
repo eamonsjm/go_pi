@@ -10,10 +10,10 @@ import (
 )
 
 func TestBridgePrompt(t *testing.T) {
-	info := MCPPromptInfo{
+	info := PromptInfo{
 		Name:        "summarize",
 		Description: "Summarize a topic",
-		Arguments: []MCPPromptArgument{
+		Arguments: []PromptArgument{
 			{Name: "topic", Description: "The topic", Required: true},
 			{Name: "length", Description: "Output length", Required: false},
 		},
@@ -45,7 +45,7 @@ func TestBridgePrompt(t *testing.T) {
 }
 
 func TestBridgePrompt_NoArgs(t *testing.T) {
-	info := MCPPromptInfo{
+	info := PromptInfo{
 		Name:        "greet",
 		Description: "A greeting",
 	}
@@ -57,7 +57,7 @@ func TestBridgePrompt_NoArgs(t *testing.T) {
 }
 
 func TestValidatePromptArgs(t *testing.T) {
-	args := []MCPPromptArgument{
+	args := []PromptArgument{
 		{Name: "topic", Required: true},
 		{Name: "style", Required: true},
 		{Name: "length", Required: false},
@@ -91,14 +91,14 @@ func TestValidatePromptArgs(t *testing.T) {
 func TestDiscoverPrompts(t *testing.T) {
 	pages := []PromptsListPage{
 		{
-			Prompts: []MCPPromptInfo{
+			Prompts: []PromptInfo{
 				{Name: "alpha", Description: "Alpha prompt"},
 				{Name: "beta", Description: "Beta prompt"},
 			},
 			NextCursor: "page2",
 		},
 		{
-			Prompts: []MCPPromptInfo{
+			Prompts: []PromptInfo{
 				{Name: "gamma", Description: "Gamma prompt"},
 			},
 		},
@@ -129,7 +129,7 @@ func TestDiffSkillCount(t *testing.T) {
 	makeSkills := func(names ...string) []*skill.Skill {
 		var out []*skill.Skill
 		for _, n := range names {
-			out = append(out, BridgePrompt("s", MCPPromptInfo{Name: n}, nil))
+			out = append(out, BridgePrompt("s", PromptInfo{Name: n}, nil))
 		}
 		return out
 	}
@@ -180,16 +180,16 @@ func TestBridgePrompt_WithGetter(t *testing.T) {
 		name: "testserver",
 		result: &PromptsGetResult{
 			Description: "Summary",
-			Messages: []MCPPromptMessage{
-				{Role: "user", Content: MCPContentItem{Type: "text", Text: "Summarize: Go"}},
+			Messages: []PromptMessage{
+				{Role: "user", Content: ContentItem{Type: "text", Text: "Summarize: Go"}},
 			},
 		},
 	}
 
-	info := MCPPromptInfo{
+	info := PromptInfo{
 		Name:        "summarize",
 		Description: "Summarize a topic",
-		Arguments: []MCPPromptArgument{
+		Arguments: []PromptArgument{
 			{Name: "topic", Description: "The topic", Required: true},
 		},
 	}
@@ -218,9 +218,9 @@ func TestBridgePrompt_WithGetter(t *testing.T) {
 func TestBridgePrompt_ExecutorValidatesArgs(t *testing.T) {
 	getter := &mockPromptGetter{name: "srv"}
 
-	info := MCPPromptInfo{
+	info := PromptInfo{
 		Name: "needs-args",
-		Arguments: []MCPPromptArgument{
+		Arguments: []PromptArgument{
 			{Name: "topic", Required: true},
 		},
 	}
@@ -235,7 +235,7 @@ func TestBridgePrompt_ExecutorValidatesArgs(t *testing.T) {
 }
 
 func TestBridgePrompt_NilGetter(t *testing.T) {
-	s := BridgePrompt("srv", MCPPromptInfo{Name: "test"}, nil)
+	s := BridgePrompt("srv", PromptInfo{Name: "test"}, nil)
 	if s.Executor != nil {
 		t.Error("Executor should be nil when getter is nil")
 	}
@@ -244,9 +244,9 @@ func TestBridgePrompt_NilGetter(t *testing.T) {
 func TestFormatPromptResult(t *testing.T) {
 	result := &PromptsGetResult{
 		Description: "A test prompt",
-		Messages: []MCPPromptMessage{
-			{Role: "user", Content: MCPContentItem{Type: "text", Text: "Hello"}},
-			{Role: "assistant", Content: MCPContentItem{Type: "text", Text: "Hi there"}},
+		Messages: []PromptMessage{
+			{Role: "user", Content: ContentItem{Type: "text", Text: "Hello"}},
+			{Role: "assistant", Content: ContentItem{Type: "text", Text: "Hi there"}},
 		},
 	}
 
@@ -259,8 +259,8 @@ func TestFormatPromptResult(t *testing.T) {
 
 func TestFormatPromptResult_NoDescription(t *testing.T) {
 	result := &PromptsGetResult{
-		Messages: []MCPPromptMessage{
-			{Role: "user", Content: MCPContentItem{Type: "text", Text: "Do the thing"}},
+		Messages: []PromptMessage{
+			{Role: "user", Content: ContentItem{Type: "text", Text: "Do the thing"}},
 		},
 	}
 
@@ -272,14 +272,14 @@ func TestFormatPromptResult_NoDescription(t *testing.T) {
 
 func TestListPrompts_RPC(t *testing.T) {
 	page := PromptsListPage{
-		Prompts: []MCPPromptInfo{
+		Prompts: []PromptInfo{
 			{Name: "test-prompt", Description: "A test"},
 		},
 	}
 	pageJSON, _ := json.Marshal(page)
 
 	mt := newMockTransport()
-	client := NewMCPClient(mt, nil)
+	client := NewClient(mt, nil)
 	defer client.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -318,10 +318,10 @@ func TestListPrompts_RPC(t *testing.T) {
 func TestGetPrompt_RPC(t *testing.T) {
 	promptResult := PromptsGetResult{
 		Description: "Summary prompt",
-		Messages: []MCPPromptMessage{
+		Messages: []PromptMessage{
 			{
 				Role: "user",
-				Content: MCPContentItem{
+				Content: ContentItem{
 					Type: "text",
 					Text: "Please summarize: Go programming",
 				},
@@ -331,7 +331,7 @@ func TestGetPrompt_RPC(t *testing.T) {
 	resultJSON, _ := json.Marshal(promptResult)
 
 	mt := newMockTransport()
-	client := NewMCPClient(mt, nil)
+	client := NewClient(mt, nil)
 	defer client.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

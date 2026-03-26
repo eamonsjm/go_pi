@@ -26,18 +26,18 @@ var (
 // overflow messages are coalesced into a single summary.
 const maxPendingMessages = 10
 
-// MCPManager manages all configured MCP servers, analogous to plugin.Manager.
+// Manager manages all configured MCP servers, analogous to plugin.Manager.
 //
 // Lock ordering (innermost last):
-//  1. MCPManager.mu
+//  1. Manager.mu
 //  2. tools.Registry.mu (via ReplaceByPrefix etc.)
 //  3. skill.Registry.mu (via ReplaceByPrefix etc.)
 //
-// Never acquire MCPManager.mu while holding a registry lock.
-type MCPManager struct {
+// Never acquire Manager.mu while holding a registry lock.
+type Manager struct {
 	mu sync.Mutex
 
-	servers    map[string]*MCPServer
+	servers    map[string]*Server
 	serverList []string // ordered server names (config order)
 
 	toolRegistry  *tools.Registry
@@ -60,8 +60,8 @@ type MCPManager struct {
 	confirmSampling ConfirmSamplingFunc
 }
 
-// MCPManagerConfig holds the parameters for creating an MCPManager.
-type MCPManagerConfig struct {
+// ManagerConfig holds the parameters for creating a Manager.
+type ManagerConfig struct {
 	ToolRegistry    *tools.Registry
 	SkillRegistry   *skill.Registry
 	WorkingDir      string
@@ -73,10 +73,10 @@ type MCPManagerConfig struct {
 	ConfirmSampling ConfirmSamplingFunc
 }
 
-// NewMCPManager creates a new MCPManager.
-func NewMCPManager(cfg MCPManagerConfig) *MCPManager {
-	return &MCPManager{
-		servers:         make(map[string]*MCPServer),
+// NewManager creates a new Manager.
+func NewManager(cfg ManagerConfig) *Manager {
+	return &Manager{
+		servers:         make(map[string]*Server),
 		toolRegistry:    cfg.ToolRegistry,
 		skillRegistry:   cfg.SkillRegistry,
 		workingDir:      cfg.WorkingDir,
@@ -93,7 +93,7 @@ func NewMCPManager(cfg MCPManagerConfig) *MCPManager {
 // started sequentially (each server's init sequence is inherently sequential).
 // Project-level servers that aren't in the approval cache are skipped with a
 // warning (interactive approval is handled by the caller before this).
-func (m *MCPManager) StartAll(ctx context.Context, appCfg *config.Config) error {
+func (m *Manager) StartAll(ctx context.Context, appCfg *config.Config) error {
 	if len(appCfg.MCPServers) == 0 {
 		return nil
 	}
@@ -125,7 +125,7 @@ func (m *MCPManager) StartAll(ctx context.Context, appCfg *config.Config) error 
 }
 
 // startServer initializes a single MCP server connection.
-func (m *MCPManager) startServer(ctx context.Context, name string, cfg *config.MCPServerConfig) error {
+func (m *Manager) startServer(ctx context.Context, name string, cfg *config.MCPServerConfig) error {
 	// Create transport.
 	var t transport.Transport
 	if cfg.URL != "" {
@@ -146,7 +146,7 @@ func (m *MCPManager) startServer(ctx context.Context, name string, cfg *config.M
 	}
 
 	// Create server.
-	server := newMCPServer(name, cfg, t, m)
+	server := newServer(name, cfg, t, m)
 
 	// Initialize handshake.
 	if err := server.initialize(ctx); err != nil {
@@ -188,9 +188,9 @@ func (m *MCPManager) startServer(ctx context.Context, name string, cfg *config.M
 }
 
 // Shutdown gracefully stops all MCP servers.
-func (m *MCPManager) Shutdown(ctx context.Context) {
+func (m *Manager) Shutdown(ctx context.Context) {
 	m.mu.Lock()
-	servers := make(map[string]*MCPServer, len(m.servers))
+	servers := make(map[string]*Server, len(m.servers))
 	for k, v := range m.servers {
 		servers[k] = v
 	}
@@ -203,14 +203,14 @@ func (m *MCPManager) Shutdown(ctx context.Context) {
 	}
 
 	m.mu.Lock()
-	m.servers = make(map[string]*MCPServer)
+	m.servers = make(map[string]*Server)
 	m.serverList = nil
 	m.pendingSystemMessages = nil
 	m.mu.Unlock()
 }
 
 // injectSystemMessage queues a system message for the next agent loop turn.
-func (m *MCPManager) injectSystemMessage(msg string) {
+func (m *Manager) injectSystemMessage(msg string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if len(m.pendingSystemMessages) >= maxPendingMessages {
@@ -226,7 +226,7 @@ func (m *MCPManager) injectSystemMessage(msg string) {
 
 // DrainSystemMessages returns and clears pending system messages.
 // Called by the agent loop at the start of each turn.
-func (m *MCPManager) DrainSystemMessages() []string {
+func (m *Manager) DrainSystemMessages() []string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	msgs := m.pendingSystemMessages
@@ -237,9 +237,9 @@ func (m *MCPManager) DrainSystemMessages() []string {
 // ServerInstructions returns sanitized server instructions for LLM system
 // prompt injection. Instructions are wrapped in sandbox tags, length-capped,
 // and have angle brackets escaped to prevent prompt injection.
-func (m *MCPManager) ServerInstructions() string {
+func (m *Manager) ServerInstructions() string {
 	m.mu.Lock()
-	servers := make([]*MCPServer, 0, len(m.serverList))
+	servers := make([]*Server, 0, len(m.serverList))
 	for _, name := range m.serverList {
 		if s, ok := m.servers[name]; ok {
 			servers = append(servers, s)
@@ -272,7 +272,7 @@ func (m *MCPManager) ServerInstructions() string {
 }
 
 // handleRootsList responds to a roots/list request from a server.
-func (m *MCPManager) handleRootsList() map[string]any {
+func (m *Manager) handleRootsList() map[string]any {
 	return map[string]any{
 		"roots": []map[string]any{
 			{
@@ -284,14 +284,14 @@ func (m *MCPManager) handleRootsList() map[string]any {
 }
 
 // Server returns a server by name, or nil if not found.
-func (m *MCPManager) Server(name string) *MCPServer {
+func (m *Manager) Server(name string) *Server {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.servers[name]
 }
 
 // ServerNames returns the ordered list of server names.
-func (m *MCPManager) ServerNames() []string {
+func (m *Manager) ServerNames() []string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	out := make([]string, len(m.serverList))
@@ -299,15 +299,15 @@ func (m *MCPManager) ServerNames() []string {
 	return out
 }
 
-// --- MCPServer ---
+// --- Server ---
 
-// MCPServer manages a single MCP server connection.
-type MCPServer struct {
+// Server manages a single MCP server connection.
+type Server struct {
 	name         string
 	config       *config.MCPServerConfig
-	client       *MCPClient
+	client       *Client
 	transport    transport.Transport
-	manager      *MCPManager
+	manager      *Manager
 	instructions string // from initialize response
 
 	mu           sync.Mutex
@@ -316,27 +316,27 @@ type MCPServer struct {
 	subscriptions *subscriptionManager  // resource subscription TTL manager
 }
 
-// newMCPServer creates a new MCPServer. The notification handler is wired up
+// newServer creates a new Server. The notification handler is wired up
 // to dispatch to the manager's handleListChanged, and the request handler
 // dispatches server-initiated requests (sampling, roots).
-func newMCPServer(name string, cfg *config.MCPServerConfig, t transport.Transport, mgr *MCPManager) *MCPServer {
-	s := &MCPServer{
+func newServer(name string, cfg *config.MCPServerConfig, t transport.Transport, mgr *Manager) *Server {
+	s := &Server{
 		name:      name,
 		config:    cfg,
 		transport: t,
 		manager:   mgr,
 	}
-	client := NewMCPClient(t, s.handleNotification)
+	client := NewClient(t, s.handleNotification)
 	client.onRequest = s.handleRequest
 	s.client = client
 	return s
 }
 
 // ServerName implements ToolCaller.
-func (s *MCPServer) ServerName() string { return s.name }
+func (s *Server) ServerName() string { return s.name }
 
 // CallTool implements ToolCaller — sends tools/call via the JSON-RPC client.
-func (s *MCPServer) CallTool(ctx context.Context, name string, params map[string]any) (*MCPToolResult, error) {
+func (s *Server) CallTool(ctx context.Context, name string, params map[string]any) (*ToolResult, error) {
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
@@ -348,7 +348,7 @@ func (s *MCPServer) CallTool(ctx context.Context, name string, params map[string
 }
 
 // initialize performs the MCP initialize handshake.
-func (s *MCPServer) initialize(ctx context.Context) error {
+func (s *Server) initialize(ctx context.Context) error {
 	caps := ClientCapabilities{
 		Roots: &RootsCapability{ListChanged: true},
 	}
@@ -376,7 +376,7 @@ func (s *MCPServer) initialize(ctx context.Context) error {
 }
 
 // discoverAndRegisterTools discovers tools and registers them in the registry.
-func (s *MCPServer) discoverAndRegisterTools(ctx context.Context) error {
+func (s *Server) discoverAndRegisterTools(ctx context.Context) error {
 	discovered, err := DiscoverTools(ctx, s, func(ctx context.Context, cursor string) (*ToolsListPage, error) {
 		return s.client.ListTools(ctx, cursor)
 	})
@@ -392,7 +392,7 @@ func (s *MCPServer) discoverAndRegisterTools(ctx context.Context) error {
 }
 
 // handleNotification dispatches notifications from the MCP server.
-func (s *MCPServer) handleNotification(method string, params json.RawMessage) {
+func (s *Server) handleNotification(method string, params json.RawMessage) {
 	switch method {
 	case "notifications/tools/list_changed":
 		s.handleToolsListChanged()
@@ -412,7 +412,7 @@ func (s *MCPServer) handleNotification(method string, params json.RawMessage) {
 }
 
 // handleRequest dispatches server-initiated requests (method + id).
-func (s *MCPServer) handleRequest(method string, id json.RawMessage, params json.RawMessage) {
+func (s *Server) handleRequest(method string, id json.RawMessage, params json.RawMessage) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -428,7 +428,7 @@ func (s *MCPServer) handleRequest(method string, id json.RawMessage, params json
 }
 
 // handleToolsListChanged re-discovers tools and updates the registry.
-func (s *MCPServer) handleToolsListChanged() {
+func (s *Server) handleToolsListChanged() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -460,7 +460,7 @@ func (s *MCPServer) handleToolsListChanged() {
 }
 
 // handlePromptsListChanged re-discovers prompts and updates the skill registry.
-func (s *MCPServer) handlePromptsListChanged() {
+func (s *Server) handlePromptsListChanged() {
 	if s.manager.skillRegistry == nil {
 		return
 	}
@@ -488,7 +488,7 @@ func (s *MCPServer) handlePromptsListChanged() {
 }
 
 // handleLogMessage forwards a server log notification to the Go logger.
-func (s *MCPServer) handleLogMessage(params json.RawMessage) {
+func (s *Server) handleLogMessage(params json.RawMessage) {
 	var msg struct {
 		Level  string `json:"level"`
 		Logger string `json:"logger"`
@@ -502,7 +502,7 @@ func (s *MCPServer) handleLogMessage(params json.RawMessage) {
 }
 
 // close shuts down the server connection.
-func (s *MCPServer) close() error {
+func (s *Server) close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -530,13 +530,13 @@ func (s *MCPServer) close() error {
 
 // GetAnnotations returns tool annotations for a given server+tool name.
 // Used by the permission hook to check readOnlyHint etc.
-func (m *MCPManager) GetAnnotations(serverName, toolName string) *ToolAnnotations {
-	fullName := buildMCPToolName(serverName, toolName)
+func (m *Manager) GetAnnotations(serverName, toolName string) *ToolAnnotations {
+	fullName := buildToolName(serverName, toolName)
 	t, ok := m.toolRegistry.Get(fullName)
 	if !ok {
 		return nil
 	}
-	if mcpTool, ok := t.(*MCPTool); ok {
+	if mcpTool, ok := t.(*Tool); ok {
 		return mcpTool.Annotations()
 	}
 	return nil
@@ -546,13 +546,13 @@ func (m *MCPManager) GetAnnotations(serverName, toolName string) *ToolAnnotation
 
 // diffToolCount returns the number of tools added and removed between old and
 // new tool slices.
-func diffToolCount(old, new []tools.Tool) (added, removed int) {
+func diffToolCount(old, cur []tools.Tool) (added, removed int) {
 	oldNames := make(map[string]struct{}, len(old))
 	for _, t := range old {
 		oldNames[t.Name()] = struct{}{}
 	}
-	newNames := make(map[string]struct{}, len(new))
-	for _, t := range new {
+	newNames := make(map[string]struct{}, len(cur))
+	for _, t := range cur {
 		newNames[t.Name()] = struct{}{}
 	}
 	for n := range newNames {

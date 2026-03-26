@@ -207,11 +207,11 @@ func run() int {
 	registry.Register(skillTool)
 
 	// Initialize MCP servers with sampling support.
-	var mcpMgr *mcp.MCPManager
+	var mcpMgr *mcp.Manager
 	var sb *samplingBridge
 	if len(cfg.MCPServers) > 0 {
 		sb = &samplingBridge{}
-		mcpMgr = mcp.NewMCPManager(mcp.MCPManagerConfig{
+		mcpMgr = mcp.NewManager(mcp.ManagerConfig{
 			ToolRegistry:    registry,
 			SkillRegistry:   skillRegistry,
 			WorkingDir:      cwd,
@@ -299,7 +299,7 @@ func run() int {
 
 	// Create agent loop - may be nil provider if no API key configured
 	var agentLoop *agent.Loop
-	var mcpPermHook *mcp.MCPPermissionHook
+	var mcpPermHook *mcp.PermissionHook
 	if provider != nil {
 		agentLoop, mcpPermHook = makeAgentLoop(provider, registry, cfg, skillRegistry, mcpMgr)
 	} else {
@@ -566,7 +566,7 @@ func runPrintMode(agentLoop *agent.Loop, sessionMgr *session.Manager, prompt str
 	return 0
 }
 
-func makeAgentLoop(provider ai.Provider, registry *tools.Registry, cfg *config.Config, skillReg *skill.Registry, mcpMgr *mcp.MCPManager) (*agent.Loop, *mcp.MCPPermissionHook) {
+func makeAgentLoop(provider ai.Provider, registry *tools.Registry, cfg *config.Config, skillReg *skill.Registry, mcpMgr *mcp.Manager) (*agent.Loop, *mcp.PermissionHook) {
 	systemPrompt := buildSystemPrompt()
 	if skillReg != nil {
 		if idx := skill.SkillSystemReminder(skillReg); idx != "" {
@@ -593,7 +593,7 @@ func makeAgentLoop(provider ai.Provider, registry *tools.Registry, cfg *config.C
 
 	// Register MCP permission hook AFTER RTK hooks (which are registered in
 	// NewLoop) to preserve the original tool name for RTK translation.
-	var permHook *mcp.MCPPermissionHook
+	var permHook *mcp.PermissionHook
 	if mcpMgr != nil {
 		permConfigs := make(map[string]*config.MCPPermissionConfig)
 		for name, srv := range cfg.MCPServers {
@@ -601,15 +601,15 @@ func makeAgentLoop(provider ai.Provider, registry *tools.Registry, cfg *config.C
 				permConfigs[name] = srv.Permissions
 			}
 		}
-		permHook = mcp.NewMCPPermissionHook(permConfigs, nil)
-		permHook.SetAnnotationSource(mcp.NewMCPAnnotationSource(mcpMgr.GetAnnotations))
+		permHook = mcp.NewPermissionHook(permConfigs, nil)
+		permHook.SetAnnotationSource(mcp.NewAnnotationLookup(mcpMgr.GetAnnotations))
 		loop.Hooks().Register(permHook)
 	}
 
 	return loop, permHook
 }
 
-func runInteractive(agentLoop *agent.Loop, sessionMgr *session.Manager, cfg *config.Config, providerErr error, pluginMgr *plugin.Manager, authStore *auth.Store, authResolver *auth.Resolver, skillReg *skill.Registry, restoredSessionID string, restoredMsgs []ai.Message, initialPrompt string, mcpPermHook *mcp.MCPPermissionHook, sb *samplingBridge) int {
+func runInteractive(agentLoop *agent.Loop, sessionMgr *session.Manager, cfg *config.Config, providerErr error, pluginMgr *plugin.Manager, authStore *auth.Store, authResolver *auth.Resolver, skillReg *skill.Registry, restoredSessionID string, restoredMsgs []ai.Message, initialPrompt string, mcpPermHook *mcp.PermissionHook, sb *samplingBridge) int {
 	// Create the application lifecycle context. This is cancelled when
 	// runInteractive returns, ensuring all background operations (such as
 	// compaction) are stopped when the user quits.
@@ -913,7 +913,7 @@ func waitForPluginRestart(ctx context.Context, proc *plugin.Process, done <-chan
 }
 
 // samplingBridge holds mutable state for MCP sampling callbacks. The AI
-// provider and tea.Program may be set after the MCPManager is created.
+// provider and tea.Program may be set after the Manager is created.
 type samplingBridge struct {
 	mu       sync.Mutex
 	provider ai.Provider
@@ -1001,7 +1001,7 @@ func executeSampling(ctx context.Context, provider ai.Provider, model string, re
 
 	return &mcp.SamplingResponse{
 		Role:    "assistant",
-		Content: mcp.MCPContentItem{Type: "text", Text: text.String()},
+		Content: mcp.ContentItem{Type: "text", Text: text.String()},
 		Model:   model,
 	}, nil
 }

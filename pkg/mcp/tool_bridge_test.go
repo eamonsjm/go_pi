@@ -12,18 +12,18 @@ import (
 // mockToolCaller implements ToolCaller for testing.
 type mockToolCaller struct {
 	name   string
-	result *MCPToolResult
+	result *ToolResult
 	err    error
 }
 
-func (m *mockToolCaller) CallTool(_ context.Context, _ string, _ map[string]any) (*MCPToolResult, error) {
+func (m *mockToolCaller) CallTool(_ context.Context, _ string, _ map[string]any) (*ToolResult, error) {
 	return m.result, m.err
 }
 
 func (m *mockToolCaller) ServerName() string { return m.name }
 
-func TestMCPToolImplementsRichTool(t *testing.T) {
-	tool := &MCPTool{
+func TestToolImplementsRichTool(t *testing.T) {
+	tool := &Tool{
 		server:       &mockToolCaller{name: "test"},
 		name:         "mcp__test__hello",
 		originalName: "hello",
@@ -47,16 +47,16 @@ func TestMCPToolImplementsRichTool(t *testing.T) {
 	}
 }
 
-func TestMCPToolExecuteRichTextResult(t *testing.T) {
+func TestToolExecuteRichTextResult(t *testing.T) {
 	server := &mockToolCaller{
 		name: "test",
-		result: &MCPToolResult{
-			Content: []MCPContentItem{
+		result: &ToolResult{
+			Content: []ContentItem{
 				{Type: "text", Text: "hello world"},
 			},
 		},
 	}
-	tool := &MCPTool{server: server, originalName: "greet"}
+	tool := &Tool{server: server, originalName: "greet"}
 
 	blocks, err := tool.ExecuteRich(context.Background(), nil)
 	if err != nil {
@@ -70,16 +70,16 @@ func TestMCPToolExecuteRichTextResult(t *testing.T) {
 	}
 }
 
-func TestMCPToolExecuteRichImageResult(t *testing.T) {
+func TestToolExecuteRichImageResult(t *testing.T) {
 	server := &mockToolCaller{
 		name: "test",
-		result: &MCPToolResult{
-			Content: []MCPContentItem{
+		result: &ToolResult{
+			Content: []ContentItem{
 				{Type: "image", MimeType: "image/png", Data: "iVBOR..."},
 			},
 		},
 	}
-	tool := &MCPTool{server: server, originalName: "screenshot"}
+	tool := &Tool{server: server, originalName: "screenshot"}
 
 	blocks, err := tool.ExecuteRich(context.Background(), nil)
 	if err != nil {
@@ -96,17 +96,17 @@ func TestMCPToolExecuteRichImageResult(t *testing.T) {
 	}
 }
 
-func TestMCPToolExecuteRichIsError(t *testing.T) {
+func TestToolExecuteRichIsError(t *testing.T) {
 	server := &mockToolCaller{
 		name: "test",
-		result: &MCPToolResult{
-			Content: []MCPContentItem{
+		result: &ToolResult{
+			Content: []ContentItem{
 				{Type: "text", Text: "file not found"},
 			},
 			IsError: true,
 		},
 	}
-	tool := &MCPTool{server: server, originalName: "read"}
+	tool := &Tool{server: server, originalName: "read"}
 
 	blocks, err := tool.ExecuteRich(context.Background(), nil)
 	if blocks != nil {
@@ -128,12 +128,12 @@ func TestMCPToolExecuteRichIsError(t *testing.T) {
 	}
 }
 
-func TestMCPToolExecuteRichTransportError(t *testing.T) {
+func TestToolExecuteRichTransportError(t *testing.T) {
 	server := &mockToolCaller{
 		name: "test",
 		err:  errors.New("connection refused"),
 	}
-	tool := &MCPTool{server: server, originalName: "anything"}
+	tool := &Tool{server: server, originalName: "anything"}
 
 	blocks, err := tool.ExecuteRich(context.Background(), nil)
 	if blocks != nil {
@@ -148,17 +148,17 @@ func TestMCPToolExecuteRichTransportError(t *testing.T) {
 	}
 }
 
-func TestMCPToolExecuteFlatten(t *testing.T) {
+func TestToolExecuteFlatten(t *testing.T) {
 	server := &mockToolCaller{
 		name: "test",
-		result: &MCPToolResult{
-			Content: []MCPContentItem{
+		result: &ToolResult{
+			Content: []ContentItem{
 				{Type: "text", Text: "line 1"},
 				{Type: "text", Text: "line 2"},
 			},
 		},
 	}
-	tool := &MCPTool{server: server, originalName: "multi"}
+	tool := &Tool{server: server, originalName: "multi"}
 
 	result, err := tool.Execute(context.Background(), nil)
 	if err != nil {
@@ -169,18 +169,18 @@ func TestMCPToolExecuteFlatten(t *testing.T) {
 	}
 }
 
-func TestMCPToolExecuteFlattenMixedContent(t *testing.T) {
+func TestToolExecuteFlattenMixedContent(t *testing.T) {
 	server := &mockToolCaller{
 		name: "test",
-		result: &MCPToolResult{
-			Content: []MCPContentItem{
+		result: &ToolResult{
+			Content: []ContentItem{
 				{Type: "text", Text: "Here is the screenshot: "},
 				{Type: "image", MimeType: "image/png", Data: "iVBOR..."},
 				{Type: "text", Text: " and done"},
 			},
 		},
 	}
-	tool := &MCPTool{server: server, originalName: "mixed"}
+	tool := &Tool{server: server, originalName: "mixed"}
 
 	result, err := tool.Execute(context.Background(), nil)
 	if err != nil {
@@ -193,9 +193,9 @@ func TestMCPToolExecuteFlattenMixedContent(t *testing.T) {
 }
 
 func TestConvertResultAudio(t *testing.T) {
-	tool := &MCPTool{}
-	blocks := tool.convertResult(&MCPToolResult{
-		Content: []MCPContentItem{
+	tool := &Tool{}
+	blocks := tool.convertResult(&ToolResult{
+		Content: []ContentItem{
 			{Type: "audio", MimeType: "audio/wav", Data: "RIFF", Encoding: "base64"},
 		},
 	})
@@ -211,10 +211,10 @@ func TestConvertResultAudio(t *testing.T) {
 }
 
 func TestConvertResultResource(t *testing.T) {
-	tool := &MCPTool{}
-	blocks := tool.convertResult(&MCPToolResult{
-		Content: []MCPContentItem{
-			{Type: "resource", Resource: &MCPEmbeddedResource{
+	tool := &Tool{}
+	blocks := tool.convertResult(&ToolResult{
+		Content: []ContentItem{
+			{Type: "resource", Resource: &EmbeddedResource{
 				URI:  "file:///tmp/test.txt",
 				Text: "file contents",
 			}},
@@ -230,9 +230,9 @@ func TestConvertResultResource(t *testing.T) {
 }
 
 func TestConvertResultUnknownType(t *testing.T) {
-	tool := &MCPTool{}
-	blocks := tool.convertResult(&MCPToolResult{
-		Content: []MCPContentItem{
+	tool := &Tool{}
+	blocks := tool.convertResult(&ToolResult{
+		Content: []ContentItem{
 			{Type: "video"},
 		},
 	})
@@ -244,7 +244,7 @@ func TestConvertResultUnknownType(t *testing.T) {
 	}
 }
 
-func TestParseMCPToolName(t *testing.T) {
+func TestParseToolName(t *testing.T) {
 	tests := []struct {
 		input      string
 		wantServer string
@@ -258,26 +258,26 @@ func TestParseMCPToolName(t *testing.T) {
 		{"mcp____empty", "", "empty"},
 	}
 	for _, tt := range tests {
-		server, tool := parseMCPToolName(tt.input)
+		server, tool := parseToolName(tt.input)
 		if server != tt.wantServer || tool != tt.wantTool {
-			t.Errorf("parseMCPToolName(%q) = (%q, %q), want (%q, %q)",
+			t.Errorf("parseToolName(%q) = (%q, %q), want (%q, %q)",
 				tt.input, server, tool, tt.wantServer, tt.wantTool)
 		}
 	}
 }
 
-func TestBuildMCPToolName(t *testing.T) {
-	got := buildMCPToolName("filesystem", "read_file")
+func TestBuildToolName(t *testing.T) {
+	got := buildToolName("filesystem", "read_file")
 	want := "mcp__filesystem__read_file"
 	if got != want {
-		t.Errorf("buildMCPToolName = %q, want %q", got, want)
+		t.Errorf("buildToolName = %q, want %q", got, want)
 	}
 }
 
 func TestBridgeTool(t *testing.T) {
 	server := &mockToolCaller{name: "myserver"}
 	readOnly := true
-	info := MCPToolInfo{
+	info := ToolInfo{
 		Name:        "search",
 		Title:       "Search Files",
 		Description: "searches files",
@@ -351,10 +351,10 @@ func TestDiscoverToolsFilterTaskRequired(t *testing.T) {
 			t.Fatalf("unexpected cursor %q", cursor)
 		}
 		return &ToolsListPage{
-			Tools: []MCPToolInfo{
+			Tools: []ToolInfo{
 				{Name: "normal", Description: "ok"},
-				{Name: "task-only", Description: "needs tasks", Execution: MCPToolExecution{TaskSupport: "required"}},
-				{Name: "optional-task", Description: "optional", Execution: MCPToolExecution{TaskSupport: "optional"}},
+				{Name: "task-only", Description: "needs tasks", Execution: ToolExecution{TaskSupport: "required"}},
+				{Name: "optional-task", Description: "optional", Execution: ToolExecution{TaskSupport: "optional"}},
 			},
 		}, nil
 	}
@@ -382,12 +382,12 @@ func TestDiscoverToolsPagination(t *testing.T) {
 		switch cursor {
 		case "":
 			return &ToolsListPage{
-				Tools:      []MCPToolInfo{{Name: "tool1"}},
+				Tools:      []ToolInfo{{Name: "tool1"}},
 				NextCursor: "page2",
 			}, nil
 		case "page2":
 			return &ToolsListPage{
-				Tools: []MCPToolInfo{{Name: "tool2"}},
+				Tools: []ToolInfo{{Name: "tool2"}},
 			}, nil
 		default:
 			t.Fatalf("unexpected cursor %q", cursor)

@@ -17,46 +17,46 @@ const (
 	maxTotalItems      = 10000
 )
 
-// MCPToolResult is the result of calling a tool via tools/call.
-type MCPToolResult struct {
-	Content []MCPContentItem `json:"content"`
+// ToolResult is the result of calling a tool via tools/call.
+type ToolResult struct {
+	Content []ContentItem `json:"content"`
 	IsError bool             `json:"isError,omitempty"`
 }
 
-// MCPContentItem is a single content item in an MCP tool result.
-type MCPContentItem struct {
+// ContentItem is a single content item in an MCP tool result.
+type ContentItem struct {
 	Type     string              `json:"type"`
 	Text     string              `json:"text,omitempty"`
 	MimeType string              `json:"mimeType,omitempty"`
 	Data     string              `json:"data,omitempty"`
 	Encoding string              `json:"encoding,omitempty"`
-	Resource *MCPEmbeddedResource `json:"resource,omitempty"`
+	Resource *EmbeddedResource `json:"resource,omitempty"`
 }
 
-// MCPEmbeddedResource is a resource embedded in a tool result.
-type MCPEmbeddedResource struct {
+// EmbeddedResource is a resource embedded in a tool result.
+type EmbeddedResource struct {
 	URI  string `json:"uri"`
 	Text string `json:"text,omitempty"`
 }
 
-// MCPToolExecution describes task support for a tool.
-type MCPToolExecution struct {
+// ToolExecution describes task support for a tool.
+type ToolExecution struct {
 	TaskSupport string `json:"taskSupport,omitempty"` // "required", "optional", "forbidden" (default)
 }
 
-// MCPToolInfo is the wire format of a tool from tools/list.
-type MCPToolInfo struct {
+// ToolInfo is the wire format of a tool from tools/list.
+type ToolInfo struct {
 	Name        string           `json:"name"`
 	Title       string           `json:"title,omitempty"`
 	Description string           `json:"description,omitempty"`
 	InputSchema map[string]any   `json:"inputSchema"`
 	Annotations *ToolAnnotations `json:"annotations,omitempty"`
-	Execution   MCPToolExecution `json:"execution,omitempty"`
+	Execution   ToolExecution `json:"execution,omitempty"`
 }
 
 // ToolsListPage is the response from tools/list.
 type ToolsListPage struct {
-	Tools      []MCPToolInfo `json:"tools"`
+	Tools      []ToolInfo `json:"tools"`
 	NextCursor string        `json:"nextCursor,omitempty"`
 }
 
@@ -106,20 +106,20 @@ func AnnotationOpenWorld(a *ToolAnnotations) bool {
 }
 
 // ToolCaller is the interface for calling tools on an MCP server.
-// MCPServer implements this; defined as interface for testability.
+// Server implements this; defined as interface for testability.
 type ToolCaller interface {
-	CallTool(ctx context.Context, name string, params map[string]any) (*MCPToolResult, error)
+	CallTool(ctx context.Context, name string, params map[string]any) (*ToolResult, error)
 	ServerName() string
 }
 
 // Compile-time interface checks.
 var (
-	_ tools.Tool     = (*MCPTool)(nil)
-	_ tools.RichTool = (*MCPTool)(nil)
+	_ tools.Tool     = (*Tool)(nil)
+	_ tools.RichTool = (*Tool)(nil)
 )
 
-// MCPTool implements tools.RichTool for an MCP server tool.
-type MCPTool struct {
+// Tool implements tools.RichTool for an MCP server tool.
+type Tool struct {
 	server       ToolCaller
 	name         string         // namespaced: "mcp__servername__toolname"
 	originalName string         // name as known by the MCP server
@@ -130,22 +130,22 @@ type MCPTool struct {
 }
 
 // Name returns the namespaced tool name.
-func (t *MCPTool) Name() string { return t.name }
+func (t *Tool) Name() string { return t.name }
 
 // Description returns the tool's description.
-func (t *MCPTool) Description() string { return t.desc }
+func (t *Tool) Description() string { return t.desc }
 
 // Title returns the human-readable display name from MCP Tool.title.
-func (t *MCPTool) Title() string { return t.title }
+func (t *Tool) Title() string { return t.title }
 
 // Schema returns the JSON Schema for the tool's input parameters.
-func (t *MCPTool) Schema() any { return t.inputSchema }
+func (t *Tool) Schema() any { return t.inputSchema }
 
 // Annotations returns the tool's behavior hint annotations. May be nil.
-func (t *MCPTool) Annotations() *ToolAnnotations { return t.annotations }
+func (t *Tool) Annotations() *ToolAnnotations { return t.annotations }
 
 // Execute implements tools.Tool by delegating to ExecuteRich and flattening.
-func (t *MCPTool) Execute(ctx context.Context, params map[string]any) (string, error) {
+func (t *Tool) Execute(ctx context.Context, params map[string]any) (string, error) {
 	blocks, err := t.ExecuteRich(ctx, params)
 	if err != nil {
 		return "", err
@@ -170,7 +170,7 @@ func (t *MCPTool) Execute(ctx context.Context, params map[string]any) (string, e
 }
 
 // ExecuteRich implements tools.RichTool — returns []ai.ContentBlock for multi-content results.
-func (t *MCPTool) ExecuteRich(ctx context.Context, params map[string]any) ([]ai.ContentBlock, error) {
+func (t *Tool) ExecuteRich(ctx context.Context, params map[string]any) ([]ai.ContentBlock, error) {
 	result, err := t.server.CallTool(ctx, t.originalName, params)
 	if err != nil {
 		return nil, err
@@ -188,7 +188,7 @@ func (t *MCPTool) ExecuteRich(ctx context.Context, params map[string]any) ([]ai.
 }
 
 // convertResult maps MCP content items to ai.ContentBlock.
-func (t *MCPTool) convertResult(result *MCPToolResult) []ai.ContentBlock {
+func (t *Tool) convertResult(result *ToolResult) []ai.ContentBlock {
 	blocks := make([]ai.ContentBlock, 0, len(result.Content))
 	for _, item := range result.Content {
 		switch item.Type {
@@ -227,10 +227,10 @@ func (t *MCPTool) convertResult(result *MCPToolResult) []ai.ContentBlock {
 	return blocks
 }
 
-// parseMCPToolName splits a namespaced tool name "mcp__server__tool" into
+// parseToolName splits a namespaced tool name "mcp__server__tool" into
 // server name and original tool name. Returns empty strings if the format
 // doesn't match.
-func parseMCPToolName(name string) (serverName, toolName string) {
+func parseToolName(name string) (serverName, toolName string) {
 	if !strings.HasPrefix(name, "mcp__") {
 		return "", ""
 	}
@@ -242,16 +242,16 @@ func parseMCPToolName(name string) (serverName, toolName string) {
 	return rest[:idx], rest[idx+2:]
 }
 
-// buildMCPToolName creates a namespaced tool name from server and tool names.
-func buildMCPToolName(serverName, toolName string) string {
+// buildToolName creates a namespaced tool name from server and tool names.
+func buildToolName(serverName, toolName string) string {
 	return "mcp__" + serverName + "__" + toolName
 }
 
-// BridgeTool creates an MCPTool from an MCPToolInfo and ToolCaller.
-func BridgeTool(server ToolCaller, info MCPToolInfo) *MCPTool {
-	return &MCPTool{
+// BridgeTool creates a Tool from a ToolInfo and ToolCaller.
+func BridgeTool(server ToolCaller, info ToolInfo) *Tool {
+	return &Tool{
 		server:       server,
-		name:         buildMCPToolName(server.ServerName(), info.Name),
+		name:         buildToolName(server.ServerName(), info.Name),
 		originalName: info.Name,
 		title:        info.Title,
 		desc:         info.Description,
@@ -292,7 +292,7 @@ func DiscoverTools(
 }
 
 // ListTools sends a tools/list request via the MCP client with pagination.
-func (c *MCPClient) ListTools(ctx context.Context, cursor string) (*ToolsListPage, error) {
+func (c *Client) ListTools(ctx context.Context, cursor string) (*ToolsListPage, error) {
 	params := map[string]any{}
 	if cursor != "" {
 		params["cursor"] = cursor
@@ -309,7 +309,7 @@ func (c *MCPClient) ListTools(ctx context.Context, cursor string) (*ToolsListPag
 }
 
 // CallToolRaw sends a tools/call request for the given tool name and arguments.
-func (c *MCPClient) CallToolRaw(ctx context.Context, name string, arguments map[string]any) (*MCPToolResult, error) {
+func (c *Client) CallToolRaw(ctx context.Context, name string, arguments map[string]any) (*ToolResult, error) {
 	params := map[string]any{
 		"name":      name,
 		"arguments": arguments,
@@ -318,7 +318,7 @@ func (c *MCPClient) CallToolRaw(ctx context.Context, name string, arguments map[
 	if err != nil {
 		return nil, err
 	}
-	var toolResult MCPToolResult
+	var toolResult ToolResult
 	if err := json.Unmarshal(result, &toolResult); err != nil {
 		return nil, fmt.Errorf("parsing tools/call response: %w", err)
 	}
