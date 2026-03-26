@@ -40,5 +40,11 @@ func (p *OpenRouterProvider) Name() string { return "openrouter" }
 
 // Stream sends a streaming request via OpenRouter.
 func (p *OpenRouterProvider) Stream(ctx context.Context, req StreamRequest) (<-chan StreamEvent, error) {
-	return p.inner.Stream(ctx, req)
+	ch, err := p.inner.Stream(ctx, req)
+	if err != nil {
+		if apiErr, ok := err.(*APIError); ok {
+			apiErr.Provider = "openrouter"
+		}
+	}
+	return ch, err
 }
