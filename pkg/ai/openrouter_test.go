@@ -150,6 +150,9 @@ func TestOpenRouterProvider_StreamHTTPError(t *testing.T) {
 	if apiErr.StatusCode != http.StatusUnauthorized {
 		t.Errorf("expected status %d, got %d", http.StatusUnauthorized, apiErr.StatusCode)
 	}
+	if apiErr.Provider != "openrouter" {
+		t.Errorf("expected Provider %q, got %q", "openrouter", apiErr.Provider)
+	}
 }
 
 func TestOpenRouterProvider_StreamContextCanceled(t *testing.T) {
