@@ -42,7 +42,9 @@ type App struct {
 	width  int
 	height int
 
-	// Agent state.
+	// Agent state — accessed only from the Bubble Tea event loop goroutine
+	// (Update and View). External goroutines mutate this indirectly by
+	// sending messages (e.g. AgentDoneMsg, StreamEventMsg).
 	agentRunning bool
 
 	// authPendingCodeCh is non-nil while waiting for the user to paste an
@@ -54,7 +56,9 @@ type App struct {
 	// Called on TUI exit to prevent goroutine/resource leaks.
 	authCancelFn context.CancelFunc
 
-	// Callbacks wired by the caller that owns the agent loop.
+	// Callbacks wired by the caller that owns the agent loop. Set via
+	// Set*Callback methods which route through the Bubble Tea message loop
+	// when a tea.Program is active, preventing races with Update/View.
 	onSubmit       func(text string)
 	onCancel       func()
 	onSteer        func(text string)
@@ -86,7 +90,8 @@ type App struct {
 	// deltaGen is incremented on each assistant text delta. The idle-render
 	// tick carries the generation at scheduling time; if they still match
 	// when the tick fires, no new deltas arrived and we trigger a glamour
-	// re-render of the streaming block.
+	// re-render of the streaming block. Accessed only from the Bubble Tea
+	// event loop goroutine.
 	deltaGen uint64
 
 	// Session-level usage accumulator and provider info for /session command.
@@ -184,24 +189,39 @@ func NewApp(opts ...AppOption) *App {
 }
 
 // SetCallbacks wires up the functions that bridge the TUI to the agent loop.
+// Goroutine-safe when a tea.Program has been set via SetProgram.
 //
 //   - onSubmit is called when the user presses Enter while the agent is idle.
 //   - onSteer is called when the user presses Enter while the agent is running
 //     (steering / interrupt injection).
 //   - onCancel is called when the user presses Ctrl-C or Escape during a run.
 func (a *App) SetCallbacks(onSubmit, onSteer func(string), onCancel func()) {
+	if a.program != nil {
+		a.program.Send(setCallbacksMsg{onSubmit: onSubmit, onSteer: onSteer, onCancel: onCancel})
+		return
+	}
 	a.onSubmit = onSubmit
 	a.onSteer = onSteer
 	a.onCancel = onCancel
 }
 
 // SetUIResponseCallback sets the callback for sending UI responses back to plugins.
+// Goroutine-safe when a tea.Program has been set via SetProgram.
 func (a *App) SetUIResponseCallback(onUIResponse func(*PluginUIResponseMsg)) {
+	if a.program != nil {
+		a.program.Send(setUIResponseCallbackMsg{fn: onUIResponse})
+		return
+	}
 	a.onUIResponse = onUIResponse
 }
 
 // SetHasUI sets whether the TUI is running in interactive mode.
+// Goroutine-safe when a tea.Program has been set via SetProgram.
 func (a *App) SetHasUI(hasUI bool) {
+	if a.program != nil {
+		a.program.Send(setHasUIMsg{hasUI: hasUI})
+		return
+	}
 	a.hasUI = hasUI
 }
 
@@ -273,14 +293,24 @@ func (a *App) ConfirmMCPTool(serverName, toolName, description string) (bool, er
 // SetModelChangeCallback sets the function called when the user switches the
 // AI model via the /model command. The callback receives the provider name
 // (may be empty if unknown) and the model identifier.
+// Goroutine-safe when a tea.Program has been set via SetProgram.
 func (a *App) SetModelChangeCallback(fn func(provider, model string)) {
+	if a.program != nil {
+		a.program.Send(setModelChangeCallbackMsg{fn: fn})
+		return
+	}
 	a.onModelChange = fn
 }
 
 // SetLoginSuccessCallback sets the function called after a successful /login.
 // The callback receives the provider name and should re-resolve credentials
 // and wire the new provider into the agent loop.
+// Goroutine-safe when a tea.Program has been set via SetProgram.
 func (a *App) SetLoginSuccessCallback(fn func(provider string)) {
+	if a.program != nil {
+		a.program.Send(setLoginSuccessCallbackMsg{fn: fn})
+		return
+	}
 	a.onLoginSuccess = fn
 }
 
@@ -292,7 +322,12 @@ func (a *App) RegisterCommand(cmd *SlashCommand) {
 
 // SetInitialPrompt sets a prompt that will be auto-submitted after the TUI
 // initialises. Use this for CLI-provided initial messages (e.g. @filepath args).
+// Goroutine-safe when a tea.Program has been set via SetProgram.
 func (a *App) SetInitialPrompt(prompt string) {
+	if a.program != nil {
+		a.program.Send(setInitialPromptMsg{prompt: prompt})
+		return
+	}
 	a.initialPrompt = prompt
 }
 
@@ -685,7 +720,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.chat.AddSystemMessage(fmt.Sprintf("Switched to theme: %s", msg.name))
 		return a, nil
 
-	// ---- Goroutine-safe header mutations routed through Send() ----
+	// ---- Goroutine-safe mutations routed through Send() ----
 	case setModelMsg:
 		a.header.SetModel(msg.name)
 		return a, nil
@@ -696,6 +731,32 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case setSessionMsg:
 		a.header.SetSession(msg.name)
+		return a, nil
+
+	case setCallbacksMsg:
+		a.onSubmit = msg.onSubmit
+		a.onSteer = msg.onSteer
+		a.onCancel = msg.onCancel
+		return a, nil
+
+	case setUIResponseCallbackMsg:
+		a.onUIResponse = msg.fn
+		return a, nil
+
+	case setModelChangeCallbackMsg:
+		a.onModelChange = msg.fn
+		return a, nil
+
+	case setLoginSuccessCallbackMsg:
+		a.onLoginSuccess = msg.fn
+		return a, nil
+
+	case setHasUIMsg:
+		a.hasUI = msg.hasUI
+		return a, nil
+
+	case setInitialPromptMsg:
+		a.initialPrompt = msg.prompt
 		return a, nil
 
 	case settingsDisplayMsg:

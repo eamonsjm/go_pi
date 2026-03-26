@@ -113,3 +113,41 @@ type setThinkingMsg struct {
 type setSessionMsg struct {
 	name string
 }
+
+// setCallbacksMsg routes callback registration through the Bubble Tea message
+// loop so that App.SetCallbacks is safe to call from any goroutine.
+type setCallbacksMsg struct {
+	onSubmit func(string)
+	onSteer  func(string)
+	onCancel func()
+}
+
+// setUIResponseCallbackMsg routes the UI response callback through the Bubble
+// Tea message loop so that App.SetUIResponseCallback is goroutine-safe.
+type setUIResponseCallbackMsg struct {
+	fn func(*PluginUIResponseMsg)
+}
+
+// setModelChangeCallbackMsg routes the model-change callback through the
+// Bubble Tea message loop so that App.SetModelChangeCallback is goroutine-safe.
+type setModelChangeCallbackMsg struct {
+	fn func(provider, model string)
+}
+
+// setLoginSuccessCallbackMsg routes the login-success callback through the
+// Bubble Tea message loop so that App.SetLoginSuccessCallback is goroutine-safe.
+type setLoginSuccessCallbackMsg struct {
+	fn func(provider string)
+}
+
+// setHasUIMsg routes the hasUI flag through the Bubble Tea message loop so
+// that App.SetHasUI is goroutine-safe.
+type setHasUIMsg struct {
+	hasUI bool
+}
+
+// setInitialPromptMsg routes the initial prompt through the Bubble Tea message
+// loop so that App.SetInitialPrompt is goroutine-safe.
+type setInitialPromptMsg struct {
+	prompt string
+}
