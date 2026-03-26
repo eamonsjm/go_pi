@@ -756,7 +756,20 @@ func TestGeminiBuildRequestBody_RichToolResult(t *testing.T) {
 	req := StreamRequest{
 		Model: "gemini-2.0-flash",
 		Messages: []Message{
-			NewRichToolResultMessage("read_file", []ContentBlock{
+			// Assistant message with tool use — establishes the ID→name mapping.
+			{
+				Role: RoleAssistant,
+				Content: []ContentBlock{
+					{
+						Type:      ContentTypeToolUse,
+						ToolUseID: "toolu_01abc",
+						ToolName:  "read_file",
+						Input:     map[string]any{"path": "/tmp/test"},
+					},
+				},
+			},
+			// Tool result uses a proper tool-use-style ID (not the function name).
+			NewRichToolResultMessage("toolu_01abc", []ContentBlock{
 				{Type: ContentTypeText, Text: "File contents:"},
 				{Type: ContentTypeImage, MediaType: "image/jpeg", ImageData: "/9j/4"},
 			}, false),
@@ -774,11 +787,12 @@ func TestGeminiBuildRequestBody_RichToolResult(t *testing.T) {
 	}
 
 	contents := body["contents"].([]any)
-	if len(contents) != 1 {
-		t.Fatalf("expected 1 content, got %d", len(contents))
+	if len(contents) != 2 {
+		t.Fatalf("expected 2 contents, got %d", len(contents))
 	}
 
-	content := contents[0].(map[string]any)
+	// Second content is the tool result (user role).
+	content := contents[1].(map[string]any)
 	if content["role"] != "user" {
 		t.Errorf("expected role 'user', got %v", content["role"])
 	}
@@ -789,7 +803,7 @@ func TestGeminiBuildRequestBody_RichToolResult(t *testing.T) {
 		t.Fatalf("expected 3 parts, got %d", len(parts))
 	}
 
-	// First part: functionResponse.
+	// First part: functionResponse — name resolved from assistant ToolUse block.
 	frPart := parts[0].(map[string]any)
 	funcResp, ok := frPart["functionResponse"].(map[string]any)
 	if !ok {
@@ -874,55 +888,6 @@ func TestGeminiBuildRequestBody_ToolResultUsesToolName(t *testing.T) {
 	// Fixed: name should be "get_weather" (the tool name).
 	if funcResp["name"] != "get_weather" {
 		t.Errorf("expected name 'get_weather', got %v", funcResp["name"])
-	}
-}
-
-func TestGeminiBuildRequestBody_RichToolResultUsesToolName(t *testing.T) {
-	p := &GeminiProvider{apiKey: "test"}
-
-	req := StreamRequest{
-		Model: "gemini-2.0-flash",
-		Messages: []Message{
-			{
-				Role: RoleAssistant,
-				Content: []ContentBlock{
-					{
-						Type:      ContentTypeToolUse,
-						ToolUseID: "toolu_02xyz",
-						ToolName:  "read_file",
-						Input:     map[string]any{"path": "/tmp/test"},
-					},
-				},
-			},
-			NewRichToolResultMessage("toolu_02xyz", []ContentBlock{
-				{Type: ContentTypeText, Text: "File contents:"},
-				{Type: ContentTypeImage, MediaType: "image/png", ImageData: "iVBOR"},
-			}, false),
-		},
-	}
-
-	data, err := p.buildRequestBody(req)
-	if err != nil {
-		t.Fatalf("buildRequestBody failed: %v", err)
-	}
-
-	var body map[string]any
-	if err := json.Unmarshal(data, &body); err != nil {
-		t.Fatalf("failed to parse JSON: %v", err)
-	}
-
-	contents := body["contents"].([]any)
-	resultContent := contents[1].(map[string]any)
-	parts := resultContent["parts"].([]any)
-
-	frPart := parts[0].(map[string]any)
-	funcResp, ok := frPart["functionResponse"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected functionResponse, got %v", frPart)
-	}
-
-	if funcResp["name"] != "read_file" {
-		t.Errorf("expected name 'read_file', got %v", funcResp["name"])
 	}
 }
 
