@@ -1372,3 +1372,47 @@ func TestCompactNoAppendedMessagesUnchangedBehavior(t *testing.T) {
 		t.Error("expected compacted summary")
 	}
 }
+
+// TestCompactSetProviderRace exercises the race between SetProvider() and
+// runCompaction() reading a.provider. Before the fix, runCompaction accessed
+// a.provider without the mutex, causing a data race with concurrent
+// SetProvider calls.
+//
+// Run with: go test -race -count=20 -run TestCompactSetProviderRace
+func TestCompactSetProviderRace(t *testing.T) {
+	for trial := 0; trial < 10; trial++ {
+		t.Run("", func(t *testing.T) {
+			t.Parallel()
+			provider := &mockProvider{
+				streamFn: func(_ context.Context, _ ai.StreamRequest) (<-chan ai.StreamEvent, error) {
+					ch := make(chan ai.StreamEvent, 10)
+					go func() {
+						defer close(ch)
+						ch <- ai.StreamEvent{Type: ai.EventTextDelta, Delta: "summary"}
+					}()
+					return ch, nil
+				},
+			}
+
+			reg := tools.NewRegistry()
+			a := NewAgentLoop(provider, reg, WithMessages([]ai.Message{
+				ai.NewTextMessage(ai.RoleUser, "Hello"),
+				ai.NewTextMessage(ai.RoleAssistant, "Hi"),
+			}))
+
+			errCh := make(chan error, 1)
+			go func() {
+				errCh <- a.Compact(context.Background(), "")
+			}()
+
+			// Race SetProvider against the Compact call.
+			for i := 0; i < 20; i++ {
+				a.SetProvider(provider)
+			}
+
+			if err := <-errCh; err != nil {
+				t.Fatalf("Compact returned error: %v", err)
+			}
+		})
+	}
+}

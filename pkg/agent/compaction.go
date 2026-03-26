@@ -27,6 +27,7 @@ const minAutoCompactMessages = 4
 // text accumulation.
 func (a *AgentLoop) runCompaction(ctx context.Context, prompt string) (string, error) {
 	a.mu.Lock()
+	provider := a.provider
 	model := a.model
 	systemPrompt := a.systemPrompt
 	maxTokens := a.maxTokens
@@ -42,7 +43,7 @@ func (a *AgentLoop) runCompaction(ctx context.Context, prompt string) (string, e
 		MaxTokens:    maxTokens,
 	}
 
-	stream, err := a.provider.Stream(ctx, req)
+	stream, err := provider.Stream(ctx, req)
 	if err != nil {
 		return "", fmt.Errorf("compaction stream: %w", err)
 	}
