@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ejm/go_pi/pkg/refinery_gate"
+	"github.com/ejm/go_pi/pkg/refinerygate"
 )
 
 // mockGitHubAPI creates a test server that returns the given workflow runs.
@@ -53,7 +53,7 @@ func TestRun_TokenFromFlag(t *testing.T) {
 	code := run(
 		[]string{"-token", "flag-token"},
 		&stdout, &stderr,
-		refinery_gate.WithAPIURL(server.URL),
+		refinerygate.WithAPIURL(server.URL),
 	)
 
 	if code != 0 {
@@ -70,7 +70,7 @@ func TestRun_TokenFromEnv(t *testing.T) {
 	code := run(
 		[]string{},
 		&stdout, &stderr,
-		refinery_gate.WithAPIURL(server.URL),
+		refinerygate.WithAPIURL(server.URL),
 	)
 
 	if code != 0 {
@@ -87,7 +87,7 @@ func TestRun_AllWorkflowsPassed(t *testing.T) {
 	code := run(
 		[]string{},
 		&stdout, &stderr,
-		refinery_gate.WithAPIURL(server.URL),
+		refinerygate.WithAPIURL(server.URL),
 	)
 
 	if code != 0 {
@@ -117,7 +117,7 @@ func TestRun_FailedWorkflow(t *testing.T) {
 	code := run(
 		[]string{},
 		&stdout, &stderr,
-		refinery_gate.WithAPIURL(server.URL),
+		refinerygate.WithAPIURL(server.URL),
 	)
 
 	if code != 1 {
@@ -146,7 +146,7 @@ func TestRun_CustomWorkflows(t *testing.T) {
 	code := run(
 		[]string{"-workflows", "Deploy, E2E"},
 		&stdout, &stderr,
-		refinery_gate.WithAPIURL(server.URL),
+		refinerygate.WithAPIURL(server.URL),
 	)
 
 	if code != 0 {
@@ -175,7 +175,7 @@ func TestRun_VerboseOutput(t *testing.T) {
 	code := run(
 		[]string{"-verbose"},
 		&stdout, &stderr,
-		refinery_gate.WithAPIURL(server.URL),
+		refinerygate.WithAPIURL(server.URL),
 	)
 
 	if code != 0 {
@@ -200,7 +200,7 @@ func TestRun_VerboseOnFailure(t *testing.T) {
 	code := run(
 		[]string{"-verbose"},
 		&stdout, &stderr,
-		refinery_gate.WithAPIURL(server.URL),
+		refinerygate.WithAPIURL(server.URL),
 	)
 
 	if code != 1 {
@@ -222,7 +222,7 @@ func TestRun_APIError(t *testing.T) {
 	code := run(
 		[]string{},
 		&stdout, &stderr,
-		refinery_gate.WithAPIURL(server.URL),
+		refinerygate.WithAPIURL(server.URL),
 	)
 
 	if code != 1 {
@@ -252,7 +252,7 @@ func TestRun_VerboseAPIError(t *testing.T) {
 	code := run(
 		[]string{"-verbose"},
 		&stdout, &stderr,
-		refinery_gate.WithAPIURL(server.URL),
+		refinerygate.WithAPIURL(server.URL),
 	)
 
 	if code != 1 {
@@ -288,7 +288,7 @@ func TestRun_CustomBranchAndOwner(t *testing.T) {
 	code := run(
 		[]string{"-owner", "myorg", "-repo", "myrepo", "-branch", "develop"},
 		&stdout, &stderr,
-		refinery_gate.WithAPIURL(server.URL),
+		refinerygate.WithAPIURL(server.URL),
 	)
 
 	if code != 0 {
@@ -310,7 +310,7 @@ func TestRun_OutputIsValidJSON(t *testing.T) {
 	run(
 		[]string{},
 		&stdout, &stderr,
-		refinery_gate.WithAPIURL(server.URL),
+		refinerygate.WithAPIURL(server.URL),
 	)
 
 	var result map[string]interface{}
@@ -341,7 +341,7 @@ func TestRun_FlagTokenOverridesEnv(t *testing.T) {
 	run(
 		[]string{"-token", "flag-token"},
 		&stdout, &stderr,
-		refinery_gate.WithAPIURL(server.URL),
+		refinerygate.WithAPIURL(server.URL),
 	)
 
 	if receivedAuth != "token flag-token" {
