@@ -191,8 +191,14 @@ func TestSessionResume(t *testing.T) {
 
 	ctx := context.Background()
 	events := s1.Events()
-	go func() { s1.Prompt(ctx, "Hello") }()
+	promptErr := make(chan error, 1)
+	go func() { promptErr <- s1.Prompt(ctx, "Hello") }()
 	for range events {
+	}
+	// Wait for Prompt goroutine to finish so all messages are persisted
+	// (assistant messages are saved after the events channel is closed).
+	if err := <-promptErr; err != nil {
+		t.Fatalf("Prompt: %v", err)
 	}
 
 	sessionID := s1.SessionID()
