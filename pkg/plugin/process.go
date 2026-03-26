@@ -80,6 +80,7 @@ type PluginProcess struct {
 	closed       bool
 	shutdownOnce sync.Once // ensures shutdownCurrentProcess runs at most once during Stop
 	readLoopWg   sync.WaitGroup // tracks readLoop goroutine lifecycle
+	readCancel   context.CancelFunc // cancels readLoop's context to unblock scanner.Scan
 
 	// injectCh receives inject_message and log messages from the background reader.
 	injectCh chan PluginMessage
@@ -160,7 +161,9 @@ func startPlugin(name, path string) (*PluginProcess, error) {
 	}
 
 	// Start background reader that routes incoming messages.
-	p.startReadLoop()
+	readCtx, readCancel := context.WithCancel(context.Background())
+	p.readCancel = readCancel
+	p.startReadLoop(readCtx)
 
 	return p, nil
 }
@@ -185,15 +188,32 @@ func (p *PluginProcess) applyMemoryLimit() {
 // readLoop continuously reads JSONL messages from the plugin's stdout and
 // routes them to the appropriate channel. It captures channel and scanner
 // references at entry so that a concurrent respawn does not cause it to
-// close the wrong channels.
-func (p *PluginProcess) readLoop() {
+// close the wrong channels. When ctx is cancelled, stdout is closed to
+// unblock scanner.Scan() and allow prompt shutdown.
+func (p *PluginProcess) readLoop(ctx context.Context) {
 	p.mu.Lock()
 	injectCh := p.injectCh
 	responseCh := p.responseCh
 	uiRequestCh := p.uiRequestCh
 	heartbeatCh := p.heartbeatCh
 	scanner := p.scanner
+	stdout := p.stdout
 	p.mu.Unlock()
+
+	// When ctx is cancelled, close stdout to unblock scanner.Scan().
+	// The loopDone channel prevents this goroutine from leaking when
+	// readLoop exits normally (scanner exhausted).
+	loopDone := make(chan struct{})
+	defer close(loopDone)
+	if stdout != nil {
+		go func() {
+			select {
+			case <-ctx.Done():
+				stdout.Close()
+			case <-loopDone:
+			}
+		}()
+	}
 
 	// Panic recovery: prevent a panic during message parsing or channel
 	// routing from crashing the host process. This defer is registered first
@@ -274,11 +294,11 @@ func (p *PluginProcess) readLoop() {
 
 // startReadLoop launches readLoop in a goroutine with WaitGroup tracking,
 // enabling callers to wait for the goroutine to finish via readLoopWg.
-func (p *PluginProcess) startReadLoop() {
+func (p *PluginProcess) startReadLoop(ctx context.Context) {
 	p.readLoopWg.Add(1)
 	go func() {
 		defer p.readLoopWg.Done()
-		p.readLoop()
+		p.readLoop(ctx)
 	}()
 }
 
@@ -538,7 +558,13 @@ func (p *PluginProcess) Stop() error {
 	}
 	p.closed = true
 	supervised := p.supervised
+	readCancel := p.readCancel
 	p.mu.Unlock()
+
+	// Cancel readLoop's context to unblock scanner.Scan() via stdout close.
+	if readCancel != nil {
+		readCancel()
+	}
 
 	if supervised {
 		// Signal the supervisor to stop.
@@ -911,6 +937,8 @@ func (p *PluginProcess) respawn(ctx context.Context) error {
 	newUIRequestCh := make(chan PluginMessage, 16)
 	newHeartbeatCh := make(chan PluginMessage, 4)
 
+	readCtx, readCancel := context.WithCancel(ctx)
+
 	p.mu.Lock()
 	p.cmd = cmd
 	p.stdin = stdinPipe
@@ -922,7 +950,8 @@ func (p *PluginProcess) respawn(ctx context.Context) error {
 	p.heartbeatCh = newHeartbeatCh
 	p.healthy = true // Reset health on restart.
 	p.closed = false // Allow Send to work again for initialization.
-	p.startReadLoop()
+	p.readCancel = readCancel
+	p.startReadLoop(readCtx)
 	p.mu.Unlock()
 
 	// Re-apply memory limit on the new process.

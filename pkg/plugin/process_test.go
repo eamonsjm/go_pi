@@ -53,7 +53,7 @@ func TestReadLoop_CriticalMessagesDelivered(t *testing.T) {
 		`{"type":"command_result","text":"done"}` + "\n"
 
 	p := newTestProcess("test-critical", input)
-	p.readLoop() // blocks until scanner exhausted, then closes channels
+	p.readLoop(context.Background()) // blocks until scanner exhausted, then closes channels
 
 	var got []string
 	for msg := range p.responseCh {
@@ -76,7 +76,7 @@ func TestReadLoop_InjectMessagesDelivered(t *testing.T) {
 		`{"type":"log","level":"info","message":"something"}` + "\n"
 
 	p := newTestProcess("test-inject", input)
-	p.readLoop()
+	p.readLoop(context.Background())
 
 	var got []string
 	for msg := range p.injectCh {
@@ -117,7 +117,7 @@ func TestReadLoop_ResponseDroppedWhenFull(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		p.readLoop()
+		p.readLoop(context.Background())
 		close(done)
 	}()
 
@@ -160,7 +160,7 @@ func TestReadLoop_InjectDroppedWhenFull(t *testing.T) {
 		healthy:     true,
 	}
 
-	p.readLoop()
+	p.readLoop(context.Background())
 
 	var count int
 	for range p.injectCh {
@@ -173,6 +173,52 @@ func TestReadLoop_InjectDroppedWhenFull(t *testing.T) {
 	if count == 0 {
 		t.Fatal("expected at least some inject messages to be delivered")
 	}
+}
+
+func TestReadLoop_ContextCancellation(t *testing.T) {
+	// readLoop should exit promptly when its context is cancelled,
+	// even when scanner.Scan() is blocked waiting for input.
+	pr, pw := io.Pipe()
+	scanner := bufio.NewScanner(pr)
+	scanner.Buffer(make([]byte, maxScannerBuffer), maxScannerBuffer)
+
+	p := &PluginProcess{
+		name:        "test-ctx-cancel",
+		scanner:     scanner,
+		stdout:      pr,
+		injectCh:    make(chan PluginMessage, 64),
+		responseCh:  make(chan PluginMessage, 16),
+		uiRequestCh: make(chan PluginMessage, 16),
+		heartbeatCh: make(chan PluginMessage, 4),
+		healthy:     true,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		p.readLoop(ctx)
+	}()
+
+	// Cancel the context — readLoop should exit by closing stdout
+	// to unblock scanner.Scan().
+	cancel()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("readLoop did not exit after context cancellation")
+	}
+
+	// All channels must be closed after readLoop exits.
+	if _, ok := <-p.responseCh; ok {
+		t.Error("responseCh not closed after context cancellation")
+	}
+	if _, ok := <-p.injectCh; ok {
+		t.Error("injectCh not closed after context cancellation")
+	}
+
+	pw.Close()
 }
 
 // --- Test subprocess helper ---
@@ -621,7 +667,7 @@ func startTestPlugin(t *testing.T, mode string) *PluginProcess {
 		timeouts:    DefaultTimeoutConfig(),
 	}
 
-	p.startReadLoop()
+	p.startReadLoop(context.Background())
 
 	t.Cleanup(func() {
 		p.Stop()
@@ -834,7 +880,7 @@ func TestReadLoop_LogsMalformedJSON(t *testing.T) {
 		log.SetOutput(os.Stderr)
 	})
 
-	p.readLoop()
+	p.readLoop(context.Background())
 
 	logOutput := buf.String()
 	if !strings.Contains(logOutput, "test-malformed") {
@@ -1529,7 +1575,7 @@ func TestReadLoop_HeartbeatAckRouted(t *testing.T) {
 
 	p := newTestProcess("test-hb", input)
 	p.heartbeatCh = make(chan PluginMessage, 4)
-	p.readLoop()
+	p.readLoop(context.Background())
 
 	msg, ok := <-p.heartbeatCh
 	if !ok {
@@ -1887,7 +1933,7 @@ func TestReadLoop_PanicRecovery(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		p.readLoop()
+		p.readLoop(context.Background())
 	}()
 
 	select {
@@ -2068,7 +2114,7 @@ func TestReadLoop_UIRequestDroppedWhenFull(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		p.readLoop()
+		p.readLoop(context.Background())
 		close(done)
 	}()
 
@@ -2110,7 +2156,7 @@ func TestReadLoop_HeartbeatAckDroppedWhenFull(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		p.readLoop()
+		p.readLoop(context.Background())
 		close(done)
 	}()
 
