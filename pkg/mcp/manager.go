@@ -119,7 +119,9 @@ func (m *Manager) StartAll(ctx context.Context, appCfg *config.Config) error {
 			log.Printf("mcp: failed to start server %q: %v", name, err)
 			continue
 		}
+		m.mu.Lock()
 		m.serverList = append(m.serverList, name)
+		m.mu.Unlock()
 	}
 	return nil
 }
