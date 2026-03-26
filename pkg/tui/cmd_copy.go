@@ -29,6 +29,8 @@ func NewCopyCommand(sessionMgr *session.Manager) *SlashCommand {
 				switch runtime.GOOS {
 				case "darwin":
 					clipCmd = exec.Command("pbcopy")
+				case "windows":
+					clipCmd = exec.Command("clip.exe")
 				default:
 					// Try wayland first, then X11.
 					if _, err := exec.LookPath("wl-copy"); err == nil {
