@@ -140,7 +140,7 @@ type rpcServer struct {
 	agentLoop *agent.Loop
 	writer    io.Writer
 
-	mu      sync.Mutex // protects writes to writer
+	mu      sync.Mutex // protects writer, running, and agentLoop reads
 	running bool       // true while a prompt is executing
 }
 
@@ -195,7 +195,10 @@ func (s *rpcServer) handleRequest(ctx context.Context, cancel context.CancelFunc
 	case "prompt":
 		s.handlePrompt(ctx, cancel, req)
 	case "cancel":
-		s.agentLoop.Cancel()
+		s.mu.Lock()
+		loop := s.agentLoop
+		s.mu.Unlock()
+		loop.Cancel()
 		s.sendResponse(Response{
 			JSONRPC: "2.0",
 			ID:      req.ID,
@@ -214,7 +217,10 @@ func (s *rpcServer) handleRequest(ctx context.Context, cancel context.CancelFunc
 			}, cancel)
 			return
 		}
-		s.agentLoop.Steer(params.Text)
+		s.mu.Lock()
+		loop := s.agentLoop
+		s.mu.Unlock()
+		loop.Steer(params.Text)
 		s.sendResponse(Response{
 			JSONRPC: "2.0",
 			ID:      req.ID,
@@ -254,6 +260,7 @@ func (s *rpcServer) handlePrompt(ctx context.Context, cancel context.CancelFunc,
 		return
 	}
 	s.running = true
+	loop := s.agentLoop
 	s.mu.Unlock()
 
 	defer func() {
@@ -286,7 +293,7 @@ func (s *rpcServer) handlePrompt(ctx context.Context, cancel context.CancelFunc,
 		return
 	}
 
-	events := s.agentLoop.Events()
+	events := loop.Events()
 
 	g, gCtx := errgroup.WithContext(ctx)
 	g.Go(func() (err error) {
@@ -295,7 +302,7 @@ func (s *rpcServer) handlePrompt(ctx context.Context, cancel context.CancelFunc,
 				err = fmt.Errorf("panic in Prompt: %v", r)
 			}
 		}()
-		return s.agentLoop.Prompt(gCtx, params.Text)
+		return loop.Prompt(gCtx, params.Text)
 	})
 
 	var resultText strings.Builder
