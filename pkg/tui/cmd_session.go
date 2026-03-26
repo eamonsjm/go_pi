@@ -389,7 +389,13 @@ func rebuildChatFromMessages(chatView *ChatView, msgs []ai.Message) {
 			case ai.ContentTypeText:
 				switch msg.Role {
 				case ai.RoleUser:
-					chatView.AddUserMessage(block.Text)
+					// Append without rebuild — the single rebuildContent() at
+					// the end of this function handles it. Avoids O(N*M) cost
+					// from AddUserMessage calling rebuildContent per message.
+					chatView.blocks = append(chatView.blocks, chatBlock{
+						kind: blockUser,
+						text: block.Text,
+					})
 				case ai.RoleAssistant:
 					chatView.HandleEvent(agent.AgentEvent{
 						Type:  agent.EventAssistantText,
