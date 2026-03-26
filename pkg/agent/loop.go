@@ -18,10 +18,10 @@ var ErrNoProvider = errors.New("no AI provider configured")
 
 const eventBufSize = 1024
 
-// AgentLoop orchestrates the conversation between user, LLM, and tools.
+// Loop orchestrates the conversation between user, LLM, and tools.
 // It drives the agentic loop: send messages -> collect response -> execute
 // tool calls -> repeat until the model stops calling tools.
-type AgentLoop struct {
+type Loop struct {
 	provider     ai.Provider
 	tools        *tools.Registry
 	hooks        *tools.HookRegistry
@@ -49,7 +49,7 @@ type AgentLoop struct {
 
 	mu       sync.Mutex
 	messages []ai.Message
-	events   chan AgentEvent
+	events   chan Event
 
 	// eventsMu serializes emit() sends and Prompt() channel close to
 	// prevent send-on-closed-channel panics. emit() holds RLock during
@@ -71,8 +71,8 @@ type AgentLoop struct {
 	followUpCh chan string
 }
 
-// NewAgentLoop creates a new agent loop wired to the given provider and tool registry.
-func NewAgentLoop(provider ai.Provider, toolRegistry *tools.Registry, opts ...Option) *AgentLoop {
+// NewLoop creates a new agent loop wired to the given provider and tool registry.
+func NewLoop(provider ai.Provider, toolRegistry *tools.Registry, opts ...Option) *Loop {
 	metrics := tools.NewMetrics()
 	compressionConfig := tools.NewCompressionConfig()
 	hooks := tools.NewHookRegistry()
@@ -81,7 +81,7 @@ func NewAgentLoop(provider ai.Provider, toolRegistry *tools.Registry, opts ...Op
 	// Register language-specific compression filters and generic compressor
 	tools.RegisterDefaultHooks(hooks, compressionConfig, metrics)
 
-	a := &AgentLoop{
+	a := &Loop{
 		provider:         provider,
 		tools:            toolRegistry,
 		hooks:            hooks,
@@ -92,7 +92,7 @@ func NewAgentLoop(provider ai.Provider, toolRegistry *tools.Registry, opts ...Op
 		contextWindow:    200000,
 		reserveTokens:    16384,
 		keepRecentTokens: 4096,
-		events:           make(chan AgentEvent, eventBufSize),
+		events:           make(chan Event, eventBufSize),
 		steerCh:          make(chan string, 2),
 		followUpCh:       make(chan string, 2),
 	}
@@ -103,14 +103,14 @@ func NewAgentLoop(provider ai.Provider, toolRegistry *tools.Registry, opts ...Op
 }
 
 // ensureInit lazily initializes channels that are nil on a zero-value
-// AgentLoop. This makes the zero value safe: callers who construct
-// &AgentLoop{} instead of using NewAgentLoop won't hit nil-channel panics.
+// Loop. This makes the zero value safe: callers who construct
+// &Loop{} instead of using NewLoop won't hit nil-channel panics.
 // The caller must NOT hold a.mu.
-func (a *AgentLoop) ensureInit() {
+func (a *Loop) ensureInit() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.events == nil {
-		a.events = make(chan AgentEvent, eventBufSize)
+		a.events = make(chan Event, eventBufSize)
 	}
 	if a.steerCh == nil {
 		a.steerCh = make(chan string, 2)
@@ -136,7 +136,7 @@ func (a *AgentLoop) ensureInit() {
 // The caller should read from this channel to receive real-time updates.
 // The channel is closed when the current Prompt call completes, so
 // a consumer using range will exit automatically.
-func (a *AgentLoop) Events() <-chan AgentEvent {
+func (a *Loop) Events() <-chan Event {
 	a.ensureInit()
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -144,12 +144,12 @@ func (a *AgentLoop) Events() <-chan AgentEvent {
 }
 
 // Metrics returns the metrics collector for this agent loop.
-func (a *AgentLoop) Metrics() *tools.Metrics {
+func (a *Loop) Metrics() *tools.Metrics {
 	return a.metrics
 }
 
 // Messages returns a copy of the current conversation history.
-func (a *AgentLoop) Messages() []ai.Message {
+func (a *Loop) Messages() []ai.Message {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	cp := make([]ai.Message, len(a.messages))
@@ -159,7 +159,7 @@ func (a *AgentLoop) Messages() []ai.Message {
 
 // SetMessages replaces the conversation history (e.g. when restoring a session).
 // The input slice is copied to prevent the caller from mutating agent state.
-func (a *AgentLoop) SetMessages(msgs []ai.Message) {
+func (a *Loop) SetMessages(msgs []ai.Message) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	cp := make([]ai.Message, len(msgs))
@@ -168,28 +168,28 @@ func (a *AgentLoop) SetMessages(msgs []ai.Message) {
 }
 
 // SetModel changes the model used for subsequent LLM calls.
-func (a *AgentLoop) SetModel(model string) {
+func (a *Loop) SetModel(model string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.model = model
 }
 
 // SetThinking changes the extended thinking level.
-func (a *AgentLoop) SetThinking(level ai.ThinkingLevel) {
+func (a *Loop) SetThinking(level ai.ThinkingLevel) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.thinking = level
 }
 
 // SetMaxTokens changes the max output tokens for subsequent LLM calls.
-func (a *AgentLoop) SetMaxTokens(n int) {
+func (a *Loop) SetMaxTokens(n int) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.maxTokens = n
 }
 
 // ProviderName returns the name of the current AI provider, or empty if none.
-func (a *AgentLoop) ProviderName() string {
+func (a *Loop) ProviderName() string {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.provider != nil {
@@ -201,14 +201,14 @@ func (a *AgentLoop) ProviderName() string {
 // SetProvider replaces the AI provider used for subsequent LLM calls.
 // This is used to wire up a provider after login when the app started
 // without one.
-func (a *AgentLoop) SetProvider(p ai.Provider) {
+func (a *Loop) SetProvider(p ai.Provider) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.provider = p
 }
 
 // SetSystemPrompt updates the system prompt for subsequent turns.
-func (a *AgentLoop) SetSystemPrompt(prompt string) {
+func (a *Loop) SetSystemPrompt(prompt string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.systemPrompt = prompt
@@ -216,13 +216,13 @@ func (a *AgentLoop) SetSystemPrompt(prompt string) {
 
 // Hooks returns the hook registry, allowing callers to register additional
 // hooks (e.g. MCP permission hooks) after construction.
-func (a *AgentLoop) Hooks() *tools.HookRegistry {
+func (a *Loop) Hooks() *tools.HookRegistry {
 	a.ensureInit()
 	return a.hooks
 }
 
 // Cancel aborts the current Prompt execution.
-func (a *AgentLoop) Cancel() {
+func (a *Loop) Cancel() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.cancel != nil {
@@ -233,7 +233,7 @@ func (a *AgentLoop) Cancel() {
 // Steer injects a steering message. If the agent is currently executing tools,
 // remaining tool calls are skipped and the steering message is sent to the model
 // as a user turn. Safe to call from any goroutine.
-func (a *AgentLoop) Steer(text string) {
+func (a *Loop) Steer(text string) {
 	a.ensureInit()
 	select {
 	case a.steerCh <- text:
@@ -244,7 +244,7 @@ func (a *AgentLoop) Steer(text string) {
 
 // FollowUp queues a follow-up user message that will be processed after the
 // current agent run finishes. Safe to call from any goroutine.
-func (a *AgentLoop) FollowUp(text string) {
+func (a *Loop) FollowUp(text string) {
 	a.ensureInit()
 	select {
 	case a.followUpCh <- text:
@@ -257,7 +257,7 @@ func (a *AgentLoop) FollowUp(text string) {
 // a final response with no tool calls. Events are emitted on the Events() channel
 // throughout execution. Prompt blocks until the agent run completes or the context
 // is cancelled.
-func (a *AgentLoop) Prompt(ctx context.Context, text string) error {
+func (a *Loop) Prompt(ctx context.Context, text string) error {
 	a.ensureInit()
 	a.mu.Lock()
 	provider := a.provider
@@ -288,7 +288,7 @@ func (a *AgentLoop) Prompt(ctx context.Context, text string) error {
 	a.eventsMu.Lock()
 	a.mu.Lock()
 	close(a.events)
-	a.events = make(chan AgentEvent, eventBufSize)
+	a.events = make(chan Event, eventBufSize)
 	a.mu.Unlock()
 	a.eventsMu.Unlock()
 
@@ -300,7 +300,7 @@ func (a *AgentLoop) Prompt(ctx context.Context, text string) error {
 
 // run is the core loop. It sends messages to the model, processes tool calls,
 // handles steering, and loops until the model is done.
-func (a *AgentLoop) run(ctx context.Context) error {
+func (a *Loop) run(ctx context.Context) error {
 	// Drain stale steering messages left over from a previous Prompt() call.
 	// steerCh is a buffered channel that persists across calls; unconsumed
 	// messages would cause the next tool-execution phase to skip tools
@@ -314,8 +314,8 @@ func (a *AgentLoop) run(ctx context.Context) error {
 	}
 steerDrained:
 
-	a.emit(ctx, AgentEvent{Type: EventAgentStart})
-	defer a.emit(ctx, AgentEvent{Type: EventAgentEnd})
+	a.emit(ctx, Event{Type: EventAgentStart})
+	defer a.emit(ctx, Event{Type: EventAgentEnd})
 
 	for {
 		if err := ctx.Err(); err != nil {
@@ -337,7 +337,7 @@ steerDrained:
 
 		assistantMsg, err := a.doTurn(ctx)
 		if err != nil {
-			a.emit(ctx, AgentEvent{Type: EventAgentError, Error: err})
+			a.emit(ctx, Event{Type: EventAgentError, Error: err})
 			return fmt.Errorf("agent turn: %w", err)
 		}
 
@@ -374,7 +374,7 @@ steerDrained:
 			}
 
 			a.appendMessage(toolResult)
-			a.emit(ctx, AgentEvent{Type: EventToolResult, Message: &toolResult})
+			a.emit(ctx, Event{Type: EventToolResult, Message: &toolResult})
 
 			// Check for steering after execution too.
 			select {
@@ -383,7 +383,7 @@ steerDrained:
 				for _, remaining := range toolCalls[i+1:] {
 					skipResult := ai.NewToolResultMessage(remaining.ToolUseID, "tool execution skipped: user sent a new message", true)
 					a.appendMessage(skipResult)
-					a.emit(ctx, AgentEvent{Type: EventToolResult, Message: &skipResult})
+					a.emit(ctx, Event{Type: EventToolResult, Message: &skipResult})
 				}
 				a.appendMessage(ai.NewTextMessage(ai.RoleUser, steerMsg))
 				steered = true
@@ -401,8 +401,8 @@ steerDrained:
 // doTurn sends the current messages to the model and collects the full
 // streamed assistant response. It emits text/thinking delta events as
 // they arrive and returns the completed assistant message.
-func (a *AgentLoop) doTurn(ctx context.Context) (*ai.Message, error) {
-	a.emit(ctx, AgentEvent{Type: EventTurnStart})
+func (a *Loop) doTurn(ctx context.Context) (*ai.Message, error) {
+	a.emit(ctx, Event{Type: EventTurnStart})
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -446,7 +446,7 @@ func (a *AgentLoop) doTurn(ctx context.Context) (*ai.Message, error) {
 		case ai.EventMessageStart:
 
 		case ai.EventTextDelta:
-			a.emit(ctx, AgentEvent{Type: EventAssistantText, Delta: event.Delta})
+			a.emit(ctx, Event{Type: EventAssistantText, Delta: event.Delta})
 			if textIdx < 0 {
 				textIdx = len(assistantMsg.Content)
 				assistantMsg.Content = append(assistantMsg.Content, ai.ContentBlock{
@@ -456,7 +456,7 @@ func (a *AgentLoop) doTurn(ctx context.Context) (*ai.Message, error) {
 			textBuilder.WriteString(event.Delta)
 
 		case ai.EventThinkingDelta:
-			a.emit(ctx, AgentEvent{Type: EventAssistantThinking, Delta: event.Delta})
+			a.emit(ctx, Event{Type: EventAssistantThinking, Delta: event.Delta})
 			if thinkingIdx < 0 {
 				thinkingIdx = len(assistantMsg.Content)
 				assistantMsg.Content = append(assistantMsg.Content, ai.ContentBlock{
@@ -511,7 +511,7 @@ func (a *AgentLoop) doTurn(ctx context.Context) (*ai.Message, error) {
 				a.mu.Lock()
 				a.lastInputTokens = event.Usage.InputTokens
 				a.mu.Unlock()
-				a.emit(ctx, AgentEvent{Type: EventUsageUpdate, Usage: event.Usage})
+				a.emit(ctx, Event{Type: EventUsageUpdate, Usage: event.Usage})
 			}
 
 		case ai.EventError:
@@ -531,13 +531,13 @@ func (a *AgentLoop) doTurn(ctx context.Context) (*ai.Message, error) {
 	}
 
 	a.appendMessage(assistantMsg)
-	a.emit(ctx, AgentEvent{Type: EventTurnEnd, Message: &assistantMsg})
+	a.emit(ctx, Event{Type: EventTurnEnd, Message: &assistantMsg})
 	return &assistantMsg, nil
 }
 
 // executeTool runs a single tool call and emits the corresponding events.
 // It returns a tool_result message ready to be appended to the conversation.
-func (a *AgentLoop) executeTool(ctx context.Context, tc ai.ContentBlock) ai.Message {
+func (a *Loop) executeTool(ctx context.Context, tc ai.ContentBlock) ai.Message {
 	// Snapshot mutable fields under lock to avoid races with concurrent setters.
 	a.mu.Lock()
 	workingDir := a.workingDir
@@ -553,7 +553,7 @@ func (a *AgentLoop) executeTool(ctx context.Context, tc ai.ContentBlock) ai.Mess
 
 	params := toParamsMap(tc.Input)
 
-	a.emit(ctx, AgentEvent{
+	a.emit(ctx, Event{
 		Type:       EventToolExecStart,
 		ToolCallID: tc.ToolUseID,
 		ToolName:   tc.ToolName,
@@ -565,7 +565,7 @@ func (a *AgentLoop) executeTool(ctx context.Context, tc ai.ContentBlock) ai.Mess
 	// can retry with valid input instead of executing with nil params.
 	if params == nil && tc.Input != nil {
 		errMsg := fmt.Sprintf("invalid tool input for %s: could not parse as JSON object", tc.ToolName)
-		a.emit(ctx, AgentEvent{
+		a.emit(ctx, Event{
 			Type:       EventToolExecEnd,
 			ToolCallID: tc.ToolUseID,
 			ToolName:   tc.ToolName,
@@ -578,7 +578,7 @@ func (a *AgentLoop) executeTool(ctx context.Context, tc ai.ContentBlock) ai.Mess
 	tool, ok := toolsReg.Get(tc.ToolName)
 	if !ok {
 		errMsg := fmt.Sprintf("unknown tool: %s", tc.ToolName)
-		a.emit(ctx, AgentEvent{
+		a.emit(ctx, Event{
 			Type:       EventToolExecEnd,
 			ToolCallID: tc.ToolUseID,
 			ToolName:   tc.ToolName,
@@ -591,7 +591,7 @@ func (a *AgentLoop) executeTool(ctx context.Context, tc ai.ContentBlock) ai.Mess
 	// Fire before-execution hooks
 	if err := hooks.Before(ctx, tc.ToolName, params); err != nil {
 		errMsg := fmt.Sprintf("hook error: %v", err)
-		a.emit(ctx, AgentEvent{
+		a.emit(ctx, Event{
 			Type:       EventToolExecEnd,
 			ToolCallID: tc.ToolUseID,
 			ToolName:   tc.ToolName,
@@ -614,7 +614,7 @@ func (a *AgentLoop) executeTool(ctx context.Context, tc ai.ContentBlock) ai.Mess
 			if hookErr != nil {
 				resultText = hookErr.Error()
 			}
-			a.emit(ctx, AgentEvent{
+			a.emit(ctx, Event{
 				Type:       EventToolExecEnd,
 				ToolCallID: tc.ToolUseID,
 				ToolName:   tc.ToolName,
@@ -649,7 +649,7 @@ func (a *AgentLoop) executeTool(ctx context.Context, tc ai.ContentBlock) ai.Mess
 			resultText = hookErr.Error()
 		}
 
-		a.emit(ctx, AgentEvent{
+		a.emit(ctx, Event{
 			Type:       EventToolExecEnd,
 			ToolCallID: tc.ToolUseID,
 			ToolName:   tc.ToolName,
@@ -687,7 +687,7 @@ func (a *AgentLoop) executeTool(ctx context.Context, tc ai.ContentBlock) ai.Mess
 		metrics.Record(category, originalSize, compressedSize, 0)
 	}
 
-	a.emit(ctx, AgentEvent{
+	a.emit(ctx, Event{
 		Type:       EventToolExecEnd,
 		ToolCallID: tc.ToolUseID,
 		ToolName:   tc.ToolName,
@@ -724,7 +724,7 @@ func safeExecuteRich(ctx context.Context, tool tools.RichTool, params map[string
 // skipped due to a steering interrupt. The skipAfterID parameter indicates the
 // tool call ID after which to start adding skip results. If empty, no skip
 // results are added (all tools already have results).
-func (a *AgentLoop) addSteeringSkipResults(ctx context.Context, toolCalls []ai.ContentBlock, skipAfterID string) {
+func (a *Loop) addSteeringSkipResults(ctx context.Context, toolCalls []ai.ContentBlock, skipAfterID string) {
 	skipping := false
 	if skipAfterID == "" {
 		return
@@ -735,19 +735,19 @@ func (a *AgentLoop) addSteeringSkipResults(ctx context.Context, toolCalls []ai.C
 			// This tool call itself is being skipped — add a result for it.
 			skipResult := ai.NewToolResultMessage(tc.ToolUseID, "tool execution skipped: user sent a new message", true)
 			a.appendMessage(skipResult)
-			a.emit(ctx, AgentEvent{Type: EventToolResult, Message: &skipResult})
+			a.emit(ctx, Event{Type: EventToolResult, Message: &skipResult})
 			continue
 		}
 		if skipping {
 			skipResult := ai.NewToolResultMessage(tc.ToolUseID, "tool execution skipped: user sent a new message", true)
 			a.appendMessage(skipResult)
-			a.emit(ctx, AgentEvent{Type: EventToolResult, Message: &skipResult})
+			a.emit(ctx, Event{Type: EventToolResult, Message: &skipResult})
 		}
 	}
 }
 
 // appendMessage safely appends a message to the conversation history.
-func (a *AgentLoop) appendMessage(msg ai.Message) {
+func (a *Loop) appendMessage(msg ai.Message) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.messages = append(a.messages, msg)
@@ -760,7 +760,7 @@ func (a *AgentLoop) appendMessage(msg ai.Message) {
 // eventsMu.RLock is held for the duration of the send so that Prompt() cannot
 // close the channel while a send is in flight. Multiple goroutines may emit
 // concurrently (RLock allows shared access).
-func (a *AgentLoop) emit(ctx context.Context, event AgentEvent) {
+func (a *Loop) emit(ctx context.Context, event Event) {
 	a.eventsMu.RLock()
 	defer a.eventsMu.RUnlock()
 

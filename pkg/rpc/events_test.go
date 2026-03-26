@@ -9,7 +9,7 @@ import (
 )
 
 func TestEventFromAgent_TextDelta(t *testing.T) {
-	e := agent.AgentEvent{
+	e := agent.Event{
 		Type:  agent.EventAssistantText,
 		Delta: "hello",
 	}
@@ -23,7 +23,7 @@ func TestEventFromAgent_TextDelta(t *testing.T) {
 }
 
 func TestEventFromAgent_ThinkingDelta(t *testing.T) {
-	e := agent.AgentEvent{
+	e := agent.Event{
 		Type:  agent.EventAssistantThinking,
 		Delta: "let me think...",
 	}
@@ -37,7 +37,7 @@ func TestEventFromAgent_ThinkingDelta(t *testing.T) {
 }
 
 func TestEventFromAgent_ToolExecStart(t *testing.T) {
-	e := agent.AgentEvent{
+	e := agent.Event{
 		Type:       agent.EventToolExecStart,
 		ToolCallID: "tc_1",
 		ToolName:   "bash",
@@ -56,7 +56,7 @@ func TestEventFromAgent_ToolExecStart(t *testing.T) {
 }
 
 func TestEventFromAgent_ToolExecEnd(t *testing.T) {
-	e := agent.AgentEvent{
+	e := agent.Event{
 		Type:       agent.EventToolExecEnd,
 		ToolCallID: "tc_1",
 		ToolName:   "bash",
@@ -73,7 +73,7 @@ func TestEventFromAgent_ToolExecEnd(t *testing.T) {
 }
 
 func TestEventFromAgent_UsageUpdate(t *testing.T) {
-	e := agent.AgentEvent{
+	e := agent.Event{
 		Type: agent.EventUsageUpdate,
 		Usage: &ai.Usage{
 			InputTokens:  1000,
@@ -97,7 +97,7 @@ func TestEventFromAgent_UsageUpdate(t *testing.T) {
 }
 
 func TestEventFromAgent_Error(t *testing.T) {
-	e := agent.AgentEvent{
+	e := agent.Event{
 		Type:  agent.EventAgentError,
 		Error: fmt.Errorf("connection failed"),
 	}
@@ -108,8 +108,8 @@ func TestEventFromAgent_Error(t *testing.T) {
 }
 
 func TestEventFromAgent_AgentStartEnd(t *testing.T) {
-	for _, typ := range []agent.AgentEventType{agent.EventAgentStart, agent.EventAgentEnd} {
-		ev := EventFromAgent(agent.AgentEvent{Type: typ})
+	for _, typ := range []agent.EventType{agent.EventAgentStart, agent.EventAgentEnd} {
+		ev := EventFromAgent(agent.Event{Type: typ})
 		if ev.Type != string(typ) {
 			t.Errorf("type = %q, want %q", ev.Type, typ)
 		}

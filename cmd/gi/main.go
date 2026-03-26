@@ -298,7 +298,7 @@ func run() int {
 	}
 
 	// Create agent loop - may be nil provider if no API key configured
-	var agentLoop *agent.AgentLoop
+	var agentLoop *agent.Loop
 	var mcpPermHook *mcp.MCPPermissionHook
 	if provider != nil {
 		agentLoop, mcpPermHook = makeAgentLoop(provider, registry, cfg, skillRegistry, mcpMgr)
@@ -308,7 +308,7 @@ func run() int {
 		if idx := skill.SkillSystemReminder(skillRegistry); idx != "" {
 			placeholderPrompt += "\n\n<system-reminder>\n" + idx + "</system-reminder>"
 		}
-		agentLoop = agent.NewAgentLoop(
+		agentLoop = agent.NewLoop(
 			nil,
 			registry,
 			agent.WithModel(cfg.DefaultModel),
@@ -527,7 +527,7 @@ func buildSystemPrompt() string {
 	return base + "\n\n" + strings.Join(parts, "\n\n")
 }
 
-func runPrintMode(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, prompt string) int {
+func runPrintMode(agentLoop *agent.Loop, sessionMgr *session.Manager, prompt string) int {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -566,7 +566,7 @@ func runPrintMode(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, promp
 	return 0
 }
 
-func makeAgentLoop(provider ai.Provider, registry *tools.Registry, cfg *config.Config, skillReg *skill.Registry, mcpMgr *mcp.MCPManager) (*agent.AgentLoop, *mcp.MCPPermissionHook) {
+func makeAgentLoop(provider ai.Provider, registry *tools.Registry, cfg *config.Config, skillReg *skill.Registry, mcpMgr *mcp.MCPManager) (*agent.Loop, *mcp.MCPPermissionHook) {
 	systemPrompt := buildSystemPrompt()
 	if skillReg != nil {
 		if idx := skill.SkillSystemReminder(skillReg); idx != "" {
@@ -589,10 +589,10 @@ func makeAgentLoop(provider ai.Provider, registry *tools.Registry, cfg *config.C
 		opts = append(opts, agent.WithSystemMessageDrainer(mcpMgr.DrainSystemMessages))
 	}
 
-	loop := agent.NewAgentLoop(provider, registry, opts...)
+	loop := agent.NewLoop(provider, registry, opts...)
 
 	// Register MCP permission hook AFTER RTK hooks (which are registered in
-	// NewAgentLoop) to preserve the original tool name for RTK translation.
+	// NewLoop) to preserve the original tool name for RTK translation.
 	var permHook *mcp.MCPPermissionHook
 	if mcpMgr != nil {
 		permConfigs := make(map[string]*config.MCPPermissionConfig)
@@ -609,7 +609,7 @@ func makeAgentLoop(provider ai.Provider, registry *tools.Registry, cfg *config.C
 	return loop, permHook
 }
 
-func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg *config.Config, providerErr error, pluginMgr *plugin.Manager, authStore *auth.Store, authResolver *auth.Resolver, skillReg *skill.Registry, restoredSessionID string, restoredMsgs []ai.Message, initialPrompt string, mcpPermHook *mcp.MCPPermissionHook, sb *samplingBridge) int {
+func runInteractive(agentLoop *agent.Loop, sessionMgr *session.Manager, cfg *config.Config, providerErr error, pluginMgr *plugin.Manager, authStore *auth.Store, authResolver *auth.Resolver, skillReg *skill.Registry, restoredSessionID string, restoredMsgs []ai.Message, initialPrompt string, mcpPermHook *mcp.MCPPermissionHook, sb *samplingBridge) int {
 	// Create the application lifecycle context. This is cancelled when
 	// runInteractive returns, ensuring all background operations (such as
 	// compaction) are stopped when the user quits.

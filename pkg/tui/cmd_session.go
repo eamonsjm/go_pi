@@ -13,7 +13,7 @@ import (
 )
 
 // NewNewSessionCommand creates the /new command which starts a fresh session.
-func NewNewSessionCommand(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, chatView *ChatView, header *Header) *SlashCommand {
+func NewNewSessionCommand(agentLoop *agent.Loop, sessionMgr *session.Manager, chatView *ChatView, header *Header) *SlashCommand {
 	return &SlashCommand{
 		Name:        "new",
 		Description: "Start a fresh session",
@@ -40,7 +40,7 @@ func NewNewSessionCommand(agentLoop *agent.AgentLoop, sessionMgr *session.Manage
 //
 // When invoked with no arguments, it lists available sessions in the chat.
 // When invoked with an ID or index number, it loads that session directly.
-func NewResumeCommand(ctx context.Context, agentLoop *agent.AgentLoop, sessionMgr *session.Manager, chatView *ChatView, header *Header) *SlashCommand {
+func NewResumeCommand(ctx context.Context, agentLoop *agent.Loop, sessionMgr *session.Manager, chatView *ChatView, header *Header) *SlashCommand {
 	// lastListed holds the sessions from the most recent /resume listing so
 	// that numeric indices can be resolved on a subsequent /resume <n> call.
 	var lastListed []session.SessionInfo
@@ -397,12 +397,12 @@ func rebuildChatFromMessages(chatView *ChatView, msgs []ai.Message) {
 						text: block.Text,
 					})
 				case ai.RoleAssistant:
-					chatView.HandleEvent(agent.AgentEvent{
+					chatView.HandleEvent(agent.Event{
 						Type:  agent.EventAssistantText,
 						Delta: block.Text,
 					})
 					// Break text continuity so the next block starts fresh.
-					chatView.HandleEvent(agent.AgentEvent{
+					chatView.HandleEvent(agent.Event{
 						Type: agent.EventTurnEnd,
 					})
 				}
@@ -411,14 +411,14 @@ func rebuildChatFromMessages(chatView *ChatView, msgs []ai.Message) {
 				if m, ok := block.Input.(map[string]any); ok {
 					args = m
 				}
-				chatView.HandleEvent(agent.AgentEvent{
+				chatView.HandleEvent(agent.Event{
 					Type:       agent.EventToolExecStart,
 					ToolCallID: block.ToolUseID,
 					ToolName:   block.ToolName,
 					ToolArgs:   args,
 				})
 			case ai.ContentTypeToolResult:
-				chatView.HandleEvent(agent.AgentEvent{
+				chatView.HandleEvent(agent.Event{
 					Type:       agent.EventToolExecEnd,
 					ToolCallID: block.ToolResultID,
 					ToolResult: block.Content,

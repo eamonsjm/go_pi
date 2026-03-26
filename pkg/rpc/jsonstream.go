@@ -18,7 +18,7 @@ import (
 // RunJSONStream runs the agent in JSON event stream mode. It reads a prompt
 // from args (or stdin if args is empty), runs the agent, and writes each event
 // as a newline-delimited JSON object to stdout. It returns an exit code.
-func RunJSONStream(agentLoop *agent.AgentLoop, prompt string) int {
+func RunJSONStream(agentLoop *agent.Loop, prompt string) int {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

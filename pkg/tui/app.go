@@ -66,7 +66,7 @@ type App struct {
 
 	// Dependencies for keybinding actions.
 	cfg       *config.Config
-	agentLoop *agent.AgentLoop
+	agentLoop *agent.Loop
 
 	// initialPrompt, if set, is auto-submitted after the first window resize.
 	initialPrompt string
@@ -314,7 +314,7 @@ func (a *App) RestoreSession(sessionID string, msgs []ai.Message) {
 // access to external dependencies (agent loop, session manager, config).
 // The ctx should be the application lifecycle context so that long-running
 // commands like /compact are cancelled when the application exits.
-func (a *App) RegisterBuiltinCommands(ctx context.Context, agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg *config.Config, authStore *auth.Store, authResolver *auth.Resolver) {
+func (a *App) RegisterBuiltinCommands(ctx context.Context, agentLoop *agent.Loop, sessionMgr *session.Manager, cfg *config.Config, authStore *auth.Store, authResolver *auth.Resolver) {
 	// Store dependencies needed for keybinding actions.
 	a.ctx = ctx
 	a.cfg = cfg
@@ -464,7 +464,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.agentRunning = false
 		a.editor.SetState(editorIdle)
 		a.editor.Focus()
-		a.chat.HandleEvent(agent.AgentEvent{
+		a.chat.HandleEvent(agent.Event{
 			Type:  agent.EventAgentError,
 			Error: msg.Err,
 		})
@@ -751,7 +751,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case compactionErrorMsg:
-		a.chat.HandleEvent(agent.AgentEvent{
+		a.chat.HandleEvent(agent.Event{
 			Type:  agent.EventAgentError,
 			Error: msg.err,
 		})
@@ -878,9 +878,9 @@ func (a *App) View() string {
 // Public API for pushing events from the agent goroutine
 // ---------------------------------------------------------------------------
 
-// HandleAgentEvent converts an agent.AgentEvent into a Bubble Tea Cmd that
+// HandleAgentEvent converts an agent.Event into a Bubble Tea Cmd that
 // can be sent via Program.Send or returned from a Cmd function.
-func (a *App) HandleAgentEvent(event agent.AgentEvent) tea.Cmd {
+func (a *App) HandleAgentEvent(event agent.Event) tea.Cmd {
 	return func() tea.Msg {
 		return StreamEventMsg{Event: event}
 	}
@@ -1069,7 +1069,7 @@ func (a *App) layout() {
 }
 
 // handleStateTransition updates agentRunning and editor state based on events.
-func (a *App) handleStateTransition(ev agent.AgentEvent) {
+func (a *App) handleStateTransition(ev agent.Event) {
 	switch ev.Type {
 	case agent.EventAgentStart:
 		a.agentRunning = true

@@ -536,11 +536,11 @@ func TestIntegration_ManagerForwardEvent(t *testing.T) {
 	m.plugins = []*Process{p}
 
 	// Forward agent events through the manager.
-	m.ForwardEvent(agent.AgentEvent{
+	m.ForwardEvent(agent.Event{
 		Type:     agent.EventToolExecStart,
 		ToolName: "bash",
 	})
-	m.ForwardEvent(agent.AgentEvent{
+	m.ForwardEvent(agent.Event{
 		Type: agent.EventAgentStart,
 	})
 

@@ -225,7 +225,7 @@ func TestChatView_AddCompactionBlock(t *testing.T) {
 func TestChatView_HandleEvent_AssistantText(t *testing.T) {
 	cv := NewChatView()
 
-	changed := cv.HandleEvent(agent.AgentEvent{
+	changed := cv.HandleEvent(agent.Event{
 		Type:  agent.EventAssistantText,
 		Delta: "Hello ",
 	})
@@ -243,7 +243,7 @@ func TestChatView_HandleEvent_AssistantText(t *testing.T) {
 	}
 
 	// Second delta should append to same block.
-	cv.HandleEvent(agent.AgentEvent{
+	cv.HandleEvent(agent.Event{
 		Type:  agent.EventAssistantText,
 		Delta: "world",
 	})
@@ -263,7 +263,7 @@ func TestChatView_IdleGlamourRender(t *testing.T) {
 	cv.SetSize(80, 24)
 
 	// Stream some markdown content.
-	cv.HandleEvent(agent.AgentEvent{
+	cv.HandleEvent(agent.Event{
 		Type:  agent.EventAssistantText,
 		Delta: "**bold text**",
 	})
@@ -280,7 +280,7 @@ func TestChatView_IdleGlamourRender(t *testing.T) {
 	idleView := cv.View()
 
 	// New delta should restore streaming mode.
-	cv.HandleEvent(agent.AgentEvent{
+	cv.HandleEvent(agent.Event{
 		Type:  agent.EventAssistantText,
 		Delta: " more text",
 	})
@@ -317,7 +317,7 @@ func TestChatView_StreamingRenderSkipsGlamour(t *testing.T) {
 	cv.SetSize(80, 24)
 
 	// During streaming, renderAssistant should use plain text styling.
-	cv.HandleEvent(agent.AgentEvent{
+	cv.HandleEvent(agent.Event{
 		Type:  agent.EventAssistantText,
 		Delta: "**bold text**",
 	})
@@ -325,7 +325,7 @@ func TestChatView_StreamingRenderSkipsGlamour(t *testing.T) {
 	streamingView := cv.View()
 
 	// After TurnEnd, renderAssistant should use glamour markdown rendering.
-	cv.HandleEvent(agent.AgentEvent{Type: agent.EventTurnEnd})
+	cv.HandleEvent(agent.Event{Type: agent.EventTurnEnd})
 	cv.rebuildContent()
 	finalView := cv.View()
 
@@ -339,7 +339,7 @@ func TestChatView_StreamingRenderSkipsGlamour(t *testing.T) {
 func TestChatView_HandleEvent_Thinking(t *testing.T) {
 	cv := NewChatView()
 
-	cv.HandleEvent(agent.AgentEvent{
+	cv.HandleEvent(agent.Event{
 		Type:  agent.EventAssistantThinking,
 		Delta: "hmm ",
 	})
@@ -354,7 +354,7 @@ func TestChatView_HandleEvent_Thinking(t *testing.T) {
 	}
 
 	// Append more thinking.
-	cv.HandleEvent(agent.AgentEvent{
+	cv.HandleEvent(agent.Event{
 		Type:  agent.EventAssistantThinking,
 		Delta: "let me think",
 	})
@@ -366,7 +366,7 @@ func TestChatView_HandleEvent_Thinking(t *testing.T) {
 func TestChatView_HandleEvent_ToolExecStart(t *testing.T) {
 	cv := NewChatView()
 
-	cv.HandleEvent(agent.AgentEvent{
+	cv.HandleEvent(agent.Event{
 		Type:       agent.EventToolExecStart,
 		ToolCallID: "tc-1",
 		ToolName:   "read_file",
@@ -392,14 +392,14 @@ func TestChatView_HandleEvent_ToolExecEnd(t *testing.T) {
 	cv := NewChatView()
 
 	// Start tool.
-	cv.HandleEvent(agent.AgentEvent{
+	cv.HandleEvent(agent.Event{
 		Type:       agent.EventToolExecStart,
 		ToolCallID: "tc-1",
 		ToolName:   "read_file",
 	})
 
 	// End tool.
-	cv.HandleEvent(agent.AgentEvent{
+	cv.HandleEvent(agent.Event{
 		Type:       agent.EventToolExecEnd,
 		ToolCallID: "tc-1",
 		ToolResult: "file contents here",
@@ -417,12 +417,12 @@ func TestChatView_HandleEvent_ToolExecEnd(t *testing.T) {
 func TestChatView_HandleEvent_ToolExecEnd_Error(t *testing.T) {
 	cv := NewChatView()
 
-	cv.HandleEvent(agent.AgentEvent{
+	cv.HandleEvent(agent.Event{
 		Type:       agent.EventToolExecStart,
 		ToolCallID: "tc-1",
 		ToolName:   "bash",
 	})
-	cv.HandleEvent(agent.AgentEvent{
+	cv.HandleEvent(agent.Event{
 		Type:       agent.EventToolExecEnd,
 		ToolCallID: "tc-1",
 		ToolResult: "permission denied",
@@ -439,7 +439,7 @@ func TestChatView_HandleEvent_ToolExecEnd_NoMatchingStart(t *testing.T) {
 	cv := NewChatView()
 
 	// End without start - should not panic.
-	changed := cv.HandleEvent(agent.AgentEvent{
+	changed := cv.HandleEvent(agent.Event{
 		Type:       agent.EventToolExecEnd,
 		ToolCallID: "tc-orphan",
 		ToolResult: "result",
@@ -451,7 +451,7 @@ func TestChatView_HandleEvent_ToolExecEnd_NoMatchingStart(t *testing.T) {
 
 func TestChatView_HandleEvent_TurnEnd(t *testing.T) {
 	cv := NewChatView()
-	cv.HandleEvent(agent.AgentEvent{
+	cv.HandleEvent(agent.Event{
 		Type:  agent.EventAssistantText,
 		Delta: "hello",
 	})
@@ -459,7 +459,7 @@ func TestChatView_HandleEvent_TurnEnd(t *testing.T) {
 		t.Error("expected streaming=true during text deltas")
 	}
 
-	changed := cv.HandleEvent(agent.AgentEvent{Type: agent.EventTurnEnd})
+	changed := cv.HandleEvent(agent.Event{Type: agent.EventTurnEnd})
 	if !changed {
 		t.Error("TurnEnd should return true (clears streaming, triggers re-render)")
 	}
@@ -469,7 +469,7 @@ func TestChatView_HandleEvent_TurnEnd(t *testing.T) {
 
 	// TurnEnd doesn't force a new block — lastBlock still matches the
 	// existing assistant text block, so the next delta appends.
-	cv.HandleEvent(agent.AgentEvent{
+	cv.HandleEvent(agent.Event{
 		Type:  agent.EventAssistantText,
 		Delta: " world",
 	})
@@ -484,7 +484,7 @@ func TestChatView_HandleEvent_TurnEnd(t *testing.T) {
 func TestChatView_HandleEvent_Compaction(t *testing.T) {
 	cv := NewChatView()
 
-	changed := cv.HandleEvent(agent.AgentEvent{
+	changed := cv.HandleEvent(agent.Event{
 		Type:  agent.EventCompaction,
 		Delta: "summary of conversation",
 	})
@@ -506,7 +506,7 @@ func TestChatView_HandleEvent_Compaction(t *testing.T) {
 func TestChatView_HandleEvent_AgentError(t *testing.T) {
 	cv := NewChatView()
 
-	changed := cv.HandleEvent(agent.AgentEvent{
+	changed := cv.HandleEvent(agent.Event{
 		Type:  agent.EventAgentError,
 		Error: errors.New("something went wrong"),
 	})
@@ -526,7 +526,7 @@ func TestChatView_HandleEvent_AgentError_Deduplicate(t *testing.T) {
 	cv := NewChatView()
 
 	// First error should be added.
-	changed1 := cv.HandleEvent(agent.AgentEvent{
+	changed1 := cv.HandleEvent(agent.Event{
 		Type:  agent.EventAgentError,
 		Error: errors.New("something went wrong"),
 	})
@@ -538,7 +538,7 @@ func TestChatView_HandleEvent_AgentError_Deduplicate(t *testing.T) {
 	}
 
 	// Identical error should be deduplicated.
-	changed2 := cv.HandleEvent(agent.AgentEvent{
+	changed2 := cv.HandleEvent(agent.Event{
 		Type:  agent.EventAgentError,
 		Error: errors.New("something went wrong"),
 	})
@@ -550,7 +550,7 @@ func TestChatView_HandleEvent_AgentError_Deduplicate(t *testing.T) {
 	}
 
 	// Different error should still be added.
-	changed3 := cv.HandleEvent(agent.AgentEvent{
+	changed3 := cv.HandleEvent(agent.Event{
 		Type:  agent.EventAgentError,
 		Error: errors.New("different error"),
 	})
@@ -565,7 +565,7 @@ func TestChatView_HandleEvent_AgentError_Deduplicate(t *testing.T) {
 func TestChatView_HandleEvent_AgentError_Nil(t *testing.T) {
 	cv := NewChatView()
 
-	cv.HandleEvent(agent.AgentEvent{
+	cv.HandleEvent(agent.Event{
 		Type:  agent.EventAgentError,
 		Error: nil,
 	})
@@ -579,12 +579,12 @@ func TestChatView_HandleEvent_AgentEnd_ClearsStreaming(t *testing.T) {
 	cv.SetSize(80, 24)
 
 	// Simulate streaming text without a TurnEnd (e.g. error during stream).
-	cv.HandleEvent(agent.AgentEvent{Type: agent.EventAssistantText, Delta: "partial"})
+	cv.HandleEvent(agent.Event{Type: agent.EventAssistantText, Delta: "partial"})
 	if !cv.blocks[0].streaming {
 		t.Fatal("precondition: block should be streaming")
 	}
 
-	changed := cv.HandleEvent(agent.AgentEvent{Type: agent.EventAgentEnd})
+	changed := cv.HandleEvent(agent.Event{Type: agent.EventAgentEnd})
 	if !changed {
 		t.Error("AgentEnd should return true when streaming blocks are finalized")
 	}
@@ -599,11 +599,11 @@ func TestChatView_HandleEvent_AgentEnd_ClearsStreaming(t *testing.T) {
 func TestChatView_HandleEvent_AgentEnd_NoopAfterTurnEnd(t *testing.T) {
 	cv := NewChatView()
 
-	cv.HandleEvent(agent.AgentEvent{Type: agent.EventAssistantText, Delta: "hello"})
-	cv.HandleEvent(agent.AgentEvent{Type: agent.EventTurnEnd})
+	cv.HandleEvent(agent.Event{Type: agent.EventAssistantText, Delta: "hello"})
+	cv.HandleEvent(agent.Event{Type: agent.EventTurnEnd})
 
 	// AgentEnd after TurnEnd should be a no-op (streaming already cleared).
-	changed := cv.HandleEvent(agent.AgentEvent{Type: agent.EventAgentEnd})
+	changed := cv.HandleEvent(agent.Event{Type: agent.EventAgentEnd})
 	if changed {
 		t.Error("AgentEnd should return false when no streaming blocks remain")
 	}
@@ -614,8 +614,8 @@ func TestChatView_HandleEvent_AgentEnd_GlamourAfterError(t *testing.T) {
 	cv.SetSize(80, 24)
 
 	// Stream markdown text, then error without TurnEnd.
-	cv.HandleEvent(agent.AgentEvent{Type: agent.EventAssistantText, Delta: "**bold text**"})
-	cv.HandleEvent(agent.AgentEvent{
+	cv.HandleEvent(agent.Event{Type: agent.EventAssistantText, Delta: "**bold text**"})
+	cv.HandleEvent(agent.Event{
 		Type:  agent.EventAgentError,
 		Error: errors.New("stream failed"),
 	})
@@ -625,7 +625,7 @@ func TestChatView_HandleEvent_AgentEnd_GlamourAfterError(t *testing.T) {
 	streamingView := cv.View()
 
 	// AgentEnd finalizes streaming blocks for glamour.
-	cv.HandleEvent(agent.AgentEvent{Type: agent.EventAgentEnd})
+	cv.HandleEvent(agent.Event{Type: agent.EventAgentEnd})
 	cv.rebuildContent()
 	finalView := cv.View()
 
@@ -638,7 +638,7 @@ func TestChatView_HandleEvent_AgentEnd_GlamourAfterError(t *testing.T) {
 func TestChatView_HandleEvent_UnknownType(t *testing.T) {
 	cv := NewChatView()
 
-	changed := cv.HandleEvent(agent.AgentEvent{
+	changed := cv.HandleEvent(agent.Event{
 		Type: agent.EventUsageUpdate,
 	})
 	if changed {
@@ -662,7 +662,7 @@ func TestChatView_HandleEvent_SetsDirty(t *testing.T) {
 	}
 
 	// Text delta sets dirty.
-	cv.HandleEvent(agent.AgentEvent{
+	cv.HandleEvent(agent.Event{
 		Type:  agent.EventAssistantText,
 		Delta: "hello",
 	})
@@ -677,7 +677,7 @@ func TestChatView_HandleEvent_SetsDirty(t *testing.T) {
 	}
 
 	// Thinking sets dirty.
-	cv.HandleEvent(agent.AgentEvent{
+	cv.HandleEvent(agent.Event{
 		Type:  agent.EventAssistantThinking,
 		Delta: "hmm",
 	})
@@ -687,14 +687,14 @@ func TestChatView_HandleEvent_SetsDirty(t *testing.T) {
 	cv.rebuildContent()
 
 	// TurnEnd sets dirty.
-	cv.HandleEvent(agent.AgentEvent{Type: agent.EventTurnEnd})
+	cv.HandleEvent(agent.Event{Type: agent.EventTurnEnd})
 	if !cv.dirty {
 		t.Error("expected dirty=true after EventTurnEnd")
 	}
 	cv.rebuildContent()
 
 	// Unknown event does NOT set dirty.
-	cv.HandleEvent(agent.AgentEvent{Type: agent.EventUsageUpdate})
+	cv.HandleEvent(agent.Event{Type: agent.EventUsageUpdate})
 	if cv.dirty {
 		t.Error("expected dirty=false after unknown event type")
 	}
@@ -706,7 +706,7 @@ func TestChatView_HandleEvent_SetsDirty(t *testing.T) {
 
 func TestChatView_ToggleThinking(t *testing.T) {
 	cv := NewChatView()
-	cv.HandleEvent(agent.AgentEvent{
+	cv.HandleEvent(agent.Event{
 		Type:  agent.EventAssistantThinking,
 		Delta: "thinking...",
 	})
@@ -734,12 +734,12 @@ func TestChatView_ToggleThinking_NoThinkingBlock(t *testing.T) {
 
 func TestChatView_ToggleToolResult(t *testing.T) {
 	cv := NewChatView()
-	cv.HandleEvent(agent.AgentEvent{
+	cv.HandleEvent(agent.Event{
 		Type:       agent.EventToolExecStart,
 		ToolCallID: "tc-1",
 		ToolName:   "bash",
 	})
-	cv.HandleEvent(agent.AgentEvent{
+	cv.HandleEvent(agent.Event{
 		Type:       agent.EventToolExecEnd,
 		ToolCallID: "tc-1",
 		ToolResult: "output",
@@ -756,7 +756,7 @@ func TestChatView_ToggleToolResult(t *testing.T) {
 
 func TestChatView_ToggleToolResult_NoResult(t *testing.T) {
 	cv := NewChatView()
-	cv.HandleEvent(agent.AgentEvent{
+	cv.HandleEvent(agent.Event{
 		Type:       agent.EventToolExecStart,
 		ToolCallID: "tc-1",
 		ToolName:   "bash",
@@ -809,12 +809,12 @@ func TestChatView_MultipleToolCalls(t *testing.T) {
 	cv := NewChatView()
 
 	// Start two tools.
-	cv.HandleEvent(agent.AgentEvent{Type: agent.EventToolExecStart, ToolCallID: "tc-1", ToolName: "read"})
-	cv.HandleEvent(agent.AgentEvent{Type: agent.EventToolExecStart, ToolCallID: "tc-2", ToolName: "write"})
+	cv.HandleEvent(agent.Event{Type: agent.EventToolExecStart, ToolCallID: "tc-1", ToolName: "read"})
+	cv.HandleEvent(agent.Event{Type: agent.EventToolExecStart, ToolCallID: "tc-2", ToolName: "write"})
 
 	// End second tool first (out of order).
-	cv.HandleEvent(agent.AgentEvent{Type: agent.EventToolExecEnd, ToolCallID: "tc-2", ToolResult: "written"})
-	cv.HandleEvent(agent.AgentEvent{Type: agent.EventToolExecEnd, ToolCallID: "tc-1", ToolResult: "content"})
+	cv.HandleEvent(agent.Event{Type: agent.EventToolExecEnd, ToolCallID: "tc-2", ToolResult: "written"})
+	cv.HandleEvent(agent.Event{Type: agent.EventToolExecEnd, ToolCallID: "tc-1", ToolResult: "content"})
 
 	if cv.blocks[0].toolResult != "content" {
 		t.Errorf("tc-1 should have result 'content', got %q", cv.blocks[0].toolResult)
@@ -827,8 +827,8 @@ func TestChatView_MultipleToolCalls(t *testing.T) {
 func TestChatView_TextThenTool(t *testing.T) {
 	cv := NewChatView()
 
-	cv.HandleEvent(agent.AgentEvent{Type: agent.EventAssistantText, Delta: "Let me check"})
-	cv.HandleEvent(agent.AgentEvent{Type: agent.EventToolExecStart, ToolCallID: "tc-1", ToolName: "bash"})
+	cv.HandleEvent(agent.Event{Type: agent.EventAssistantText, Delta: "Let me check"})
+	cv.HandleEvent(agent.Event{Type: agent.EventToolExecStart, ToolCallID: "tc-1", ToolName: "bash"})
 
 	if len(cv.blocks) != 2 {
 		t.Fatalf("expected 2 blocks, got %d", len(cv.blocks))
@@ -875,22 +875,22 @@ func TestChatView_SetSize_ZeroDimensions(t *testing.T) {
 func TestChatView_SetSize_1x1_WithContent(t *testing.T) {
 	cv := NewChatView()
 	cv.AddUserMessage("hello world this is a long message")
-	cv.HandleEvent(agent.AgentEvent{
+	cv.HandleEvent(agent.Event{
 		Type:  agent.EventAssistantText,
 		Delta: "Here is a response with some text",
 	})
-	cv.HandleEvent(agent.AgentEvent{
+	cv.HandleEvent(agent.Event{
 		Type:       agent.EventToolExecStart,
 		ToolCallID: "tc-1",
 		ToolName:   "bash",
 		ToolArgs:   map[string]any{"command": "ls -la"},
 	})
-	cv.HandleEvent(agent.AgentEvent{
+	cv.HandleEvent(agent.Event{
 		Type:       agent.EventToolExecEnd,
 		ToolCallID: "tc-1",
 		ToolResult: "file1\nfile2\nfile3",
 	})
-	cv.HandleEvent(agent.AgentEvent{
+	cv.HandleEvent(agent.Event{
 		Type:  agent.EventAgentError,
 		Error: errors.New("something broke"),
 	})
@@ -907,7 +907,7 @@ func TestChatView_SetSize_1x1_WithContent(t *testing.T) {
 func TestChatView_RapidResize(t *testing.T) {
 	cv := NewChatView()
 	cv.AddUserMessage("hello")
-	cv.HandleEvent(agent.AgentEvent{
+	cv.HandleEvent(agent.Event{
 		Type:  agent.EventAssistantText,
 		Delta: "world",
 	})
@@ -975,7 +975,7 @@ func TestChatView_ErrorMessageWraps(t *testing.T) {
 	cv := NewChatView()
 	cv.SetSize(40, 20)
 
-	cv.HandleEvent(agent.AgentEvent{
+	cv.HandleEvent(agent.Event{
 		Type:  agent.EventAgentError,
 		Error: errors.New(strings.Repeat("fail ", 30)),
 	})
@@ -1050,7 +1050,7 @@ func TestChatView_HasNewBelow_AtBottom(t *testing.T) {
 	cv.SetSize(80, 24)
 
 	// Initially at bottom — hasNewBelow should be false.
-	cv.HandleEvent(agent.AgentEvent{Type: agent.EventAssistantText, Delta: "hello"})
+	cv.HandleEvent(agent.Event{Type: agent.EventAssistantText, Delta: "hello"})
 	cv.rebuildContent()
 	if cv.hasNewBelow {
 		t.Error("expected hasNewBelow=false when viewport is at bottom")
@@ -1063,7 +1063,7 @@ func TestChatView_HasNewBelow_ScrolledUp(t *testing.T) {
 
 	// Fill content beyond viewport height.
 	for i := 0; i < 20; i++ {
-		cv.HandleEvent(agent.AgentEvent{
+		cv.HandleEvent(agent.Event{
 			Type:  agent.EventAssistantText,
 			Delta: fmt.Sprintf("line %d\n", i),
 		})
@@ -1078,7 +1078,7 @@ func TestChatView_HasNewBelow_ScrolledUp(t *testing.T) {
 	cv.viewport.YOffset = 0
 
 	// New content arrives.
-	cv.HandleEvent(agent.AgentEvent{
+	cv.HandleEvent(agent.Event{
 		Type:  agent.EventAssistantText,
 		Delta: "new content\n",
 	})
@@ -1100,14 +1100,14 @@ func TestChatView_HasNewBelow_ClearedOnScrollToBottom(t *testing.T) {
 
 	// Fill content and scroll up.
 	for i := 0; i < 20; i++ {
-		cv.HandleEvent(agent.AgentEvent{
+		cv.HandleEvent(agent.Event{
 			Type:  agent.EventAssistantText,
 			Delta: fmt.Sprintf("line %d\n", i),
 		})
 	}
 	cv.rebuildContent()
 	cv.viewport.YOffset = 0
-	cv.HandleEvent(agent.AgentEvent{Type: agent.EventAssistantText, Delta: "more\n"})
+	cv.HandleEvent(agent.Event{Type: agent.EventAssistantText, Delta: "more\n"})
 	cv.rebuildContent()
 	if !cv.hasNewBelow {
 		t.Fatal("precondition: hasNewBelow should be true")
@@ -1139,7 +1139,7 @@ func TestChatView_IncrementalRender_ParagraphBoundary(t *testing.T) {
 	// Stream text with a paragraph boundary. During streaming, no
 	// incremental glamour cache is built — text stays plain to avoid
 	// mid-stream height jumps.
-	cv.HandleEvent(agent.AgentEvent{
+	cv.HandleEvent(agent.Event{
 		Type:  agent.EventAssistantText,
 		Delta: "First paragraph.\n\nSecond paragraph start",
 	})
@@ -1159,7 +1159,7 @@ func TestChatView_IncrementalRender_NoBoundary(t *testing.T) {
 	cv.SetSize(80, 24)
 
 	// Stream text without paragraph boundary.
-	cv.HandleEvent(agent.AgentEvent{
+	cv.HandleEvent(agent.Event{
 		Type:  agent.EventAssistantText,
 		Delta: "Just one paragraph of text",
 	})
@@ -1181,7 +1181,7 @@ func TestChatView_IncrementalRender_MultipleParagraphs(t *testing.T) {
 	// During streaming, no incremental glamour cache is built to avoid
 	// mid-stream height jumps. All text renders as plain word-wrapped text.
 
-	cv.HandleEvent(agent.AgentEvent{
+	cv.HandleEvent(agent.Event{
 		Type:  agent.EventAssistantText,
 		Delta: "Para one.",
 	})
@@ -1190,7 +1190,7 @@ func TestChatView_IncrementalRender_MultipleParagraphs(t *testing.T) {
 		t.Error("no boundary yet, prefixTextLen should be 0")
 	}
 
-	cv.HandleEvent(agent.AgentEvent{
+	cv.HandleEvent(agent.Event{
 		Type:  agent.EventAssistantText,
 		Delta: "\n\nPara two.",
 	})
@@ -1199,7 +1199,7 @@ func TestChatView_IncrementalRender_MultipleParagraphs(t *testing.T) {
 		t.Errorf("expected prefixTextLen=0 during streaming, got %d", cv.blocks[0].prefixTextLen)
 	}
 
-	cv.HandleEvent(agent.AgentEvent{
+	cv.HandleEvent(agent.Event{
 		Type:  agent.EventAssistantText,
 		Delta: "\n\nPara three.",
 	})
@@ -1213,7 +1213,7 @@ func TestChatView_IncrementalRender_RefreshedOnResize(t *testing.T) {
 	cv := NewChatView()
 	cv.SetSize(80, 24)
 
-	cv.HandleEvent(agent.AgentEvent{
+	cv.HandleEvent(agent.Event{
 		Type:  agent.EventAssistantText,
 		Delta: "First para.\n\nSecond",
 	})
@@ -1244,13 +1244,13 @@ func TestChatView_IncrementalRender_ClearedOnTurnEnd(t *testing.T) {
 	cv.SetSize(80, 24)
 
 	// Stream text, then simulate idle timeout to populate glamour prefix.
-	cv.HandleEvent(agent.AgentEvent{
+	cv.HandleEvent(agent.Event{
 		Type:  agent.EventAssistantText,
 		Delta: "Para one.\n\nPara two.",
 	})
 	cv.idleGlamourRender()
 	// Resume streaming to snapshot the idle glamour as prefix.
-	cv.HandleEvent(agent.AgentEvent{
+	cv.HandleEvent(agent.Event{
 		Type:  agent.EventAssistantText,
 		Delta: " more",
 	})
@@ -1260,7 +1260,7 @@ func TestChatView_IncrementalRender_ClearedOnTurnEnd(t *testing.T) {
 	}
 
 	// TurnEnd clears streaming and incremental cache.
-	cv.HandleEvent(agent.AgentEvent{Type: agent.EventTurnEnd})
+	cv.HandleEvent(agent.Event{Type: agent.EventTurnEnd})
 	if cv.blocks[0].glamourPrefix != "" {
 		t.Error("expected empty glamourPrefix after TurnEnd")
 	}
@@ -1274,13 +1274,13 @@ func TestChatView_IncrementalRender_ClearedOnAgentEnd(t *testing.T) {
 	cv.SetSize(80, 24)
 
 	// Stream text, then simulate idle timeout to populate glamour prefix.
-	cv.HandleEvent(agent.AgentEvent{
+	cv.HandleEvent(agent.Event{
 		Type:  agent.EventAssistantText,
 		Delta: "Para one.\n\nPara two.",
 	})
 	cv.idleGlamourRender()
 	// Resume streaming to snapshot the idle glamour as prefix.
-	cv.HandleEvent(agent.AgentEvent{
+	cv.HandleEvent(agent.Event{
 		Type:  agent.EventAssistantText,
 		Delta: " more",
 	})
@@ -1290,7 +1290,7 @@ func TestChatView_IncrementalRender_ClearedOnAgentEnd(t *testing.T) {
 	}
 
 	// AgentEnd clears streaming and incremental cache.
-	cv.HandleEvent(agent.AgentEvent{Type: agent.EventAgentEnd})
+	cv.HandleEvent(agent.Event{Type: agent.EventAgentEnd})
 	if cv.blocks[0].glamourPrefix != "" {
 		t.Error("expected empty glamourPrefix after AgentEnd")
 	}
@@ -1304,7 +1304,7 @@ func TestChatView_IncrementalRender_IdleToStreamingSnapshot(t *testing.T) {
 	cv.SetSize(80, 24)
 
 	// Stream some text.
-	cv.HandleEvent(agent.AgentEvent{
+	cv.HandleEvent(agent.Event{
 		Type:  agent.EventAssistantText,
 		Delta: "**bold paragraph**",
 	})
@@ -1316,7 +1316,7 @@ func TestChatView_IncrementalRender_IdleToStreamingSnapshot(t *testing.T) {
 	}
 
 	// Resume streaming — should snapshot the glamour prefix.
-	cv.HandleEvent(agent.AgentEvent{
+	cv.HandleEvent(agent.Event{
 		Type:  agent.EventAssistantText,
 		Delta: " more text",
 	})
@@ -1339,7 +1339,7 @@ func TestChatView_IncrementalRender_StyledOutput(t *testing.T) {
 	cv.SetSize(80, 24)
 
 	// Stream text with a heading in a completed paragraph.
-	cv.HandleEvent(agent.AgentEvent{
+	cv.HandleEvent(agent.Event{
 		Type:  agent.EventAssistantText,
 		Delta: "# Heading\n\nIncomplete tail",
 	})

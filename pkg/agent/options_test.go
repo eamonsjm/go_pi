@@ -14,7 +14,7 @@ import (
 func TestWithLoggerNilPreservesDefault(t *testing.T) {
 	provider := &mockProvider{streamFn: textResponse("ok")}
 	reg := tools.NewRegistry()
-	a := NewAgentLoop(provider, reg, WithLogger(nil))
+	a := NewLoop(provider, reg, WithLogger(nil))
 
 	// When nil is passed, the constructor should keep log.Default().
 	if a.logger != log.Default() {
@@ -38,7 +38,7 @@ func TestWithLoggerCustom(t *testing.T) {
 	// Actually, let's trigger the "steer message dropped" path — fill the
 	// steer channel, then send another steer.
 	provider2 := &mockProvider{streamFn: textResponse("ok")}
-	a := NewAgentLoop(provider2, reg, WithLogger(custom))
+	a := NewLoop(provider2, reg, WithLogger(custom))
 
 	// Fill the steer channel (capacity 2).
 	a.Steer("fill-1")
@@ -70,7 +70,7 @@ func TestWithLoggerCustomDuringPrompt(t *testing.T) {
 	}
 	reg := tools.NewRegistry()
 	reg.Register(&mockTool{name: "log_tool", result: "ok"})
-	a := NewAgentLoop(provider, reg, WithLogger(custom))
+	a := NewLoop(provider, reg, WithLogger(custom))
 
 	ch := a.Events()
 	errCh := make(chan error, 1)
@@ -118,7 +118,7 @@ func TestWithWorkingDirPassedToTools(t *testing.T) {
 	reg.Register(captureTool)
 
 	wantDir := "/tmp/test-workdir"
-	a := NewAgentLoop(provider, reg, WithWorkingDir(wantDir))
+	a := NewLoop(provider, reg, WithWorkingDir(wantDir))
 
 	ch := a.Events()
 	errCh := make(chan error, 1)
@@ -161,7 +161,7 @@ func TestWithWorkingDirEmptyDoesNotSetContext(t *testing.T) {
 	reg.Register(captureTool)
 
 	// No WithWorkingDir option — workingDir stays "".
-	a := NewAgentLoop(provider, reg)
+	a := NewLoop(provider, reg)
 
 	ch := a.Events()
 	errCh := make(chan error, 1)

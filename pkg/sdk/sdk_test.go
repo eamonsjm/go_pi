@@ -48,8 +48,8 @@ func TestNewSessionWithProvider(t *testing.T) {
 		t.Fatal("expected non-empty session ID")
 	}
 
-	if s.AgentLoop() == nil {
-		t.Fatal("expected non-nil AgentLoop")
+	if s.Loop() == nil {
+		t.Fatal("expected non-nil Loop")
 	}
 
 	if s.Registry() == nil {
@@ -72,7 +72,7 @@ func TestSessionPromptAndEvents(t *testing.T) {
 	ctx := context.Background()
 	events := s.Events()
 
-	var collected []agent.AgentEvent
+	var collected []agent.Event
 	done := make(chan error, 1)
 	go func() {
 		done <- s.Prompt(ctx, "What is the meaning of life?")
@@ -527,7 +527,7 @@ func TestSteerInjectsMidConversation(t *testing.T) {
 		errCh <- s.Prompt(context.Background(), "do stuff")
 	}()
 
-	var collected []agent.AgentEvent
+	var collected []agent.Event
 	for ev := range events {
 		collected = append(collected, ev)
 	}
@@ -607,7 +607,7 @@ func TestFollowUpQueuesAdditionalMessage(t *testing.T) {
 		errCh <- s.Prompt(context.Background(), "initial question")
 	}()
 
-	var collected []agent.AgentEvent
+	var collected []agent.Event
 	for ev := range events {
 		collected = append(collected, ev)
 	}
@@ -842,8 +842,8 @@ func TestWithContextWindowPassedToAgentLoop(t *testing.T) {
 	defer s.Close()
 
 	// Verify session was created successfully — the option was accepted.
-	if s.AgentLoop() == nil {
-		t.Fatal("expected non-nil AgentLoop")
+	if s.Loop() == nil {
+		t.Fatal("expected non-nil Loop")
 	}
 }
 

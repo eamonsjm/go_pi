@@ -448,7 +448,7 @@ func TestApp_View_ModelSelectorOverlay(t *testing.T) {
 
 func TestApp_HandleAgentEvent(t *testing.T) {
 	app := NewApp()
-	cmd := app.HandleAgentEvent(agent.AgentEvent{
+	cmd := app.HandleAgentEvent(agent.Event{
 		Type:  agent.EventAssistantText,
 		Delta: "hello",
 	})
@@ -510,7 +510,7 @@ func TestApp_Layout_MinChatHeight(t *testing.T) {
 
 func TestApp_HandleStateTransition_AgentStart(t *testing.T) {
 	app := NewApp()
-	app.handleStateTransition(agent.AgentEvent{Type: agent.EventAgentStart})
+	app.handleStateTransition(agent.Event{Type: agent.EventAgentStart})
 
 	if !app.agentRunning {
 		t.Error("expected agentRunning=true")
@@ -525,7 +525,7 @@ func TestApp_HandleStateTransition_AgentEnd(t *testing.T) {
 	app.agentRunning = true
 	app.editor.SetState(editorRunning)
 
-	app.handleStateTransition(agent.AgentEvent{Type: agent.EventAgentEnd})
+	app.handleStateTransition(agent.Event{Type: agent.EventAgentEnd})
 
 	if app.agentRunning {
 		t.Error("expected agentRunning=false")
@@ -538,7 +538,7 @@ func TestApp_HandleStateTransition_AgentEnd(t *testing.T) {
 func TestApp_HandleStateTransition_Thinking(t *testing.T) {
 	app := NewApp()
 	app.agentRunning = true
-	app.handleStateTransition(agent.AgentEvent{Type: agent.EventAssistantThinking})
+	app.handleStateTransition(agent.Event{Type: agent.EventAssistantThinking})
 	if app.editor.state != editorThinking {
 		t.Error("expected editor thinking state")
 	}
@@ -547,8 +547,8 @@ func TestApp_HandleStateTransition_Thinking(t *testing.T) {
 func TestApp_HandleStateTransition_TextAfterThinking(t *testing.T) {
 	app := NewApp()
 	app.agentRunning = true
-	app.handleStateTransition(agent.AgentEvent{Type: agent.EventAssistantThinking})
-	app.handleStateTransition(agent.AgentEvent{Type: agent.EventAssistantText})
+	app.handleStateTransition(agent.Event{Type: agent.EventAssistantThinking})
+	app.handleStateTransition(agent.Event{Type: agent.EventAssistantText})
 	if app.editor.state != editorRunning {
 		t.Error("expected editor running state after text")
 	}
@@ -557,7 +557,7 @@ func TestApp_HandleStateTransition_TextAfterThinking(t *testing.T) {
 func TestApp_HandleStateTransition_UsageUpdate(t *testing.T) {
 	app := NewApp()
 	usage := &ai.Usage{InputTokens: 1000, OutputTokens: 500}
-	app.handleStateTransition(agent.AgentEvent{
+	app.handleStateTransition(agent.Event{
 		Type:  agent.EventUsageUpdate,
 		Usage: usage,
 	})
@@ -569,7 +569,7 @@ func TestApp_HandleStateTransition_UsageUpdate(t *testing.T) {
 func TestApp_HandleStateTransition_UsageUpdate_NilUsage(t *testing.T) {
 	app := NewApp()
 	// Should not panic with nil Usage.
-	app.handleStateTransition(agent.AgentEvent{
+	app.handleStateTransition(agent.Event{
 		Type:  agent.EventUsageUpdate,
 		Usage: nil,
 	})
@@ -608,7 +608,7 @@ func TestApp_Update_StreamEventMsg(t *testing.T) {
 	app.agentRunning = true
 
 	app.Update(StreamEventMsg{
-		Event: agent.AgentEvent{
+		Event: agent.Event{
 			Type:  agent.EventAssistantText,
 			Delta: "hello from agent",
 		},
@@ -628,14 +628,14 @@ func TestApp_Update_StreamEventMsg_IncrementsGen(t *testing.T) {
 
 	// Each text delta should increment deltaGen.
 	app.Update(StreamEventMsg{
-		Event: agent.AgentEvent{Type: agent.EventAssistantText, Delta: "a"},
+		Event: agent.Event{Type: agent.EventAssistantText, Delta: "a"},
 	})
 	if app.deltaGen != 1 {
 		t.Errorf("expected deltaGen=1 after first delta, got %d", app.deltaGen)
 	}
 
 	app.Update(StreamEventMsg{
-		Event: agent.AgentEvent{Type: agent.EventAssistantText, Delta: "b"},
+		Event: agent.Event{Type: agent.EventAssistantText, Delta: "b"},
 	})
 	if app.deltaGen != 2 {
 		t.Errorf("expected deltaGen=2 after second delta, got %d", app.deltaGen)
@@ -643,7 +643,7 @@ func TestApp_Update_StreamEventMsg_IncrementsGen(t *testing.T) {
 
 	// Non-text events should not increment deltaGen.
 	app.Update(StreamEventMsg{
-		Event: agent.AgentEvent{Type: agent.EventAssistantThinking, Delta: "hmm"},
+		Event: agent.Event{Type: agent.EventAssistantThinking, Delta: "hmm"},
 	})
 	if app.deltaGen != 2 {
 		t.Errorf("expected deltaGen=2 after thinking event, got %d", app.deltaGen)
@@ -657,7 +657,7 @@ func TestApp_Update_IdleRenderMsg_MatchingGen(t *testing.T) {
 
 	// Send a text delta to create a streaming block.
 	app.Update(StreamEventMsg{
-		Event: agent.AgentEvent{Type: agent.EventAssistantText, Delta: "**bold**"},
+		Event: agent.Event{Type: agent.EventAssistantText, Delta: "**bold**"},
 	})
 	// Force render so we can compare.
 	app.Update(renderTickMsg{})
@@ -679,13 +679,13 @@ func TestApp_Update_IdleRenderMsg_StaleGen(t *testing.T) {
 
 	// Send a text delta.
 	app.Update(StreamEventMsg{
-		Event: agent.AgentEvent{Type: agent.EventAssistantText, Delta: "text"},
+		Event: agent.Event{Type: agent.EventAssistantText, Delta: "text"},
 	})
 	staleGen := app.deltaGen
 
 	// Send another delta — gen advances.
 	app.Update(StreamEventMsg{
-		Event: agent.AgentEvent{Type: agent.EventAssistantText, Delta: " more"},
+		Event: agent.Event{Type: agent.EventAssistantText, Delta: " more"},
 	})
 
 	// Idle render with stale gen should be ignored.
@@ -713,7 +713,7 @@ func TestApp_DeltaCoalescing_MultipleTextDeltas(t *testing.T) {
 	deltas := []string{"Hello", " ", "world", "! ", "How are you?"}
 	for _, d := range deltas {
 		app.Update(StreamEventMsg{
-			Event: agent.AgentEvent{
+			Event: agent.Event{
 				Type:  agent.EventAssistantText,
 				Delta: d,
 			},
@@ -748,7 +748,7 @@ func TestApp_DeltaCoalescing_MultipleThinkingDeltas(t *testing.T) {
 	deltas := []string{"Let me ", "think about ", "this..."}
 	for _, d := range deltas {
 		app.Update(StreamEventMsg{
-			Event: agent.AgentEvent{
+			Event: agent.Event{
 				Type:  agent.EventAssistantThinking,
 				Delta: d,
 			},
@@ -775,7 +775,7 @@ func TestApp_DeltaCoalescing_NoDeltaLoss(t *testing.T) {
 	const n = 100
 	for i := 0; i < n; i++ {
 		app.Update(StreamEventMsg{
-			Event: agent.AgentEvent{
+			Event: agent.Event{
 				Type:  agent.EventAssistantText,
 				Delta: "x",
 			},
@@ -801,7 +801,7 @@ func TestApp_DeltaCoalescing_DirtyFlagLifecycle(t *testing.T) {
 
 	// First delta triggers immediate rebuild, clearing dirty.
 	app.Update(StreamEventMsg{
-		Event: agent.AgentEvent{Type: agent.EventAssistantText, Delta: "a"},
+		Event: agent.Event{Type: agent.EventAssistantText, Delta: "a"},
 	})
 	if app.chat.dirty {
 		t.Error("expected dirty=false — immediate rebuild clears it")
@@ -809,7 +809,7 @@ func TestApp_DeltaCoalescing_DirtyFlagLifecycle(t *testing.T) {
 
 	// More deltas also rebuild immediately.
 	app.Update(StreamEventMsg{
-		Event: agent.AgentEvent{Type: agent.EventAssistantText, Delta: "b"},
+		Event: agent.Event{Type: agent.EventAssistantText, Delta: "b"},
 	})
 	if app.chat.dirty {
 		t.Error("expected dirty=false after second delta")
@@ -829,7 +829,7 @@ func TestApp_DeltaCoalescing_DirtyFlagLifecycle(t *testing.T) {
 
 	// New delta after tick: rebuilt immediately, dirty cleared.
 	app.Update(StreamEventMsg{
-		Event: agent.AgentEvent{Type: agent.EventAssistantText, Delta: "c"},
+		Event: agent.Event{Type: agent.EventAssistantText, Delta: "c"},
 	})
 	if app.chat.dirty {
 		t.Error("expected dirty=false after new delta (immediate rebuild)")
@@ -842,7 +842,7 @@ func TestApp_DeltaCoalescing_AgentDoneFlushesDirty(t *testing.T) {
 
 	// Send deltas — immediate rebuild clears dirty.
 	app.Update(StreamEventMsg{
-		Event: agent.AgentEvent{Type: agent.EventAssistantText, Delta: "final"},
+		Event: agent.Event{Type: agent.EventAssistantText, Delta: "final"},
 	})
 	if app.chat.dirty {
 		t.Fatal("expected dirty=false — immediate rebuild already flushed")
@@ -865,23 +865,23 @@ func TestApp_DeltaCoalescing_MixedEventTypes(t *testing.T) {
 
 	// Thinking deltas.
 	app.Update(StreamEventMsg{
-		Event: agent.AgentEvent{Type: agent.EventAssistantThinking, Delta: "hmm "},
+		Event: agent.Event{Type: agent.EventAssistantThinking, Delta: "hmm "},
 	})
 	app.Update(StreamEventMsg{
-		Event: agent.AgentEvent{Type: agent.EventAssistantThinking, Delta: "interesting"},
+		Event: agent.Event{Type: agent.EventAssistantThinking, Delta: "interesting"},
 	})
 
 	// Text deltas.
 	app.Update(StreamEventMsg{
-		Event: agent.AgentEvent{Type: agent.EventAssistantText, Delta: "Here's "},
+		Event: agent.Event{Type: agent.EventAssistantText, Delta: "Here's "},
 	})
 	app.Update(StreamEventMsg{
-		Event: agent.AgentEvent{Type: agent.EventAssistantText, Delta: "the answer"},
+		Event: agent.Event{Type: agent.EventAssistantText, Delta: "the answer"},
 	})
 
 	// Tool event.
 	app.Update(StreamEventMsg{
-		Event: agent.AgentEvent{Type: agent.EventToolExecStart, ToolCallID: "tc-1", ToolName: "bash"},
+		Event: agent.Event{Type: agent.EventToolExecStart, ToolCallID: "tc-1", ToolName: "bash"},
 	})
 
 	// All should accumulate correctly.
@@ -937,7 +937,7 @@ func TestApp_DeltaCoalescing_StreamEventImmediateRebuild(t *testing.T) {
 	// Text delta triggers immediate rebuildContent so the viewport is
 	// updated before the next View() call — eliminating chunky rendering.
 	app.Update(StreamEventMsg{
-		Event: agent.AgentEvent{Type: agent.EventAssistantText, Delta: "test"},
+		Event: agent.Event{Type: agent.EventAssistantText, Delta: "test"},
 	})
 	// The block should have a populated rendered cache from the immediate rebuild.
 	if app.chat.blocks[0].rendered == "" {
@@ -949,7 +949,7 @@ func TestApp_DeltaCoalescing_StreamEventImmediateRebuild(t *testing.T) {
 
 	// Non-text events should still return nil cmd.
 	_, cmd := app.Update(StreamEventMsg{
-		Event: agent.AgentEvent{Type: agent.EventAssistantThinking, Delta: "hmm"},
+		Event: agent.Event{Type: agent.EventAssistantThinking, Delta: "hmm"},
 	})
 	if cmd != nil {
 		t.Error("non-text StreamEventMsg should return nil cmd")
@@ -962,7 +962,7 @@ func TestApp_DeltaCoalescing_TurnEndResetsStreaming(t *testing.T) {
 
 	// Stream text deltas.
 	app.Update(StreamEventMsg{
-		Event: agent.AgentEvent{Type: agent.EventAssistantText, Delta: "hello"},
+		Event: agent.Event{Type: agent.EventAssistantText, Delta: "hello"},
 	})
 	if !app.chat.blocks[0].streaming {
 		t.Error("expected streaming=true during deltas")
@@ -970,7 +970,7 @@ func TestApp_DeltaCoalescing_TurnEndResetsStreaming(t *testing.T) {
 
 	// TurnEnd should mark streaming=false and trigger immediate rebuild.
 	app.Update(StreamEventMsg{
-		Event: agent.AgentEvent{Type: agent.EventTurnEnd},
+		Event: agent.Event{Type: agent.EventTurnEnd},
 	})
 	if app.chat.blocks[0].streaming {
 		t.Error("expected streaming=false after TurnEnd")
@@ -987,7 +987,7 @@ func TestApp_DeltaCoalescing_NonChangingEventNoDirty(t *testing.T) {
 
 	// UsageUpdate doesn't produce block changes — dirty should stay false.
 	app.Update(StreamEventMsg{
-		Event: agent.AgentEvent{
+		Event: agent.Event{
 			Type:  agent.EventUsageUpdate,
 			Usage: &ai.Usage{InputTokens: 100},
 		},
@@ -1005,7 +1005,7 @@ func TestApp_Update_KeyT_ToggleThinking(t *testing.T) {
 	app := NewApp()
 	app.agentRunning = true
 	// Add a thinking block.
-	app.chat.HandleEvent(agent.AgentEvent{
+	app.chat.HandleEvent(agent.Event{
 		Type:  agent.EventAssistantThinking,
 		Delta: "thinking...",
 	})
@@ -1023,8 +1023,8 @@ func TestApp_Update_KeyT_ToggleThinking(t *testing.T) {
 func TestApp_Update_KeyR_ToggleToolResult(t *testing.T) {
 	app := NewApp()
 	app.agentRunning = true
-	app.chat.HandleEvent(agent.AgentEvent{Type: agent.EventToolExecStart, ToolCallID: "tc-1", ToolName: "bash"})
-	app.chat.HandleEvent(agent.AgentEvent{Type: agent.EventToolExecEnd, ToolCallID: "tc-1", ToolResult: "output"})
+	app.chat.HandleEvent(agent.Event{Type: agent.EventToolExecStart, ToolCallID: "tc-1", ToolName: "bash"})
+	app.chat.HandleEvent(agent.Event{Type: agent.EventToolExecEnd, ToolCallID: "tc-1", ToolResult: "output"})
 
 	// toggle_tool_result is bound to alt+r (moved from ctrl+r to make room for history_search).
 	app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}, Alt: true})
@@ -1083,7 +1083,7 @@ func TestApp_View_1x1_WithContent(t *testing.T) {
 	app.Update(tea.WindowSizeMsg{Width: 1, Height: 1})
 	app.ShowWelcome("Welcome to the app!")
 	app.Update(StreamEventMsg{
-		Event: agent.AgentEvent{
+		Event: agent.Event{
 			Type:  agent.EventAssistantText,
 			Delta: "Hello, world!",
 		},
@@ -1169,7 +1169,7 @@ func TestApp_RapidResize_DuringAgentRun(t *testing.T) {
 
 	// Stream some content.
 	app.Update(StreamEventMsg{
-		Event: agent.AgentEvent{Type: agent.EventAssistantText, Delta: "Hello "},
+		Event: agent.Event{Type: agent.EventAssistantText, Delta: "Hello "},
 	})
 
 	// Resize rapidly during streaming.
@@ -1268,7 +1268,7 @@ func TestApp_CancelDuringStreaming(t *testing.T) {
 	// Stream some deltas.
 	for _, d := range []string{"Hello", " world"} {
 		app.Update(StreamEventMsg{
-			Event: agent.AgentEvent{Type: agent.EventAssistantText, Delta: d},
+			Event: agent.Event{Type: agent.EventAssistantText, Delta: d},
 		})
 	}
 
@@ -1288,7 +1288,7 @@ func TestApp_SteerDuringStreaming(t *testing.T) {
 	app.agentRunning = true
 	app.editor.SetState(editorRunning)
 	app.Update(StreamEventMsg{
-		Event: agent.AgentEvent{Type: agent.EventAssistantText, Delta: "Working..."},
+		Event: agent.Event{Type: agent.EventAssistantText, Delta: "Working..."},
 	})
 
 	// Steer message during streaming should be processed.
@@ -1306,7 +1306,7 @@ func TestApp_KeyboardInterleavedWithTicks(t *testing.T) {
 
 	// Add a thinking block for toggle testing.
 	app.Update(StreamEventMsg{
-		Event: agent.AgentEvent{Type: agent.EventAssistantThinking, Delta: "deep thought"},
+		Event: agent.Event{Type: agent.EventAssistantThinking, Delta: "deep thought"},
 	})
 
 	// Interleave ticks with keyboard events.
@@ -1342,7 +1342,7 @@ func TestApp_ViewportScrollDuringStreaming(t *testing.T) {
 	// Add enough content to make the viewport scrollable.
 	for i := 0; i < 50; i++ {
 		app.Update(StreamEventMsg{
-			Event: agent.AgentEvent{
+			Event: agent.Event{
 				Type:  agent.EventAssistantText,
 				Delta: fmt.Sprintf("Line %d of output\n", i),
 			},
@@ -1358,7 +1358,7 @@ func TestApp_ViewportScrollDuringStreaming(t *testing.T) {
 
 	// More deltas arrive while scrolled up.
 	app.Update(StreamEventMsg{
-		Event: agent.AgentEvent{Type: agent.EventAssistantText, Delta: "new content"},
+		Event: agent.Event{Type: agent.EventAssistantText, Delta: "new content"},
 	})
 	app.Update(renderTickMsg{})
 
@@ -1379,7 +1379,7 @@ func TestApp_UpArrowAtBottomDoesNotScrollViewport(t *testing.T) {
 	// Add enough content to make the viewport scrollable.
 	for i := 0; i < 50; i++ {
 		app.Update(StreamEventMsg{
-			Event: agent.AgentEvent{
+			Event: agent.Event{
 				Type:  agent.EventAssistantText,
 				Delta: fmt.Sprintf("Line %d\n", i),
 			},
@@ -1414,7 +1414,7 @@ func TestApp_UpArrowScrolledUpDoesNotRecallHistory(t *testing.T) {
 	// Add scrollable content.
 	for i := 0; i < 50; i++ {
 		app.Update(StreamEventMsg{
-			Event: agent.AgentEvent{
+			Event: agent.Event{
 				Type:  agent.EventAssistantText,
 				Delta: fmt.Sprintf("Line %d\n", i),
 			},
@@ -1443,7 +1443,7 @@ func TestApp_RenderOnlyOnDirty(t *testing.T) {
 
 	// Send a delta and flush it.
 	app.Update(StreamEventMsg{
-		Event: agent.AgentEvent{Type: agent.EventAssistantText, Delta: "hello"},
+		Event: agent.Event{Type: agent.EventAssistantText, Delta: "hello"},
 	})
 	app.Update(renderTickMsg{})
 	if app.chat.dirty {
@@ -1467,7 +1467,7 @@ func TestApp_StreamCompletionTriggersGlamour(t *testing.T) {
 
 	// Stream deltas — should be in streaming mode.
 	app.Update(StreamEventMsg{
-		Event: agent.AgentEvent{Type: agent.EventAssistantText, Delta: "**bold text**"},
+		Event: agent.Event{Type: agent.EventAssistantText, Delta: "**bold text**"},
 	})
 	app.Update(renderTickMsg{})
 	if !app.chat.blocks[0].streaming {
@@ -1476,7 +1476,7 @@ func TestApp_StreamCompletionTriggersGlamour(t *testing.T) {
 
 	// TurnEnd signals the stream finished — clears streaming flags.
 	app.Update(StreamEventMsg{
-		Event: agent.AgentEvent{Type: agent.EventTurnEnd},
+		Event: agent.Event{Type: agent.EventTurnEnd},
 	})
 	if app.chat.blocks[0].streaming {
 		t.Error("expected streaming=false after TurnEnd — glamour should render")
@@ -1496,7 +1496,7 @@ func TestApp_MultipleAgentCycles_TickLifecycle(t *testing.T) {
 	// First agent run.
 	app.Update(editorSubmitMsg{text: "first"})
 	app.Update(StreamEventMsg{
-		Event: agent.AgentEvent{Type: agent.EventAssistantText, Delta: "response 1"},
+		Event: agent.Event{Type: agent.EventAssistantText, Delta: "response 1"},
 	})
 	_, cmd := app.Update(renderTickMsg{})
 	if cmd == nil {

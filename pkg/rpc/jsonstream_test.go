@@ -62,7 +62,7 @@ func parseEvents(data []byte) ([]Event, error) {
 
 func TestRunJSONStreamPromptFromArg(t *testing.T) {
 	mock := &rpcMockProvider{streamFn: textStreamFn("hello from stream")}
-	loop := agent.NewAgentLoop(mock, tools.NewRegistry())
+	loop := agent.NewLoop(mock, tools.NewRegistry())
 
 	output := captureStdout(t, func() {
 		code := RunJSONStream(loop, "say hello")
@@ -109,7 +109,7 @@ func TestRunJSONStreamPromptFromArg(t *testing.T) {
 
 func TestRunJSONStreamEmptyPrompt(t *testing.T) {
 	mock := &rpcMockProvider{streamFn: textStreamFn("unused")}
-	loop := agent.NewAgentLoop(mock, tools.NewRegistry())
+	loop := agent.NewLoop(mock, tools.NewRegistry())
 
 	// Replace os.Stdin with a pipe that provides no data (simulates no pipe input).
 	origStdin := os.Stdin
@@ -146,7 +146,7 @@ func TestRunJSONStreamEmptyPrompt(t *testing.T) {
 
 func TestRunJSONStreamPromptFromStdin(t *testing.T) {
 	mock := &rpcMockProvider{streamFn: textStreamFn("from stdin")}
-	loop := agent.NewAgentLoop(mock, tools.NewRegistry())
+	loop := agent.NewLoop(mock, tools.NewRegistry())
 
 	// Replace os.Stdin with a pipe that provides prompt text.
 	origStdin := os.Stdin
@@ -184,7 +184,7 @@ func TestRunJSONStreamPromptFromStdin(t *testing.T) {
 
 func TestRunJSONStreamProviderError(t *testing.T) {
 	mock := &rpcMockProvider{streamFn: errorStreamFn(fmt.Errorf("provider down"))}
-	loop := agent.NewAgentLoop(mock, tools.NewRegistry())
+	loop := agent.NewLoop(mock, tools.NewRegistry())
 
 	output := captureStdout(t, func() {
 		code := RunJSONStream(loop, "fail please")
@@ -228,7 +228,7 @@ func TestRunJSONStreamAgentError(t *testing.T) {
 		close(ch)
 		return ch, nil
 	}}
-	loop := agent.NewAgentLoop(mock, tools.NewRegistry())
+	loop := agent.NewLoop(mock, tools.NewRegistry())
 
 	output := captureStdout(t, func() {
 		code := RunJSONStream(loop, "trigger error")
@@ -263,7 +263,7 @@ func TestRunJSONStreamPanicRecovery(t *testing.T) {
 		}()
 		return ch, nil
 	}}
-	loop := agent.NewAgentLoop(mock, tools.NewRegistry())
+	loop := agent.NewLoop(mock, tools.NewRegistry())
 
 	output := captureStdout(t, func() {
 		code := RunJSONStream(loop, "panic test")
@@ -296,7 +296,7 @@ func TestRunJSONStreamSignalCancellation(t *testing.T) {
 		}()
 		return ch, nil
 	}}
-	loop := agent.NewAgentLoop(mock, tools.NewRegistry())
+	loop := agent.NewLoop(mock, tools.NewRegistry())
 
 	done := make(chan int, 1)
 	output := captureStdout(t, func() {

@@ -13,7 +13,7 @@ import (
 
 func TestAddSteeringSkipResults_EmptySkipAfterID(t *testing.T) {
 	// When skipAfterID is empty, no skip results should be added.
-	a := NewAgentLoop(&mockProvider{streamFn: textResponse("ok")}, tools.NewRegistry())
+	a := NewLoop(&mockProvider{streamFn: textResponse("ok")}, tools.NewRegistry())
 
 	toolCalls := []ai.ContentBlock{
 		{Type: ai.ContentTypeToolUse, ToolUseID: "tc-1", ToolName: "foo"},
@@ -31,7 +31,7 @@ func TestAddSteeringSkipResults_EmptySkipAfterID(t *testing.T) {
 
 func TestAddSteeringSkipResults_SingleToolSkipped(t *testing.T) {
 	// When skipAfterID matches the only tool call, that tool gets a skip result.
-	a := NewAgentLoop(&mockProvider{streamFn: textResponse("ok")}, tools.NewRegistry())
+	a := NewLoop(&mockProvider{streamFn: textResponse("ok")}, tools.NewRegistry())
 
 	toolCalls := []ai.ContentBlock{
 		{Type: ai.ContentTypeToolUse, ToolUseID: "tc-1", ToolName: "foo"},
@@ -59,7 +59,7 @@ func TestAddSteeringSkipResults_SingleToolSkipped(t *testing.T) {
 func TestAddSteeringSkipResults_MultipleToolsAfterBoundary(t *testing.T) {
 	// When skipAfterID matches tc-2, then tc-2, tc-3, tc-4 all get skip results.
 	// tc-1 (before the boundary) does NOT get a skip result.
-	a := NewAgentLoop(&mockProvider{streamFn: textResponse("ok")}, tools.NewRegistry())
+	a := NewLoop(&mockProvider{streamFn: textResponse("ok")}, tools.NewRegistry())
 
 	toolCalls := []ai.ContentBlock{
 		{Type: ai.ContentTypeToolUse, ToolUseID: "tc-1", ToolName: "already-done"},
@@ -89,7 +89,7 @@ func TestAddSteeringSkipResults_MultipleToolsAfterBoundary(t *testing.T) {
 
 func TestAddSteeringSkipResults_NonexistentID(t *testing.T) {
 	// When skipAfterID doesn't match any tool call, no skip results are added.
-	a := NewAgentLoop(&mockProvider{streamFn: textResponse("ok")}, tools.NewRegistry())
+	a := NewLoop(&mockProvider{streamFn: textResponse("ok")}, tools.NewRegistry())
 
 	toolCalls := []ai.ContentBlock{
 		{Type: ai.ContentTypeToolUse, ToolUseID: "tc-1", ToolName: "foo"},
@@ -106,7 +106,7 @@ func TestAddSteeringSkipResults_NonexistentID(t *testing.T) {
 
 func TestAddSteeringSkipResults_EmitEvents(t *testing.T) {
 	// Verify that skip results emit EventToolResult events.
-	a := NewAgentLoop(&mockProvider{streamFn: textResponse("ok")}, tools.NewRegistry())
+	a := NewLoop(&mockProvider{streamFn: textResponse("ok")}, tools.NewRegistry())
 
 	toolCalls := []ai.ContentBlock{
 		{Type: ai.ContentTypeToolUse, ToolUseID: "tc-1", ToolName: "skipped"},
@@ -117,7 +117,7 @@ func TestAddSteeringSkipResults_EmitEvents(t *testing.T) {
 	a.addSteeringSkipResults(context.Background(), toolCalls, "tc-1")
 
 	// Drain events.
-	var events []AgentEvent
+	var events []Event
 	timeout := time.After(500 * time.Millisecond)
 	for {
 		select {
@@ -146,7 +146,7 @@ done:
 // --- setter method tests ----------------------------------------------------
 
 func TestSetModel(t *testing.T) {
-	a := NewAgentLoop(&mockProvider{streamFn: textResponse("ok")}, tools.NewRegistry())
+	a := NewLoop(&mockProvider{streamFn: textResponse("ok")}, tools.NewRegistry())
 
 	// Verify default.
 	if a.model != "" {
@@ -164,7 +164,7 @@ func TestSetModel(t *testing.T) {
 }
 
 func TestSetThinking(t *testing.T) {
-	a := NewAgentLoop(&mockProvider{streamFn: textResponse("ok")}, tools.NewRegistry())
+	a := NewLoop(&mockProvider{streamFn: textResponse("ok")}, tools.NewRegistry())
 
 	// Default is ThinkingOff.
 	a.mu.Lock()
@@ -185,7 +185,7 @@ func TestSetThinking(t *testing.T) {
 }
 
 func TestSetMaxTokens(t *testing.T) {
-	a := NewAgentLoop(&mockProvider{streamFn: textResponse("ok")}, tools.NewRegistry())
+	a := NewLoop(&mockProvider{streamFn: textResponse("ok")}, tools.NewRegistry())
 
 	// Default is 8192.
 	a.mu.Lock()
@@ -206,7 +206,7 @@ func TestSetMaxTokens(t *testing.T) {
 }
 
 func TestSetSystemPrompt(t *testing.T) {
-	a := NewAgentLoop(&mockProvider{streamFn: textResponse("ok")}, tools.NewRegistry())
+	a := NewLoop(&mockProvider{streamFn: textResponse("ok")}, tools.NewRegistry())
 
 	// Default is empty.
 	a.mu.Lock()
@@ -227,7 +227,7 @@ func TestSetSystemPrompt(t *testing.T) {
 }
 
 func TestProviderName_WithProvider(t *testing.T) {
-	a := NewAgentLoop(&mockProvider{streamFn: textResponse("ok")}, tools.NewRegistry())
+	a := NewLoop(&mockProvider{streamFn: textResponse("ok")}, tools.NewRegistry())
 
 	name := a.ProviderName()
 	if name != "mock" {
@@ -236,7 +236,7 @@ func TestProviderName_WithProvider(t *testing.T) {
 }
 
 func TestProviderName_NilProvider(t *testing.T) {
-	a := NewAgentLoop(nil, tools.NewRegistry())
+	a := NewLoop(nil, tools.NewRegistry())
 
 	name := a.ProviderName()
 	if name != "" {
@@ -245,7 +245,7 @@ func TestProviderName_NilProvider(t *testing.T) {
 }
 
 func TestMetrics_ReturnsCollector(t *testing.T) {
-	a := NewAgentLoop(&mockProvider{streamFn: textResponse("ok")}, tools.NewRegistry())
+	a := NewLoop(&mockProvider{streamFn: textResponse("ok")}, tools.NewRegistry())
 
 	m := a.Metrics()
 	if m == nil {
@@ -262,7 +262,7 @@ func TestMetrics_ReturnsCollector(t *testing.T) {
 }
 
 func TestMetrics_AccumulatesUsageData(t *testing.T) {
-	a := NewAgentLoop(&mockProvider{streamFn: textResponse("ok")}, tools.NewRegistry())
+	a := NewLoop(&mockProvider{streamFn: textResponse("ok")}, tools.NewRegistry())
 
 	m := a.Metrics()
 
@@ -300,7 +300,7 @@ func TestSetModel_UsedInSubsequentTurn(t *testing.T) {
 		},
 	}
 
-	a := NewAgentLoop(provider, tools.NewRegistry())
+	a := NewLoop(provider, tools.NewRegistry())
 	a.SetModel("test-model-v2")
 
 	if err := a.Prompt(context.Background(), "hi"); err != nil {
@@ -328,7 +328,7 @@ func TestSetThinking_UsedInSubsequentTurn(t *testing.T) {
 		},
 	}
 
-	a := NewAgentLoop(provider, tools.NewRegistry())
+	a := NewLoop(provider, tools.NewRegistry())
 	a.SetThinking(ai.ThinkingMedium)
 
 	if err := a.Prompt(context.Background(), "hi"); err != nil {
@@ -356,7 +356,7 @@ func TestSetMaxTokens_UsedInSubsequentTurn(t *testing.T) {
 		},
 	}
 
-	a := NewAgentLoop(provider, tools.NewRegistry())
+	a := NewLoop(provider, tools.NewRegistry())
 	a.SetMaxTokens(2048)
 
 	if err := a.Prompt(context.Background(), "hi"); err != nil {
@@ -384,7 +384,7 @@ func TestSetSystemPrompt_UsedInSubsequentTurn(t *testing.T) {
 		},
 	}
 
-	a := NewAgentLoop(provider, tools.NewRegistry())
+	a := NewLoop(provider, tools.NewRegistry())
 	a.SetSystemPrompt("Be concise.")
 
 	if err := a.Prompt(context.Background(), "hi"); err != nil {

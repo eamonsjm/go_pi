@@ -212,12 +212,12 @@ func (c *ChatView) AtBottom() bool {
 }
 
 // ---------------------------------------------------------------------------
-// Event handlers — called by the parent App on each AgentEvent
+// Event handlers — called by the parent App on each agent.Event
 // ---------------------------------------------------------------------------
 
 // HandleEvent processes a single agent event and updates the internal block
 // list. Returns true if content changed (caller should re-render).
-func (c *ChatView) HandleEvent(ev agent.AgentEvent) bool {
+func (c *ChatView) HandleEvent(ev agent.Event) bool {
 	switch ev.Type {
 
 	// ---- streaming text ----

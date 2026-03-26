@@ -40,7 +40,7 @@ func parseThinkingLevel(s string) (ai.ThinkingLevel, bool) {
 
 // NewSettingsCommand returns a SlashCommand for /settings that displays and
 // modifies runtime configuration.
-func NewSettingsCommand(cfg *config.Config, agentLoop *agent.AgentLoop, header *Header) *SlashCommand {
+func NewSettingsCommand(cfg *config.Config, agentLoop *agent.Loop, header *Header) *SlashCommand {
 	return &SlashCommand{
 		Name:        "settings",
 		Description: "Show or change settings. Usage: /settings [key] [value]",
@@ -106,7 +106,7 @@ func settingsError(msg string) tea.Cmd {
 
 // settingsUpdate validates and applies a settings change, returning an
 // appropriate Cmd.
-func settingsUpdate(key, value string, cfg *config.Config, agentLoop *agent.AgentLoop, header *Header) tea.Cmd {
+func settingsUpdate(key, value string, cfg *config.Config, agentLoop *agent.Loop, header *Header) tea.Cmd {
 	switch key {
 
 	case "thinking":

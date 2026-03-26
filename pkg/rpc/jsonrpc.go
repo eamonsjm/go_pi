@@ -105,7 +105,7 @@ type PromptResult struct {
 //   - "cancel" — cancel the current prompt execution
 //   - "steer" — inject a steering message
 //   - "shutdown" — gracefully exit
-func RunRPC(agentLoop *agent.AgentLoop) {
+func RunRPC(agentLoop *agent.Loop) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -137,7 +137,7 @@ func RunRPC(agentLoop *agent.AgentLoop) {
 }
 
 type rpcServer struct {
-	agentLoop *agent.AgentLoop
+	agentLoop *agent.Loop
 	writer    io.Writer
 
 	mu      sync.Mutex // protects writes to writer

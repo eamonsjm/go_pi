@@ -158,7 +158,7 @@ func (h *TestHarness) Resize(w, height int) {
 }
 
 // SendAgentEvent injects an agent event into the TUI as a StreamEventMsg.
-func (h *TestHarness) SendAgentEvent(event agent.AgentEvent) {
+func (h *TestHarness) SendAgentEvent(event agent.Event) {
 	h.tm.Send(StreamEventMsg{Event: event})
 }
 
@@ -267,7 +267,7 @@ func (h *TestHarness) WaitCancel(timeout time.Duration) bool {
 // TextDeltaEvent creates a StreamEventMsg wrapping an assistant text delta.
 func TextDeltaEvent(text string) StreamEventMsg {
 	return StreamEventMsg{
-		Event: agent.AgentEvent{
+		Event: agent.Event{
 			Type:  agent.EventAssistantText,
 			Delta: text,
 		},
@@ -277,7 +277,7 @@ func TextDeltaEvent(text string) StreamEventMsg {
 // ThinkingDeltaEvent creates a StreamEventMsg wrapping a thinking delta.
 func ThinkingDeltaEvent(text string) StreamEventMsg {
 	return StreamEventMsg{
-		Event: agent.AgentEvent{
+		Event: agent.Event{
 			Type:  agent.EventAssistantThinking,
 			Delta: text,
 		},
@@ -287,7 +287,7 @@ func ThinkingDeltaEvent(text string) StreamEventMsg {
 // ToolExecStartEvent creates a StreamEventMsg wrapping a tool execution start.
 func ToolExecStartEvent(toolName string, args map[string]any) StreamEventMsg {
 	return StreamEventMsg{
-		Event: agent.AgentEvent{
+		Event: agent.Event{
 			Type:     agent.EventToolExecStart,
 			ToolName: toolName,
 			ToolArgs: args,
@@ -298,7 +298,7 @@ func ToolExecStartEvent(toolName string, args map[string]any) StreamEventMsg {
 // ToolExecEndEvent creates a StreamEventMsg wrapping a tool execution end.
 func ToolExecEndEvent(toolName, result string, isError bool) StreamEventMsg {
 	return StreamEventMsg{
-		Event: agent.AgentEvent{
+		Event: agent.Event{
 			Type:       agent.EventToolExecEnd,
 			ToolName:   toolName,
 			ToolResult: result,
@@ -311,7 +311,7 @@ func ToolExecEndEvent(toolName, result string, isError bool) StreamEventMsg {
 // full ai.Message attached.
 func ToolResultEvent(msg *ai.Message) StreamEventMsg {
 	return StreamEventMsg{
-		Event: agent.AgentEvent{
+		Event: agent.Event{
 			Type:    agent.EventToolResult,
 			Message: msg,
 		},
@@ -321,14 +321,14 @@ func ToolResultEvent(msg *ai.Message) StreamEventMsg {
 // AgentStartEvent creates a StreamEventMsg for agent_start.
 func AgentStartEvent() StreamEventMsg {
 	return StreamEventMsg{
-		Event: agent.AgentEvent{Type: agent.EventAgentStart},
+		Event: agent.Event{Type: agent.EventAgentStart},
 	}
 }
 
 // AgentEndEvent creates a StreamEventMsg for agent_end.
 func AgentEndEvent() StreamEventMsg {
 	return StreamEventMsg{
-		Event: agent.AgentEvent{Type: agent.EventAgentEnd},
+		Event: agent.Event{Type: agent.EventAgentEnd},
 	}
 }
 

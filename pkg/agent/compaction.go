@@ -25,7 +25,7 @@ const minAutoCompactMessages = 4
 // runCompaction streams a one-shot compaction request and returns the summary text.
 // The caller constructs the prompt; this method handles the stream setup and
 // text accumulation.
-func (a *AgentLoop) runCompaction(ctx context.Context, prompt string) (string, error) {
+func (a *Loop) runCompaction(ctx context.Context, prompt string) (string, error) {
 	a.mu.Lock()
 	provider := a.provider
 	model := a.model
@@ -72,7 +72,7 @@ func (a *AgentLoop) runCompaction(ctx context.Context, prompt string) (string, e
 // It replaces all messages with a single summary message, preserving the
 // system prompt. The optional instructions parameter lets the user guide
 // what to focus on in the summary.
-func (a *AgentLoop) Compact(ctx context.Context, instructions string) error {
+func (a *Loop) Compact(ctx context.Context, instructions string) error {
 	a.mu.Lock()
 	msgs := cloneMessages(a.messages)
 	a.mu.Unlock()
@@ -117,7 +117,7 @@ func (a *AgentLoop) Compact(ctx context.Context, instructions string) error {
 	}
 	a.mu.Unlock()
 
-	a.emit(ctx, AgentEvent{
+	a.emit(ctx, Event{
 		Type:  EventCompaction,
 		Delta: summaryText,
 	})
@@ -128,7 +128,7 @@ func (a *AgentLoop) Compact(ctx context.Context, instructions string) error {
 // maybeAutoCompact checks whether the context is approaching the limit and
 // triggers automatic compaction if needed. It is called at the top of each
 // iteration of the agent run loop.
-func (a *AgentLoop) maybeAutoCompact(ctx context.Context) error {
+func (a *Loop) maybeAutoCompact(ctx context.Context) error {
 	a.mu.Lock()
 	contextWindow := a.contextWindow
 	reserveTokens := a.reserveTokens
@@ -161,7 +161,7 @@ func (a *AgentLoop) maybeAutoCompact(ctx context.Context) error {
 // autoCompact performs automatic compaction, summarizing older messages while
 // preserving recent ones. It finds a safe cut point that never splits inside
 // a tool-call/tool-result pair.
-func (a *AgentLoop) autoCompact(ctx context.Context) error {
+func (a *Loop) autoCompact(ctx context.Context) error {
 	a.mu.Lock()
 	msgs := cloneMessages(a.messages)
 	keepRecent := a.keepRecentTokens
@@ -216,7 +216,7 @@ func (a *AgentLoop) autoCompact(ctx context.Context) error {
 	a.lastInputTokens = 0 // Reset so we don't re-trigger immediately.
 	a.mu.Unlock()
 
-	a.emit(ctx, AgentEvent{
+	a.emit(ctx, Event{
 		Type:  EventAutoCompaction,
 		Delta: summaryText,
 	})

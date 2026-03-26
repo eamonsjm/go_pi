@@ -15,7 +15,7 @@ import (
 func TestCancelOnNilCancel(t *testing.T) {
 	provider := &mockProvider{streamFn: textResponse("ok")}
 	reg := tools.NewRegistry()
-	a := NewAgentLoop(provider, reg)
+	a := NewLoop(provider, reg)
 
 	// Should not panic.
 	a.Cancel()
@@ -26,7 +26,7 @@ func TestCancelOnNilCancel(t *testing.T) {
 func TestCancelAfterPromptCompletes(t *testing.T) {
 	provider := &mockProvider{streamFn: textResponse("done")}
 	reg := tools.NewRegistry()
-	a := NewAgentLoop(provider, reg)
+	a := NewLoop(provider, reg)
 
 	if err := a.Prompt(context.Background(), "hi"); err != nil {
 		t.Fatalf("Prompt: %v", err)
@@ -53,7 +53,7 @@ func TestCancelDuringProviderStream(t *testing.T) {
 		},
 	}
 	reg := tools.NewRegistry()
-	a := NewAgentLoop(provider, reg)
+	a := NewLoop(provider, reg)
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -103,7 +103,7 @@ func TestCancelDuringToolExecution(t *testing.T) {
 	reg := tools.NewRegistry()
 	// Tool that blocks until context is cancelled.
 	reg.Register(&ctxBlockingTool{name: "slow"})
-	a := NewAgentLoop(provider, reg)
+	a := NewLoop(provider, reg)
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -140,7 +140,7 @@ func TestCancelMultipleTimesNoPanic(t *testing.T) {
 		},
 	}
 	reg := tools.NewRegistry()
-	a := NewAgentLoop(provider, reg)
+	a := NewLoop(provider, reg)
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -173,7 +173,7 @@ func TestCancelMultipleTimesNoPanic(t *testing.T) {
 func TestCancelBeforePromptStarts(t *testing.T) {
 	provider := &mockProvider{streamFn: textResponse("success")}
 	reg := tools.NewRegistry()
-	a := NewAgentLoop(provider, reg)
+	a := NewLoop(provider, reg)
 
 	a.Cancel() // Should be no-op.
 
@@ -204,7 +204,7 @@ func TestCancelBeforePromptStarts(t *testing.T) {
 func TestCancelBetweenConsecutivePrompts(t *testing.T) {
 	provider := &mockProvider{streamFn: textResponse("response")}
 	reg := tools.NewRegistry()
-	a := NewAgentLoop(provider, reg)
+	a := NewLoop(provider, reg)
 
 	// First prompt.
 	if err := a.Prompt(context.Background(), "first"); err != nil {
@@ -229,7 +229,7 @@ func TestCancelBetweenConsecutivePrompts(t *testing.T) {
 // provider is configured.
 func TestPromptWithNilProvider(t *testing.T) {
 	reg := tools.NewRegistry()
-	a := NewAgentLoop(nil, reg)
+	a := NewLoop(nil, reg)
 
 	err := a.Prompt(context.Background(), "hi")
 	if err == nil {

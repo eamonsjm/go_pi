@@ -49,7 +49,7 @@ var ErrUnknownProvider = errors.New("sdk: unknown provider")
 // and session manager into a single, easy-to-use interface for programmatic
 // agent execution.
 type Session struct {
-	loop       *agent.AgentLoop
+	loop       *agent.Loop
 	registry   *tools.Registry
 	sessionMgr *session.Manager
 	config     *SessionConfig
@@ -258,7 +258,7 @@ func NewSession(ctx context.Context, opts ...SessionOption) (*Session, error) {
 		agentOpts = append(agentOpts, agent.WithMessages(cfg.Messages))
 	}
 
-	loop := agent.NewAgentLoop(provider, registry, agentOpts...)
+	loop := agent.NewLoop(provider, registry, agentOpts...)
 
 	// Set up session manager.
 	sessionDir := cfg.SessionDir
@@ -322,7 +322,7 @@ func (s *Session) Prompt(ctx context.Context, text string) error {
 //
 // The channel is closed when the current Prompt call completes.
 // A new channel is available for the next Prompt call.
-func (s *Session) Events() <-chan agent.AgentEvent {
+func (s *Session) Events() <-chan agent.Event {
 	return s.loop.Events()
 }
 
@@ -380,8 +380,8 @@ func (s *Session) SessionID() string {
 	return s.sessionMgr.CurrentID()
 }
 
-// AgentLoop returns the underlying agent loop for advanced usage.
-func (s *Session) AgentLoop() *agent.AgentLoop {
+// Loop returns the underlying agent loop for advanced usage.
+func (s *Session) Loop() *agent.Loop {
 	return s.loop
 }
 

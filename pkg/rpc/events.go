@@ -31,8 +31,8 @@ type UsageInfo struct {
 	CacheWrite   int `json:"cache_creation_input_tokens,omitempty"`
 }
 
-// EventFromAgent converts an agent.AgentEvent to a serializable Event.
-func EventFromAgent(e agent.AgentEvent) Event {
+// EventFromAgent converts an agent.Event to a serializable Event.
+func EventFromAgent(e agent.Event) Event {
 	ev := Event{Type: string(e.Type)}
 
 	switch e.Type {

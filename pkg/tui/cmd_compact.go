@@ -24,7 +24,7 @@ type compactionErrorMsg struct {
 // conversation compaction via the agent loop. The provided context should be
 // tied to the application lifecycle so that compaction is cancelled when the
 // user quits.
-func NewCompactCommand(ctx context.Context, agentLoop *agent.AgentLoop) *SlashCommand {
+func NewCompactCommand(ctx context.Context, agentLoop *agent.Loop) *SlashCommand {
 	return &SlashCommand{
 		Name:        "compact",
 		Description: "Summarize conversation to free context space",

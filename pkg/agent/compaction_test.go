@@ -16,7 +16,7 @@ import (
 func TestCompactEmptyMessages(t *testing.T) {
 	provider := &mockProvider{}
 	reg := tools.NewRegistry()
-	a := NewAgentLoop(provider, reg)
+	a := NewLoop(provider, reg)
 
 	err := a.Compact(context.Background(), "")
 	if err == nil {
@@ -43,7 +43,7 @@ func TestCompactBasicTranscript(t *testing.T) {
 	}
 
 	reg := tools.NewRegistry()
-	a := NewAgentLoop(provider, reg,
+	a := NewLoop(provider, reg,
 		WithSystemPrompt("test system prompt"),
 		WithModel("test-model"),
 		WithMessages([]ai.Message{
@@ -143,7 +143,7 @@ func TestCompactWithInstructions(t *testing.T) {
 	}
 
 	reg := tools.NewRegistry()
-	a := NewAgentLoop(provider, reg, WithMessages([]ai.Message{
+	a := NewLoop(provider, reg, WithMessages([]ai.Message{
 		ai.NewTextMessage(ai.RoleUser, "discuss code"),
 	}))
 
@@ -191,7 +191,7 @@ func TestCompactToolResultTruncation(t *testing.T) {
 	}
 
 	reg := tools.NewRegistry()
-	a := NewAgentLoop(provider, reg, WithMessages(msgs))
+	a := NewLoop(provider, reg, WithMessages(msgs))
 
 	err := a.Compact(context.Background(), "")
 	if err != nil {
@@ -243,7 +243,7 @@ func TestCompactToolResultAtBoundary(t *testing.T) {
 	}
 
 	reg := tools.NewRegistry()
-	a := NewAgentLoop(provider, reg, WithMessages(msgs))
+	a := NewLoop(provider, reg, WithMessages(msgs))
 
 	err := a.Compact(context.Background(), "")
 	if err != nil {
@@ -285,7 +285,7 @@ func TestCompactToolResultJustOverBoundary(t *testing.T) {
 	}
 
 	reg := tools.NewRegistry()
-	a := NewAgentLoop(provider, reg, WithMessages(msgs))
+	a := NewLoop(provider, reg, WithMessages(msgs))
 
 	err := a.Compact(context.Background(), "")
 	if err != nil {
@@ -329,7 +329,7 @@ func TestCompactToolResultUTF8MultiByteTruncation(t *testing.T) {
 	}
 
 	reg := tools.NewRegistry()
-	a := NewAgentLoop(provider, reg, WithMessages(msgs))
+	a := NewLoop(provider, reg, WithMessages(msgs))
 
 	err := a.Compact(context.Background(), "")
 	if err != nil {
@@ -390,7 +390,7 @@ func TestCompactToolUseWithoutMatchingResult(t *testing.T) {
 	}
 
 	reg := tools.NewRegistry()
-	a := NewAgentLoop(provider, reg, WithMessages(msgs))
+	a := NewLoop(provider, reg, WithMessages(msgs))
 
 	err := a.Compact(context.Background(), "")
 	if err != nil {
@@ -433,7 +433,7 @@ func TestCompactMultiBlockMessage(t *testing.T) {
 	}
 
 	reg := tools.NewRegistry()
-	a := NewAgentLoop(provider, reg, WithMessages(msgs))
+	a := NewLoop(provider, reg, WithMessages(msgs))
 
 	err := a.Compact(context.Background(), "")
 	if err != nil {
@@ -466,7 +466,7 @@ func TestCompactPreservesContext(t *testing.T) {
 	}
 
 	reg := tools.NewRegistry()
-	a := NewAgentLoop(provider, reg, WithMessages([]ai.Message{
+	a := NewLoop(provider, reg, WithMessages([]ai.Message{
 		ai.NewTextMessage(ai.RoleUser, "some conversation"),
 	}))
 
@@ -504,7 +504,7 @@ func TestCompactEmptySummaryError(t *testing.T) {
 	}
 
 	reg := tools.NewRegistry()
-	a := NewAgentLoop(provider, reg, WithMessages([]ai.Message{
+	a := NewLoop(provider, reg, WithMessages([]ai.Message{
 		ai.NewTextMessage(ai.RoleUser, "hello"),
 	}))
 
@@ -540,7 +540,7 @@ func TestCompactStreamError(t *testing.T) {
 	}
 
 	reg := tools.NewRegistry()
-	a := NewAgentLoop(provider, reg, WithMessages([]ai.Message{
+	a := NewLoop(provider, reg, WithMessages([]ai.Message{
 		ai.NewTextMessage(ai.RoleUser, "hello"),
 	}))
 
@@ -578,7 +578,7 @@ func TestCompactStreamErrorDrainsChannel(t *testing.T) {
 	}
 
 	reg := tools.NewRegistry()
-	a := NewAgentLoop(provider, reg, WithMessages([]ai.Message{
+	a := NewLoop(provider, reg, WithMessages([]ai.Message{
 		ai.NewTextMessage(ai.RoleUser, "hello"),
 	}))
 
@@ -609,7 +609,7 @@ func TestCompactProviderStartError(t *testing.T) {
 	}
 
 	reg := tools.NewRegistry()
-	a := NewAgentLoop(provider, reg, WithMessages([]ai.Message{
+	a := NewLoop(provider, reg, WithMessages([]ai.Message{
 		ai.NewTextMessage(ai.RoleUser, "hello"),
 	}))
 
@@ -650,7 +650,7 @@ func TestCompactThinkingBlocksIncludedInTranscript(t *testing.T) {
 	}
 
 	reg := tools.NewRegistry()
-	a := NewAgentLoop(provider, reg, WithMessages(msgs))
+	a := NewLoop(provider, reg, WithMessages(msgs))
 
 	err := a.Compact(context.Background(), "")
 	if err != nil {
@@ -690,7 +690,7 @@ func TestCompactDoesNotMutateOriginalMessages(t *testing.T) {
 	copy(originalCopy, original)
 
 	reg := tools.NewRegistry()
-	a := NewAgentLoop(provider, reg, WithMessages(original))
+	a := NewLoop(provider, reg, WithMessages(original))
 
 	err := a.Compact(context.Background(), "")
 	if err != nil {
@@ -714,7 +714,7 @@ func TestCompactDoesNotMutateOriginalMessages(t *testing.T) {
 func TestMaybeAutoCompactNotTriggeredBelowThreshold(t *testing.T) {
 	provider := &mockProvider{}
 	reg := tools.NewRegistry()
-	a := NewAgentLoop(provider, reg,
+	a := NewLoop(provider, reg,
 		WithContextWindow(200000),
 		WithReserveTokens(16384),
 	)
@@ -732,7 +732,7 @@ func TestMaybeAutoCompactNotTriggeredBelowThreshold(t *testing.T) {
 func TestMaybeAutoCompactNotTriggeredWhenDisabled(t *testing.T) {
 	provider := &mockProvider{}
 	reg := tools.NewRegistry()
-	a := NewAgentLoop(provider, reg,
+	a := NewLoop(provider, reg,
 		WithContextWindow(0), // disabled
 	)
 	a.lastInputTokens = 999999
@@ -746,7 +746,7 @@ func TestMaybeAutoCompactNotTriggeredWhenDisabled(t *testing.T) {
 func TestMaybeAutoCompactNotTriggeredNoUsageData(t *testing.T) {
 	provider := &mockProvider{}
 	reg := tools.NewRegistry()
-	a := NewAgentLoop(provider, reg,
+	a := NewLoop(provider, reg,
 		WithContextWindow(200000),
 	)
 	// lastInputTokens is 0 (no usage data yet).
@@ -794,7 +794,7 @@ func TestMaybeAutoCompactSkippedTooFewMessages(t *testing.T) {
 	}
 
 	reg := tools.NewRegistry()
-	a := NewAgentLoop(provider, reg,
+	a := NewLoop(provider, reg,
 		WithContextWindow(200000),
 		WithReserveTokens(16384),
 		WithMessages(msgs),
@@ -830,7 +830,7 @@ func TestAutoCompactTriggeredAboveThreshold(t *testing.T) {
 	reg := tools.NewRegistry()
 	// Use large old messages and a small keepRecentTokens budget so the
 	// cut point falls between old and recent messages.
-	a := NewAgentLoop(provider, reg,
+	a := NewLoop(provider, reg,
 		WithContextWindow(1000),
 		WithReserveTokens(100),
 		WithKeepRecentTokens(10), // ~40 chars budget — only fits the recent pair
@@ -916,7 +916,7 @@ func TestAutoCompactPreservesRecentMessages(t *testing.T) {
 	// keepRecentTokens = 200 tokens ≈ 800 chars.
 	// "recent question" = 15 chars, "recent answer" = 13 chars = 28 chars total.
 	// This should be well within the budget, keeping both recent messages.
-	a := NewAgentLoop(provider, reg,
+	a := NewLoop(provider, reg,
 		WithContextWindow(1000),
 		WithReserveTokens(100),
 		WithKeepRecentTokens(200),
@@ -1050,7 +1050,7 @@ func TestAutoCompactFallsBackToFullCompaction(t *testing.T) {
 	}
 
 	reg := tools.NewRegistry()
-	a := NewAgentLoop(provider, reg,
+	a := NewLoop(provider, reg,
 		WithContextWindow(100),
 		WithReserveTokens(10),
 		WithMessages([]ai.Message{
@@ -1078,7 +1078,7 @@ func TestAutoCompactWithStreamError(t *testing.T) {
 	}
 
 	reg := tools.NewRegistry()
-	a := NewAgentLoop(provider, reg,
+	a := NewLoop(provider, reg,
 		WithContextWindow(1000),
 		WithReserveTokens(100),
 		WithMessages([]ai.Message{
@@ -1135,7 +1135,7 @@ func TestAutoCompactIntegrationWithRunLoop(t *testing.T) {
 	}
 
 	reg := tools.NewRegistry()
-	a := NewAgentLoop(provider, reg,
+	a := NewLoop(provider, reg,
 		WithContextWindow(1000),
 		WithReserveTokens(100),
 		WithKeepRecentTokens(50),
@@ -1201,7 +1201,7 @@ func TestFindSafeCutPointPreservesMinimumMessages(t *testing.T) {
 func TestAutoCompactOptionsApplied(t *testing.T) {
 	provider := &mockProvider{}
 	reg := tools.NewRegistry()
-	a := NewAgentLoop(provider, reg,
+	a := NewLoop(provider, reg,
 		WithContextWindow(100000),
 		WithReserveTokens(8000),
 		WithKeepRecentTokens(2000),
@@ -1241,7 +1241,7 @@ func TestCompactPreservesMessagesAppendedDuringWindow(t *testing.T) {
 	}
 
 	reg := tools.NewRegistry()
-	a := NewAgentLoop(provider, reg, WithMessages([]ai.Message{
+	a := NewLoop(provider, reg, WithMessages([]ai.Message{
 		ai.NewTextMessage(ai.RoleUser, "Hello"),
 		ai.NewTextMessage(ai.RoleAssistant, "Hi there"),
 	}))
@@ -1307,7 +1307,7 @@ func TestAutoCompactPreservesMessagesAppendedDuringWindow(t *testing.T) {
 	}
 
 	reg := tools.NewRegistry()
-	a := NewAgentLoop(provider, reg,
+	a := NewLoop(provider, reg,
 		WithMessages(initialMsgs),
 		WithKeepRecentTokens(512), // Small budget → cut will happen early
 	)
@@ -1355,7 +1355,7 @@ func TestCompactNoAppendedMessagesUnchangedBehavior(t *testing.T) {
 	}
 
 	reg := tools.NewRegistry()
-	a := NewAgentLoop(provider, reg, WithMessages([]ai.Message{
+	a := NewLoop(provider, reg, WithMessages([]ai.Message{
 		ai.NewTextMessage(ai.RoleUser, "Hello"),
 		ai.NewTextMessage(ai.RoleAssistant, "Hi"),
 	}))
@@ -1395,7 +1395,7 @@ func TestCompactSetProviderRace(t *testing.T) {
 			}
 
 			reg := tools.NewRegistry()
-			a := NewAgentLoop(provider, reg, WithMessages([]ai.Message{
+			a := NewLoop(provider, reg, WithMessages([]ai.Message{
 				ai.NewTextMessage(ai.RoleUser, "Hello"),
 				ai.NewTextMessage(ai.RoleAssistant, "Hi"),
 			}))

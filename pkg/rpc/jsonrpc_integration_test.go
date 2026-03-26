@@ -74,8 +74,8 @@ func blockingStreamFn() func(context.Context, ai.StreamRequest) (<-chan ai.Strea
 }
 
 
-func newTestAgentLoop(provider ai.Provider) *agent.AgentLoop {
-	return agent.NewAgentLoop(provider, tools.NewRegistry())
+func newTestAgentLoop(provider ai.Provider) *agent.Loop {
+	return agent.NewLoop(provider, tools.NewRegistry())
 }
 
 // --- helpers ----------------------------------------------------------------
@@ -134,7 +134,7 @@ func rpcRequest(id int, method string, params any) string {
 	return string(data) + "\n"
 }
 
-// --- rpcServer tests with real AgentLoop ------------------------------------
+// --- rpcServer tests with real agent.Loop ------------------------------------
 
 func TestRPCPromptLifecycle(t *testing.T) {
 	mock := &rpcMockProvider{streamFn: textStreamFn("hello world")}

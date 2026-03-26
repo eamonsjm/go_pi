@@ -74,7 +74,7 @@ func TestEmitRaceWithPromptClose(t *testing.T) {
 
 			reg := tools.NewRegistry()
 			reg.Register(&mockTool{name: "fast", result: "ok"})
-			a := NewAgentLoop(provider, reg)
+			a := NewLoop(provider, reg)
 
 			// Drain events in a goroutine — the consumer side of the channel.
 			evCh := a.Events()
@@ -135,7 +135,7 @@ func TestConcurrentEmitAndCancel(t *testing.T) {
 
 			reg := tools.NewRegistry()
 			reg.Register(&slowEmitTool{name: "blocker", delay: 5 * time.Second, started: toolStarted})
-			a := NewAgentLoop(provider, reg)
+			a := NewLoop(provider, reg)
 
 			// Drain events so the buffer doesn't block emit().
 			evCh := a.Events()
@@ -225,7 +225,7 @@ func TestSteerEmitCancelInterleaving(t *testing.T) {
 
 			reg := tools.NewRegistry()
 			reg.Register(&slowEmitTool{name: "waiter", delay: 5 * time.Second, started: toolStarted})
-			a := NewAgentLoop(provider, reg)
+			a := NewLoop(provider, reg)
 
 			evCh := a.Events()
 			go func() {
@@ -281,7 +281,7 @@ func TestSteerEmitCancelInterleaving(t *testing.T) {
 func TestRapidPromptCycles(t *testing.T) {
 	provider := &mockProvider{streamFn: textResponse("hi")}
 	reg := tools.NewRegistry()
-	a := NewAgentLoop(provider, reg)
+	a := NewLoop(provider, reg)
 
 	for i := 0; i < 50; i++ {
 		evCh := a.Events()
@@ -345,7 +345,7 @@ func TestManyToolCallsWithCancel(t *testing.T) {
 			started: toolStarted,
 		})
 	}
-	a := NewAgentLoop(provider, reg)
+	a := NewLoop(provider, reg)
 
 	evCh := a.Events()
 	go func() {
@@ -383,7 +383,7 @@ func TestManyToolCallsWithCancel(t *testing.T) {
 func TestEmitAfterContextCancel(t *testing.T) {
 	provider := &mockProvider{streamFn: textResponse("hi")}
 	reg := tools.NewRegistry()
-	a := NewAgentLoop(provider, reg)
+	a := NewLoop(provider, reg)
 	a.ensureInit()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -396,7 +396,7 @@ func TestEmitAfterContextCancel(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			a.emit(ctx, AgentEvent{Type: EventAssistantText, Delta: "race"})
+			a.emit(ctx, Event{Type: EventAssistantText, Delta: "race"})
 		}()
 	}
 
@@ -423,7 +423,7 @@ func TestConsumerLagDuringClose(t *testing.T) {
 			t.Parallel()
 			provider := &mockProvider{streamFn: textResponse("hi")}
 			reg := tools.NewRegistry()
-			a := NewAgentLoop(provider, reg)
+			a := NewLoop(provider, reg)
 
 			evCh := a.Events()
 
@@ -465,12 +465,12 @@ func TestConsumerLagDuringClose(t *testing.T) {
 func TestBackToBackPromptEventChannels(t *testing.T) {
 	provider := &mockProvider{streamFn: textResponse("reply")}
 	reg := tools.NewRegistry()
-	a := NewAgentLoop(provider, reg)
+	a := NewLoop(provider, reg)
 
 	for i := 0; i < 20; i++ {
 		ch := a.Events()
 
-		var events []AgentEvent
+		var events []Event
 		var drainDone sync.WaitGroup
 		drainDone.Add(1)
 		go func() {

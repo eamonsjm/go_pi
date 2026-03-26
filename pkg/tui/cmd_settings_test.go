@@ -11,7 +11,7 @@ import (
 	"github.com/ejm/go_pi/pkg/tools"
 )
 
-func newTestSettingsEnv(t *testing.T) (*config.Config, *agent.AgentLoop, *Header) {
+func newTestSettingsEnv(t *testing.T) (*config.Config, *agent.Loop, *Header) {
 	t.Helper()
 	dir := t.TempDir()
 	cfg := &config.Config{
@@ -24,7 +24,7 @@ func newTestSettingsEnv(t *testing.T) (*config.Config, *agent.AgentLoop, *Header
 	}
 	provider := &tuiMockProvider{streamFn: tuiTextResponse("ok")}
 	reg := tools.NewRegistry()
-	a := agent.NewAgentLoop(provider, reg)
+	a := agent.NewLoop(provider, reg)
 	h := NewHeader()
 	return cfg, a, h
 }

@@ -428,7 +428,7 @@ func (m *Manager) Shutdown() error {
 }
 
 // ForwardEvent forwards an agent lifecycle event to all plugins that are alive.
-func (m *Manager) ForwardEvent(event agent.AgentEvent) {
+func (m *Manager) ForwardEvent(event agent.Event) {
 	m.mu.RLock()
 	plugins := make([]*Process, len(m.plugins))
 	copy(plugins, m.plugins)
@@ -478,8 +478,8 @@ func (m *Manager) Commands() []CommandDef {
 	return result
 }
 
-// agentEventToPayload converts an agent.AgentEvent to the plugin EventPayload format.
-func agentEventToPayload(event agent.AgentEvent) EventPayload {
+// agentEventToPayload converts an agent.Event to the plugin EventPayload format.
+func agentEventToPayload(event agent.Event) EventPayload {
 	payload := EventPayload{
 		Type: string(event.Type),
 	}

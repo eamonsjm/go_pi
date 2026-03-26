@@ -14,7 +14,7 @@ import (
 func TestNewCompactCommand_Metadata(t *testing.T) {
 	provider := &tuiMockProvider{streamFn: tuiTextResponse("summary")}
 	reg := tools.NewRegistry()
-	a := agent.NewAgentLoop(provider, reg)
+	a := agent.NewLoop(provider, reg)
 
 	cmd := NewCompactCommand(context.Background(), a)
 
@@ -34,7 +34,7 @@ func TestNewCompactCommand_SuccessfulCompaction(t *testing.T) {
 	// then handles the Compact call.
 	provider := &tuiMockProvider{streamFn: tuiTextResponse("This is a summary of the conversation.")}
 	reg := tools.NewRegistry()
-	a := agent.NewAgentLoop(provider, reg)
+	a := agent.NewLoop(provider, reg)
 
 	// Seed messages so Compact has something to work with.
 	a.SetMessages([]ai.Message{
@@ -85,7 +85,7 @@ func TestNewCompactCommand_CompactionError(t *testing.T) {
 		},
 	}
 	reg := tools.NewRegistry()
-	a := agent.NewAgentLoop(provider, reg)
+	a := agent.NewLoop(provider, reg)
 
 	// Seed messages so Compact doesn't fail on "no messages".
 	a.SetMessages([]ai.Message{
@@ -115,7 +115,7 @@ func TestNewCompactCommand_CompactionError(t *testing.T) {
 func TestNewCompactCommand_EmptyMessages(t *testing.T) {
 	provider := &tuiMockProvider{streamFn: tuiTextResponse("summary")}
 	reg := tools.NewRegistry()
-	a := agent.NewAgentLoop(provider, reg)
+	a := agent.NewLoop(provider, reg)
 	// No messages set — Compact should fail with "no messages to compact".
 
 	cmd := NewCompactCommand(context.Background(), a)
@@ -151,7 +151,7 @@ func TestNewCompactCommand_PassesArgs(t *testing.T) {
 		},
 	}
 	reg := tools.NewRegistry()
-	a := agent.NewAgentLoop(provider, reg)
+	a := agent.NewLoop(provider, reg)
 
 	a.SetMessages([]ai.Message{
 		ai.NewTextMessage(ai.RoleUser, "Hello"),

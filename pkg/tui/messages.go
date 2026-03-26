@@ -8,9 +8,9 @@ import (
 // Bubble Tea messages used for inter-component communication
 // ---------------------------------------------------------------------------
 
-// StreamEventMsg wraps an AgentEvent flowing from the agent loop into the TUI.
+// StreamEventMsg wraps an agent.Event flowing from the agent loop into the TUI.
 type StreamEventMsg struct {
-	Event agent.AgentEvent
+	Event agent.Event
 }
 
 // AgentDoneMsg signals that the agent loop has finished (no more events).

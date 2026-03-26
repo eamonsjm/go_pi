@@ -486,7 +486,7 @@ func TestForwardEvent(t *testing.T) {
 	m.plugins = []*Process{p}
 
 	// Should not panic or error.
-	m.ForwardEvent(agent.AgentEvent{
+	m.ForwardEvent(agent.Event{
 		Type:     agent.EventToolExecStart,
 		ToolName: "bash",
 	})
@@ -508,11 +508,11 @@ func TestForwardEvent_SkipsDeadPlugins(t *testing.T) {
 	m.plugins = []*Process{p}
 
 	// Should not panic even with dead plugin.
-	m.ForwardEvent(agent.AgentEvent{Type: agent.EventAgentStart})
+	m.ForwardEvent(agent.Event{Type: agent.EventAgentStart})
 }
 
 func TestAgentEventToPayload_ToolExec(t *testing.T) {
-	event := agent.AgentEvent{
+	event := agent.Event{
 		Type:       agent.EventToolExecStart,
 		ToolName:   "bash",
 		ToolCallID: "tc_123",
@@ -544,7 +544,7 @@ func TestAgentEventToPayload_ToolExec(t *testing.T) {
 }
 
 func TestAgentEventToPayload_ToolExecEnd(t *testing.T) {
-	event := agent.AgentEvent{
+	event := agent.Event{
 		Type:       agent.EventToolExecEnd,
 		ToolName:   "read",
 		ToolResult: "contents",
@@ -560,7 +560,7 @@ func TestAgentEventToPayload_ToolExecEnd(t *testing.T) {
 }
 
 func TestAgentEventToPayload_AgentError(t *testing.T) {
-	event := agent.AgentEvent{
+	event := agent.Event{
 		Type:  agent.EventAgentError,
 		Error: errors.New("something broke"),
 	}
@@ -575,7 +575,7 @@ func TestAgentEventToPayload_AgentError(t *testing.T) {
 }
 
 func TestAgentEventToPayload_AgentErrorNil(t *testing.T) {
-	event := agent.AgentEvent{
+	event := agent.Event{
 		Type:  agent.EventAgentError,
 		Error: nil,
 	}
@@ -587,7 +587,7 @@ func TestAgentEventToPayload_AgentErrorNil(t *testing.T) {
 }
 
 func TestAgentEventToPayload_OtherEvent(t *testing.T) {
-	event := agent.AgentEvent{
+	event := agent.Event{
 		Type:     agent.EventAgentStart,
 		ToolName: "should-be-ignored",
 	}
@@ -873,7 +873,7 @@ func TestManagerConcurrentAccess(t *testing.T) {
 	go func() {
 		defer func() { done <- struct{}{} }()
 		for i := 0; i < 100; i++ {
-			m.ForwardEvent(agent.AgentEvent{Type: agent.EventAgentStart})
+			m.ForwardEvent(agent.Event{Type: agent.EventAgentStart})
 		}
 	}()
 

@@ -92,8 +92,8 @@ func (t *mockTool) Execute(_ context.Context, _ map[string]any) (string, error) 
 
 // drainEvents reads all events from the given channel until EventAgentEnd,
 // channel close, or timeout.
-func drainEvents(ch <-chan AgentEvent, timeout time.Duration) []AgentEvent {
-	var events []AgentEvent
+func drainEvents(ch <-chan Event, timeout time.Duration) []Event {
+	var events []Event
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 	for {
@@ -112,7 +112,7 @@ func drainEvents(ch <-chan AgentEvent, timeout time.Duration) []AgentEvent {
 	}
 }
 
-func hasEventType(events []AgentEvent, t AgentEventType) bool {
+func hasEventType(events []Event, t EventType) bool {
 	for _, e := range events {
 		if e.Type == t {
 			return true
@@ -126,7 +126,7 @@ func hasEventType(events []AgentEvent, t AgentEventType) bool {
 func TestBasicPromptFlow(t *testing.T) {
 	provider := &mockProvider{streamFn: textResponse("Hello!")}
 	reg := tools.NewRegistry()
-	a := NewAgentLoop(provider, reg)
+	a := NewLoop(provider, reg)
 
 	ch := a.Events()
 	go func() {
@@ -175,7 +175,7 @@ func TestToolCallFlow(t *testing.T) {
 	}
 	reg := tools.NewRegistry()
 	reg.Register(&mockTool{name: "echo", result: "hello"})
-	a := NewAgentLoop(provider, reg)
+	a := NewLoop(provider, reg)
 
 	ch := a.Events()
 	go func() {
@@ -242,7 +242,7 @@ func TestCancelAbortsLoop(t *testing.T) {
 	}
 	reg := tools.NewRegistry()
 	reg.Register(&mockTool{name: "noop", result: "ok"})
-	a := NewAgentLoop(provider, reg)
+	a := NewLoop(provider, reg)
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -297,7 +297,7 @@ func TestSteerInterruptsToolExecution(t *testing.T) {
 	reg := tools.NewRegistry()
 	// Tool that takes time — gives us a window to steer.
 	reg.Register(&mockTool{name: "slow", result: "done"})
-	a := NewAgentLoop(provider, reg)
+	a := NewLoop(provider, reg)
 
 	go func() {
 		// Send steer right away — it will be picked up before the second tool executes.
@@ -368,7 +368,7 @@ func TestPostExecSteerAddsSkipResults(t *testing.T) {
 		},
 	}
 
-	var agent *AgentLoop
+	var agent *Loop
 	var steerOnce sync.Once
 
 	reg := tools.NewRegistry()
@@ -382,7 +382,7 @@ func TestPostExecSteerAddsSkipResults(t *testing.T) {
 	}})
 	reg.Register(&mockTool{name: "noop", result: "noop"})
 
-	agent = NewAgentLoop(provider, reg)
+	agent = NewLoop(provider, reg)
 
 	ch := agent.Events()
 	errCh := make(chan error, 1)
@@ -492,7 +492,7 @@ func TestStaleSteerDrainedBetweenPrompts(t *testing.T) {
 
 	reg := tools.NewRegistry()
 	reg.Register(&mockTool{name: "echo", result: "tool-ran"})
-	a := NewAgentLoop(provider, reg)
+	a := NewLoop(provider, reg)
 
 	// First Prompt — completes with no tool calls.
 	ch1 := a.Events()
@@ -563,7 +563,7 @@ func TestFollowUpProcessed(t *testing.T) {
 	}
 
 	reg := tools.NewRegistry()
-	a := NewAgentLoop(provider, reg)
+	a := NewLoop(provider, reg)
 
 	// Queue a follow-up before starting.
 	a.FollowUp("follow up question")
@@ -612,7 +612,7 @@ func TestUnknownToolReturnsError(t *testing.T) {
 	}
 	reg := tools.NewRegistry()
 	// Do NOT register "nonexistent_tool".
-	a := NewAgentLoop(provider, reg)
+	a := NewLoop(provider, reg)
 
 	ch := a.Events()
 	go func() {
@@ -651,7 +651,7 @@ func TestInvalidToolInputJSONReturnsError(t *testing.T) {
 		t.Error("tool should not have been called with invalid input")
 		return "", nil
 	}})
-	a := NewAgentLoop(provider, reg)
+	a := NewLoop(provider, reg)
 
 	ch := a.Events()
 	go func() {
@@ -736,7 +736,7 @@ func TestToolExecWithError(t *testing.T) {
 	}
 	reg := tools.NewRegistry()
 	reg.Register(&mockTool{name: "fail_tool", err: fmt.Errorf("something broke")})
-	a := NewAgentLoop(provider, reg)
+	a := NewLoop(provider, reg)
 
 	ch := a.Events()
 	go func() {
@@ -762,7 +762,7 @@ func TestToolExecWithError(t *testing.T) {
 func TestEventsChannelClosedAfterPrompt(t *testing.T) {
 	provider := &mockProvider{streamFn: textResponse("Hello!")}
 	reg := tools.NewRegistry()
-	a := NewAgentLoop(provider, reg)
+	a := NewLoop(provider, reg)
 
 	ch := a.Events()
 
@@ -787,7 +787,7 @@ func TestEventsChannelClosedAfterPrompt(t *testing.T) {
 func TestRepeatedPromptNoGoroutineLeak(t *testing.T) {
 	provider := &mockProvider{streamFn: textResponse("reply")}
 	reg := tools.NewRegistry()
-	a := NewAgentLoop(provider, reg)
+	a := NewLoop(provider, reg)
 
 	for i := 0; i < 3; i++ {
 		ch := a.Events()
@@ -813,7 +813,7 @@ func TestOptions(t *testing.T) {
 
 	msgs := []ai.Message{ai.NewTextMessage(ai.RoleUser, "restored")}
 
-	a := NewAgentLoop(provider, reg,
+	a := NewLoop(provider, reg,
 		WithModel("test-model"),
 		WithMaxTokens(1024),
 		WithThinking(ai.ThinkingHigh),
@@ -844,7 +844,7 @@ func TestCancelRacesWithPromptCompletion(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		provider := &mockProvider{streamFn: textResponse("done")}
 		reg := tools.NewRegistry()
-		a := NewAgentLoop(provider, reg)
+		a := NewLoop(provider, reg)
 
 		errCh := make(chan error, 1)
 		go func() {
@@ -876,7 +876,7 @@ func TestRapidSteerDropsWithLog(t *testing.T) {
 	// log a warning instead of silently dropping messages.
 	provider := &mockProvider{streamFn: textResponse("done")}
 	reg := tools.NewRegistry()
-	a := NewAgentLoop(provider, reg)
+	a := NewLoop(provider, reg)
 
 	// Buffer is 2 — first two should succeed, third should be dropped (and logged).
 	a.Steer("steer-1")
@@ -911,7 +911,7 @@ func TestRapidFollowUpDropsWithLog(t *testing.T) {
 	// Same test for FollowUp channel.
 	provider := &mockProvider{streamFn: textResponse("done")}
 	reg := tools.NewRegistry()
-	a := NewAgentLoop(provider, reg)
+	a := NewLoop(provider, reg)
 
 	a.FollowUp("fu-1")
 	a.FollowUp("fu-2")
@@ -934,7 +934,7 @@ func TestRapidFollowUpDropsWithLog(t *testing.T) {
 func TestMessagesRoundTrip(t *testing.T) {
 	provider := &mockProvider{}
 	reg := tools.NewRegistry()
-	a := NewAgentLoop(provider, reg)
+	a := NewLoop(provider, reg)
 
 	msgs := []ai.Message{
 		ai.NewTextMessage(ai.RoleUser, "a"),
@@ -984,7 +984,7 @@ func TestRichToolCallFlow(t *testing.T) {
 			{Type: ai.ContentTypeImage, MediaType: "image/png", ImageData: "iVBOR"},
 		},
 	})
-	a := NewAgentLoop(provider, reg)
+	a := NewLoop(provider, reg)
 
 	ch := a.Events()
 	go func() {
@@ -1050,7 +1050,7 @@ func TestRichToolCallWithError(t *testing.T) {
 		name: "rich_fail",
 		err:  fmt.Errorf("read failed: permission denied"),
 	})
-	a := NewAgentLoop(provider, reg)
+	a := NewLoop(provider, reg)
 
 	ch := a.Events()
 	go func() {
@@ -1113,7 +1113,7 @@ func TestHookBeforeErrorReturnsToolError(t *testing.T) {
 		executed = true
 		return "should not run", nil
 	}})
-	a := NewAgentLoop(provider, reg)
+	a := NewLoop(provider, reg)
 
 	// Replace hooks with a registry containing a failing Before hook.
 	hookReg := tools.NewHookRegistry()
@@ -1164,7 +1164,7 @@ func TestRichToolAfterHookErrorReturnsToolError(t *testing.T) {
 			{Type: ai.ContentTypeText, Text: "success output"},
 		},
 	})
-	a := NewAgentLoop(provider, reg)
+	a := NewLoop(provider, reg)
 
 	// Replace hooks with a registry containing a failing After hook.
 	hookReg := tools.NewHookRegistry()
@@ -1238,7 +1238,7 @@ func TestToolPanicReturnsError(t *testing.T) {
 	}
 	reg := tools.NewRegistry()
 	reg.Register(&panicTool{name: "panic_tool"})
-	a := NewAgentLoop(provider, reg)
+	a := NewLoop(provider, reg)
 
 	ch := a.Events()
 	go func() {
@@ -1267,7 +1267,7 @@ func TestRichToolPanicReturnsError(t *testing.T) {
 	}
 	reg := tools.NewRegistry()
 	reg.Register(&panicRichTool{name: "panic_rich"})
-	a := NewAgentLoop(provider, reg)
+	a := NewLoop(provider, reg)
 
 	ch := a.Events()
 	go func() {
@@ -1316,7 +1316,7 @@ func TestDoTurnStreamErrorDrainsChannel(t *testing.T) {
 	}
 
 	reg := tools.NewRegistry()
-	a := NewAgentLoop(provider, reg, WithMessages([]ai.Message{
+	a := NewLoop(provider, reg, WithMessages([]ai.Message{
 		ai.NewTextMessage(ai.RoleUser, "hello"),
 	}))
 
@@ -1341,11 +1341,11 @@ func TestDoTurnStreamErrorDrainsChannel(t *testing.T) {
 	}
 }
 
-// TestZeroValueAgentLoop verifies that a zero-value AgentLoop does not panic.
+// TestZeroValueLoop verifies that a zero-value Loop does not panic.
 // Before the ensureInit fix, close(nil) on the events channel caused a panic.
-func TestZeroValueAgentLoop(t *testing.T) {
+func TestZeroValueLoop(t *testing.T) {
 	t.Run("Prompt with provider does not panic", func(t *testing.T) {
-		a := &AgentLoop{}
+		a := &Loop{}
 		a.SetProvider(&mockProvider{streamFn: textResponse("ok")})
 		// Must not panic on nil channel close.
 		err := a.Prompt(context.Background(), "hello")
@@ -1355,7 +1355,7 @@ func TestZeroValueAgentLoop(t *testing.T) {
 	})
 
 	t.Run("Prompt without provider returns ErrNoProvider", func(t *testing.T) {
-		a := &AgentLoop{}
+		a := &Loop{}
 		err := a.Prompt(context.Background(), "hello")
 		if !errors.Is(err, ErrNoProvider) {
 			t.Fatalf("expected ErrNoProvider, got %v", err)
@@ -1363,7 +1363,7 @@ func TestZeroValueAgentLoop(t *testing.T) {
 	})
 
 	t.Run("Steer on zero value does not block or panic", func(t *testing.T) {
-		a := &AgentLoop{}
+		a := &Loop{}
 		done := make(chan struct{})
 		go func() {
 			a.Steer("test")
@@ -1373,12 +1373,12 @@ func TestZeroValueAgentLoop(t *testing.T) {
 		case <-done:
 			// ok
 		case <-time.After(time.Second):
-			t.Fatal("Steer blocked on zero-value AgentLoop")
+			t.Fatal("Steer blocked on zero-value Loop")
 		}
 	})
 
 	t.Run("FollowUp on zero value does not block or panic", func(t *testing.T) {
-		a := &AgentLoop{}
+		a := &Loop{}
 		done := make(chan struct{})
 		go func() {
 			a.FollowUp("test")
@@ -1388,15 +1388,15 @@ func TestZeroValueAgentLoop(t *testing.T) {
 		case <-done:
 			// ok
 		case <-time.After(time.Second):
-			t.Fatal("FollowUp blocked on zero-value AgentLoop")
+			t.Fatal("FollowUp blocked on zero-value Loop")
 		}
 	})
 
 	t.Run("Events on zero value returns non-nil channel", func(t *testing.T) {
-		a := &AgentLoop{}
+		a := &Loop{}
 		ch := a.Events()
 		if ch == nil {
-			t.Fatal("Events() returned nil on zero-value AgentLoop")
+			t.Fatal("Events() returned nil on zero-value Loop")
 		}
 	})
 }
@@ -1422,7 +1422,7 @@ func TestEmitDuringPromptClose(t *testing.T) {
 		},
 	}
 
-	a := NewAgentLoop(provider, tools.NewRegistry())
+	a := NewLoop(provider, tools.NewRegistry())
 
 	// Drain events so the buffer doesn't fill.
 	events := a.Events()
@@ -1447,7 +1447,7 @@ func TestEmitDuringPromptClose(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for j := 0; j < 100; j++ {
-				a.emit(ctx, AgentEvent{Type: EventAgentError})
+				a.emit(ctx, Event{Type: EventAgentError})
 			}
 		}()
 	}
