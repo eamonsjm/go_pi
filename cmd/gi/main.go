@@ -237,7 +237,7 @@ func run() int {
 		agentLoop, mcpPermHook = makeAgentLoop(provider, registry, cfg, skillRegistry, mcpMgr)
 	} else {
 		// Create a placeholder loop with no provider — submitting will show the error
-		placeholderPrompt := buildSystemPrompt()
+		placeholderPrompt := buildSystemPrompt("You are Claude Code, Anthropic's official CLI for Claude.")
 		if idx := skill.SkillSystemReminder(skillRegistry); idx != "" {
 			placeholderPrompt += "\n\n<system-reminder>\n" + idx + "</system-reminder>"
 		}
@@ -494,8 +494,7 @@ func resolveProvider(ctx context.Context, cfg *config.Config, resolver *auth.Res
 	}
 }
 
-func buildSystemPrompt() string {
-	base := "You are Claude Code, Anthropic's official CLI for Claude."
+func buildSystemPrompt(base string) string {
 
 	parts := make([]string, 0, 4)
 	seenContent := make(map[string]bool)
@@ -577,7 +576,7 @@ func runPrintMode(agentLoop *agent.Loop, sessionMgr *session.Manager, prompt str
 }
 
 func makeAgentLoop(provider ai.Provider, registry *tools.Registry, cfg *config.Config, skillReg *skill.Registry, mcpMgr *mcp.Manager) (*agent.Loop, *mcp.PermissionHook) {
-	systemPrompt := buildSystemPrompt()
+	systemPrompt := buildSystemPrompt("You are Claude Code, Anthropic's official CLI for Claude.")
 	if skillReg != nil {
 		if idx := skill.SkillSystemReminder(skillReg); idx != "" {
 			systemPrompt += "\n\n<system-reminder>\n" + idx + "</system-reminder>"
