@@ -44,20 +44,42 @@ Key observations:
 
 Instead of a simple `isOAuth` boolean, use a per-provider prompt map so each OAuth path gets its own expected base prompt. This handles the fact that Anthropic OAuth and OpenAI OAuth may need different identity prompts.
 
-#### 1. Define the prompt map
+#### 1. Prompt files (data, not code)
+
+Base prompts live as plain markdown files in `cmd/gi/prompts/`, embedded at compile time via `go:embed`:
+
+```
+cmd/gi/prompts/
+├── default.md            # Pi identity — used for all non-OAuth paths
+├── oauth_anthropic.md    # Claude Code identity — Anthropic OAuth
+└── oauth_openai.md       # Claude Code identity — OpenAI/Codex OAuth
+```
 
 ```go
 // cmd/gi/main.go
 
-const piBasePrompt = "You are Pi, a personal AI assistant. ..."  // the pi identity
+import "embed"
+
+//go:embed prompts/default.md
+var defaultBasePrompt string
+
+//go:embed prompts/oauth_anthropic.md
+var oauthAnthropicPrompt string
+
+//go:embed prompts/oauth_openai.md
+var oauthOpenAIPrompt string
 
 // oauthBasePrompts maps provider names to the system prompt their OAuth
-// path expects. Providers not in this map use piBasePrompt.
-var oauthBasePrompts = map[string]string{
-    "anthropic": "You are Claude Code, Anthropic's official CLI for Claude.",
-    "openai":    "You are Claude Code, Anthropic's official CLI for Claude.", // Codex expects this
+// path expects. Providers not in this map use defaultBasePrompt.
+var oauthBasePrompts = map[string]*string{
+    "anthropic": &oauthAnthropicPrompt,
+    "openai":    &oauthOpenAIPrompt,
 }
 ```
+
+**Why `go:embed`?** The prompts are baked into the binary at build time — no runtime filesystem dependency, no risk of missing files in deployment. But editing them is just editing a `.md` file, no Go code changes needed.
+
+**Why not runtime file reads?** The directory-walk prompt collection (CLAUDE.md, AGENTS.md, etc.) already handles user-customizable runtime prompts. These base identity prompts are build-time decisions — they define what the product *is*, not how a user configures it.
 
 #### 2. `resolveProvider` returns provider name and OAuth state
 
@@ -105,10 +127,10 @@ func buildSystemPrompt(base string) string {
 func selectBasePrompt(providerName string, isOAuth bool) string {
     if isOAuth {
         if prompt, ok := oauthBasePrompts[providerName]; ok {
-            return prompt
+            return strings.TrimSpace(*prompt)
         }
     }
-    return piBasePrompt
+    return strings.TrimSpace(defaultBasePrompt)
 }
 
 func makeAgentLoop(provider ai.Provider, registry *tools.Registry, cfg *config.Config, skillReg *skill.Registry, result providerResult) *agent.AgentLoop {
@@ -152,14 +174,17 @@ Every call to `makeAgentLoop` and `buildSystemPrompt` needs updating:
 
 | File | Change |
 |------|--------|
-| `cmd/gi/main.go` | `providerResult` struct, `resolveProvider` returns it, `buildSystemPrompt(base)` takes param, `selectBasePrompt` helper, `oauthBasePrompts` map, prompt constants |
+| `cmd/gi/prompts/default.md` | **New** — Pi base prompt (placeholder content, needs authoring) |
+| `cmd/gi/prompts/oauth_anthropic.md` | **New** — Claude Code prompt for Anthropic OAuth |
+| `cmd/gi/prompts/oauth_openai.md` | **New** — Claude Code prompt for OpenAI/Codex OAuth |
+| `cmd/gi/main.go` | `go:embed` directives, `providerResult` struct, `resolveProvider` returns it, `buildSystemPrompt(base)` takes param, `selectBasePrompt` helper, `oauthBasePrompts` map |
 | `pkg/ai/anthropic.go` | Remove or guard the fallback at line 76-79 |
 | `cmd/gi/context_test.go` | Update `buildSystemPrompt` calls to pass base param |
 
 ## Risks
 
-- **Pi prompt content**: The actual pi base prompt text needs to be defined. This design just creates the routing — the prompt content is a separate decision.
-- **OAuth prompt drift**: If the upstream expected prompts change, our `oauthBasePrompts` map needs updating. Consider reading these from a config file rather than hardcoding, to make updates easier without recompilation.
+- **Pi prompt content**: `cmd/gi/prompts/default.md` has placeholder content — the actual pi identity prompt needs authoring.
+- **OAuth prompt drift**: If the upstream expected prompts change, edit the `.md` files — no Go code changes needed, but a rebuild is required since they're embedded.
 - **Session restore**: Restored sessions use whatever prompt was set at creation time. Switching auth methods mid-session won't change the prompt retroactively. This is correct behavior.
 - **OpenAI OAuth silent pass-through**: Currently `resolveProvider` doesn't check `IsOAuthToken("openai")` — it works by accident since OpenAI always uses Bearer. This design makes it explicit, which is an improvement.
 
