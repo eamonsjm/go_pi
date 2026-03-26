@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -770,17 +771,28 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 	pluginDone := make(chan struct{})
 
 	// Consume inject messages from all plugins and route to TUI/agent.
+	// Channels are re-acquired after plugin restart so consumers survive crashes.
 	for _, proc := range pluginMgr.Plugins() {
 		go func(proc *plugin.PluginProcess) {
+			injectCh := proc.InjectMessages()
 			for {
 				select {
 				case <-ctx.Done():
 					return
 				case <-pluginDone:
 					return
-				case msg, ok := <-proc.InjectMessages():
+				case msg, ok := <-injectCh:
 					if !ok {
-						return
+						// Channel closed — plugin may be restarting.
+						if !waitForPluginRestart(ctx, proc, pluginDone) {
+							return
+						}
+						newCh := proc.InjectMessages()
+						if newCh == injectCh {
+							return // Plugin did not restart — permanently dead.
+						}
+						injectCh = newCh
+						continue
 					}
 					content := msg.Content
 					if msg.Type == "log" {
@@ -805,17 +817,28 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 	}
 
 	// Consume UI requests from all plugins and route to TUI.
+	// Channels are re-acquired after plugin restart so consumers survive crashes.
 	for _, proc := range pluginMgr.Plugins() {
 		go func(proc *plugin.PluginProcess) {
+			uiCh := proc.UIRequests()
 			for {
 				select {
 				case <-ctx.Done():
 					return
 				case <-pluginDone:
 					return
-				case msg, ok := <-proc.UIRequests():
+				case msg, ok := <-uiCh:
 					if !ok {
-						return
+						// Channel closed — plugin may be restarting.
+						if !waitForPluginRestart(ctx, proc, pluginDone) {
+							return
+						}
+						newCh := proc.UIRequests()
+						if newCh == uiCh {
+							return // Plugin did not restart — permanently dead.
+						}
+						uiCh = newCh
+						continue
 					}
 					p.Send(tui.PluginUIRequestMsg{
 						PluginName: proc.Name(),
@@ -838,6 +861,33 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 	}
 	close(pluginDone)
 	return 0
+}
+
+// waitForPluginRestart waits for a plugin to finish restarting after its
+// communication channels have been closed. Returns true if the caller should
+// re-acquire channels (a restart may have occurred), false if the consumer
+// should exit (context cancelled, TUI exiting, or plugin permanently dead).
+func waitForPluginRestart(ctx context.Context, proc *plugin.PluginProcess, done <-chan struct{}) bool {
+	// Brief grace period for the supervisor to detect the process exit
+	// and set the restarting flag.
+	select {
+	case <-ctx.Done():
+		return false
+	case <-done:
+		return false
+	case <-time.After(250 * time.Millisecond):
+	}
+	// Poll until the restart completes or the plugin is confirmed dead.
+	for proc.Restarting() {
+		select {
+		case <-ctx.Done():
+			return false
+		case <-done:
+			return false
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+	return true
 }
 
 // samplingBridge holds mutable state for MCP sampling callbacks. The AI
