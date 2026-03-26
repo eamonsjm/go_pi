@@ -6,43 +6,43 @@ import (
 	"fmt"
 )
 
-// PluginError represents an error reported by a plugin process. It preserves
+// Error represents an error reported by a plugin process. It preserves
 // the plugin's error content so callers can use errors.As to distinguish plugin
 // errors from system errors.
-type PluginError struct {
+type Error struct {
 	Content string
 }
 
-func (e *PluginError) Error() string {
+func (e *Error) Error() string {
 	return e.Content
 }
 
-// PluginTool wraps a plugin-provided tool definition and its owning process
+// Tool wraps a plugin-provided tool definition and its owning process
 // to implement the tools.Tool interface. This allows plugin tools to be
 // registered in the standard tools.Registry alongside built-in tools.
-type PluginTool struct {
+type Tool struct {
 	def     ToolDef
-	process *PluginProcess
+	process *Process
 }
 
 // Name returns the tool name as declared by the plugin.
-func (t *PluginTool) Name() string {
+func (t *Tool) Name() string {
 	return t.def.Name
 }
 
 // Description returns the tool's human-readable description.
-func (t *PluginTool) Description() string {
+func (t *Tool) Description() string {
 	return t.def.Description
 }
 
 // Schema returns the JSON Schema for the tool's input parameters.
-func (t *PluginTool) Schema() any {
+func (t *Tool) Schema() any {
 	return t.def.InputSchema
 }
 
 // Execute sends a tool_call message to the plugin process and waits for the
 // result. If the plugin reports an error, it is returned as a Go error.
-func (t *PluginTool) Execute(ctx context.Context, params map[string]any) (string, error) {
+func (t *Tool) Execute(ctx context.Context, params map[string]any) (string, error) {
 	if !t.process.Alive() {
 		if t.process.Restarting() {
 			return "", fmt.Errorf("plugin %s is restarting after a crash", t.process.name)
@@ -60,18 +60,18 @@ func (t *PluginTool) Execute(ctx context.Context, params map[string]any) (string
 	}
 
 	if isError {
-		return "", &PluginError{Content: content}
+		return "", &Error{Content: content}
 	}
 
 	return content, nil
 }
 
-// PluginCommand holds the metadata for a plugin-provided slash command and a
+// Command holds the metadata for a plugin-provided slash command and a
 // reference to the owning plugin process. The TUI layer can use ExecuteCommand
 // on the process to invoke the command.
-type PluginCommand struct {
+type Command struct {
 	Def     CommandDef
-	Process *PluginProcess
+	Process *Process
 }
 
 // randomID generates a random hex string suitable for correlating tool call

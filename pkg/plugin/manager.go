@@ -51,7 +51,7 @@ type PluginApprover func(name, pluginDir string) (bool, error)
 // registries.
 type Manager struct {
 	mu           sync.RWMutex
-	plugins      []*PluginProcess
+	plugins      []*Process
 	toolRegistry ToolRegistry
 	restartCfg   *RestartConfig   // if set, enables auto-restart for plugins
 	heartbeatCfg *HeartbeatConfig // if set, enables periodic heartbeats
@@ -245,11 +245,11 @@ func (m *Manager) startAndRegisterWithManifest(name, execPath string, manifest *
 // Initialize sends the initialize message to all loaded plugins and registers
 // their tools and commands. Plugins that fail initialization or registration
 // are stopped and removed.
-func (m *Manager) Initialize(ctx context.Context, cfg PluginConfig) error {
+func (m *Manager) Initialize(ctx context.Context, cfg Config) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	var alive []*PluginProcess
+	var alive []*Process
 
 	for _, p := range m.plugins {
 		if err := m.initializePlugin(ctx, p, cfg); err != nil {
@@ -272,7 +272,7 @@ func (m *Manager) Initialize(ctx context.Context, cfg PluginConfig) error {
 // initializePlugin initializes a single plugin and registers its tools.
 // If any step after successful Initialize() fails (including panics during
 // tool registration), the plugin process is stopped to prevent leaks.
-func (m *Manager) initializePlugin(ctx context.Context, p *PluginProcess, cfg PluginConfig) (retErr error) {
+func (m *Manager) initializePlugin(ctx context.Context, p *Process, cfg Config) (retErr error) {
 	if err := p.Initialize(ctx, cfg); err != nil {
 		if stopErr := p.Stop(); stopErr != nil {
 			log.Printf("plugin %s: cleanup: failed to stop after init failure: %v", p.name, stopErr)
@@ -300,7 +300,7 @@ func (m *Manager) initializePlugin(ctx context.Context, p *PluginProcess, cfg Pl
 			log.Printf("plugin: %s tool %q conflicts with existing tool, skipping", p.name, td.Name)
 			continue
 		}
-		m.toolRegistry.Register(&PluginTool{
+		m.toolRegistry.Register(&Tool{
 			def:     td,
 			process: p,
 		})
@@ -355,7 +355,7 @@ func (m *Manager) StartHeartbeats(ctx context.Context) {
 // heartbeatAll sends a heartbeat to each alive plugin and logs unhealthy ones.
 func (m *Manager) heartbeatAll(ctx context.Context, timeout time.Duration) {
 	m.mu.RLock()
-	plugins := make([]*PluginProcess, len(m.plugins))
+	plugins := make([]*Process, len(m.plugins))
 	copy(plugins, m.plugins)
 	m.mu.RUnlock()
 
@@ -430,7 +430,7 @@ func (m *Manager) Shutdown() error {
 // ForwardEvent forwards an agent lifecycle event to all plugins that are alive.
 func (m *Manager) ForwardEvent(event agent.AgentEvent) {
 	m.mu.RLock()
-	plugins := make([]*PluginProcess, len(m.plugins))
+	plugins := make([]*Process, len(m.plugins))
 	copy(plugins, m.plugins)
 	m.mu.RUnlock()
 
@@ -445,17 +445,17 @@ func (m *Manager) ForwardEvent(event agent.AgentEvent) {
 }
 
 // Plugins returns the list of active plugin processes.
-func (m *Manager) Plugins() []*PluginProcess {
+func (m *Manager) Plugins() []*Process {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	result := make([]*PluginProcess, len(m.plugins))
+	result := make([]*Process, len(m.plugins))
 	copy(result, m.plugins)
 	return result
 }
 
-// PluginTools returns all tools provided by all loaded plugins.
-func (m *Manager) PluginTools() []ToolDef {
+// Tools returns all tools provided by all loaded plugins.
+func (m *Manager) Tools() []ToolDef {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -466,8 +466,8 @@ func (m *Manager) PluginTools() []ToolDef {
 	return result
 }
 
-// PluginCommands returns all commands provided by all loaded plugins.
-func (m *Manager) PluginCommands() []CommandDef {
+// Commands returns all commands provided by all loaded plugins.
+func (m *Manager) Commands() []CommandDef {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 

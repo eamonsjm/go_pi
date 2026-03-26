@@ -364,9 +364,9 @@ func TestInitialize_RegistersTools(t *testing.T) {
 
 	reg := tools.NewRegistry()
 	m := NewManager(reg)
-	m.plugins = []*PluginProcess{p}
+	m.plugins = []*Process{p}
 
-	err := m.Initialize(context.Background(), PluginConfig{})
+	err := m.Initialize(context.Background(), Config{})
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
@@ -389,9 +389,9 @@ func TestInitialize_SkipsDuplicateTools(t *testing.T) {
 	reg.Register(&dummyTool{name: "echo"})
 
 	m := NewManager(reg)
-	m.plugins = []*PluginProcess{p}
+	m.plugins = []*Process{p}
 
-	m.Initialize(context.Background(), PluginConfig{})
+	m.Initialize(context.Background(), Config{})
 
 	// The existing tool should remain (not be replaced).
 	tool, _ := reg.Get("echo")
@@ -406,9 +406,9 @@ func TestInitialize_RemovesFailedPlugins(t *testing.T) {
 
 	reg := tools.NewRegistry()
 	m := NewManager(reg)
-	m.plugins = []*PluginProcess{bad, good}
+	m.plugins = []*Process{bad, good}
 
-	m.Initialize(context.Background(), PluginConfig{})
+	m.Initialize(context.Background(), Config{})
 
 	if len(m.plugins) != 1 {
 		t.Fatalf("plugins = %d, want 1 (failed plugin should be removed)", len(m.plugins))
@@ -420,13 +420,13 @@ func TestInitialize_RemovesFailedPlugins(t *testing.T) {
 
 func TestShutdown(t *testing.T) {
 	p := startTestPlugin(t, "echo_caps")
-	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), Config{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
 	reg := tools.NewRegistry()
 	m := NewManager(reg)
-	m.plugins = []*PluginProcess{p}
+	m.plugins = []*Process{p}
 
 	err := m.Shutdown()
 	if err != nil {
@@ -437,38 +437,38 @@ func TestShutdown(t *testing.T) {
 	}
 }
 
-func TestPluginTools(t *testing.T) {
+func TestTools(t *testing.T) {
 	p := startTestPlugin(t, "echo_caps")
-	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), Config{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
 	reg := tools.NewRegistry()
 	m := NewManager(reg)
-	m.plugins = []*PluginProcess{p}
+	m.plugins = []*Process{p}
 
-	td := m.PluginTools()
+	td := m.Tools()
 	if len(td) != 1 {
-		t.Fatalf("PluginTools() = %d, want 1", len(td))
+		t.Fatalf("Tools() = %d, want 1", len(td))
 	}
 	if td[0].Name != "echo" {
 		t.Errorf("tool name = %q, want %q", td[0].Name, "echo")
 	}
 }
 
-func TestPluginCommands(t *testing.T) {
+func TestCommands(t *testing.T) {
 	p := startTestPlugin(t, "echo_caps")
-	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), Config{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
 	reg := tools.NewRegistry()
 	m := NewManager(reg)
-	m.plugins = []*PluginProcess{p}
+	m.plugins = []*Process{p}
 
-	cmds := m.PluginCommands()
+	cmds := m.Commands()
 	if len(cmds) != 1 {
-		t.Fatalf("PluginCommands() = %d, want 1", len(cmds))
+		t.Fatalf("Commands() = %d, want 1", len(cmds))
 	}
 	if cmds[0].Name != "greet" {
 		t.Errorf("command name = %q, want %q", cmds[0].Name, "greet")
@@ -477,13 +477,13 @@ func TestPluginCommands(t *testing.T) {
 
 func TestForwardEvent(t *testing.T) {
 	p := startTestPlugin(t, "echo_caps")
-	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), Config{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
 	reg := tools.NewRegistry()
 	m := NewManager(reg)
-	m.plugins = []*PluginProcess{p}
+	m.plugins = []*Process{p}
 
 	// Should not panic or error.
 	m.ForwardEvent(agent.AgentEvent{
@@ -498,14 +498,14 @@ func TestForwardEvent(t *testing.T) {
 
 func TestForwardEvent_SkipsDeadPlugins(t *testing.T) {
 	p := startTestPlugin(t, "echo_caps")
-	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), Config{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 	p.Stop()
 
 	reg := tools.NewRegistry()
 	m := NewManager(reg)
-	m.plugins = []*PluginProcess{p}
+	m.plugins = []*Process{p}
 
 	// Should not panic even with dead plugin.
 	m.ForwardEvent(agent.AgentEvent{Type: agent.EventAgentStart})
@@ -608,11 +608,11 @@ func TestInitialize_StopsPluginOnRegistrationPanic(t *testing.T) {
 	// A nil toolRegistry causes a panic during tool registration, after
 	// the plugin process has already been successfully initialized.
 	m := &Manager{
-		plugins:      []*PluginProcess{p},
+		plugins:      []*Process{p},
 		toolRegistry: nil,
 	}
 
-	err := m.Initialize(context.Background(), PluginConfig{})
+	err := m.Initialize(context.Background(), Config{})
 	if err != nil {
 		t.Fatalf("Initialize returned error: %v", err)
 	}
@@ -630,13 +630,13 @@ func TestInitialize_StopsPluginOnRegistrationPanic(t *testing.T) {
 
 func TestStartHeartbeats_SendsPeriodicHeartbeats(t *testing.T) {
 	p := startTestPlugin(t, "heartbeat_ack")
-	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), Config{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
 	reg := tools.NewRegistry()
 	m := NewManager(reg)
-	m.plugins = []*PluginProcess{p}
+	m.plugins = []*Process{p}
 
 	cfg := HeartbeatConfig{
 		Interval: 100 * time.Millisecond,
@@ -684,13 +684,13 @@ func TestPluginHealthy_UnknownPlugin(t *testing.T) {
 
 func TestShutdown_StopsHeartbeats(t *testing.T) {
 	p := startTestPlugin(t, "heartbeat_ack")
-	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), Config{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
 	reg := tools.NewRegistry()
 	m := NewManager(reg)
-	m.plugins = []*PluginProcess{p}
+	m.plugins = []*Process{p}
 
 	cfg := HeartbeatConfig{
 		Interval: 100 * time.Millisecond,
@@ -863,7 +863,7 @@ func TestManagerConcurrentAccess(t *testing.T) {
 
 	// Seed a plugin marked as closed so readers iterate the slice
 	// without attempting I/O on uninitialized process internals.
-	seed := &PluginProcess{name: "seed"}
+	seed := &Process{name: "seed"}
 	seed.closed = true
 	m.plugins = append(m.plugins, seed)
 
@@ -893,12 +893,12 @@ func TestManagerConcurrentAccess(t *testing.T) {
 		}
 	}()
 
-	// Reader: PluginTools + PluginCommands
+	// Reader: Tools + Commands
 	go func() {
 		defer func() { done <- struct{}{} }()
 		for i := 0; i < 100; i++ {
-			_ = m.PluginTools()
-			_ = m.PluginCommands()
+			_ = m.Tools()
+			_ = m.Commands()
 		}
 	}()
 

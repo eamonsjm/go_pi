@@ -17,19 +17,19 @@ import (
 
 // --- In-process readLoop tests (no subprocess needed) ---
 
-// newTestProcess creates a PluginProcess with a scanner reading from the given
+// newTestProcess creates a Process with a scanner reading from the given
 // JSONL input. The process has no real subprocess — only the readLoop path is
 // exercised.
-func newTestProcess(name, jsonl string) *PluginProcess {
+func newTestProcess(name, jsonl string) *Process {
 	scanner := bufio.NewScanner(strings.NewReader(jsonl))
 	scanner.Buffer(make([]byte, maxScannerBuffer), maxScannerBuffer)
-	return &PluginProcess{
+	return &Process{
 		name:        name,
 		scanner:     scanner,
-		injectCh:    make(chan PluginMessage, 64),
-		responseCh:  make(chan PluginMessage, 16),
-		uiRequestCh: make(chan PluginMessage, 16),
-		heartbeatCh: make(chan PluginMessage, 4),
+		injectCh:    make(chan Message, 64),
+		responseCh:  make(chan Message, 16),
+		uiRequestCh: make(chan Message, 16),
+		heartbeatCh: make(chan Message, 4),
 		healthy:     true,
 	}
 }
@@ -105,13 +105,13 @@ func TestReadLoop_ResponseDroppedWhenFull(t *testing.T) {
 
 	scanner := bufio.NewScanner(strings.NewReader(lines))
 	scanner.Buffer(make([]byte, maxScannerBuffer), maxScannerBuffer)
-	p := &PluginProcess{
+	p := &Process{
 		name:        "test-drop-response",
 		scanner:     scanner,
-		injectCh:    make(chan PluginMessage, 64),
-		responseCh:  make(chan PluginMessage, 2), // small buffer
-		uiRequestCh: make(chan PluginMessage, 16),
-		heartbeatCh: make(chan PluginMessage, 4),
+		injectCh:    make(chan Message, 64),
+		responseCh:  make(chan Message, 2), // small buffer
+		uiRequestCh: make(chan Message, 16),
+		heartbeatCh: make(chan Message, 4),
 		healthy:     true,
 	}
 
@@ -150,13 +150,13 @@ func TestReadLoop_InjectDroppedWhenFull(t *testing.T) {
 
 	scanner := bufio.NewScanner(strings.NewReader(lines))
 	scanner.Buffer(make([]byte, maxScannerBuffer), maxScannerBuffer)
-	p := &PluginProcess{
+	p := &Process{
 		name:        "test-drop",
 		scanner:     scanner,
-		injectCh:    make(chan PluginMessage, 2), // small buffer
-		responseCh:  make(chan PluginMessage, 16),
-		uiRequestCh: make(chan PluginMessage, 16),
-		heartbeatCh: make(chan PluginMessage, 4),
+		injectCh:    make(chan Message, 2), // small buffer
+		responseCh:  make(chan Message, 16),
+		uiRequestCh: make(chan Message, 16),
+		heartbeatCh: make(chan Message, 4),
 		healthy:     true,
 	}
 
@@ -182,14 +182,14 @@ func TestReadLoop_ContextCancellation(t *testing.T) {
 	scanner := bufio.NewScanner(pr)
 	scanner.Buffer(make([]byte, maxScannerBuffer), maxScannerBuffer)
 
-	p := &PluginProcess{
+	p := &Process{
 		name:        "test-ctx-cancel",
 		scanner:     scanner,
 		stdout:      pr,
-		injectCh:    make(chan PluginMessage, 64),
-		responseCh:  make(chan PluginMessage, 16),
-		uiRequestCh: make(chan PluginMessage, 16),
-		heartbeatCh: make(chan PluginMessage, 4),
+		injectCh:    make(chan Message, 64),
+		responseCh:  make(chan Message, 16),
+		uiRequestCh: make(chan Message, 16),
+		heartbeatCh: make(chan Message, 4),
 		healthy:     true,
 	}
 
@@ -247,7 +247,7 @@ func TestHelperPlugin(t *testing.T) {
 		if err := json.Unmarshal(scanner.Bytes(), &msg); err != nil {
 			os.Exit(1)
 		}
-		resp := PluginMessage{
+		resp := Message{
 			Type: "capabilities",
 			Tools: []ToolDef{
 				{Name: "echo", Description: "echoes input", InputSchema: map[string]any{"type": "object"}},
@@ -267,7 +267,7 @@ func TestHelperPlugin(t *testing.T) {
 			}
 			switch req.Type {
 			case "tool_call":
-				r := PluginMessage{
+				r := Message{
 					Type:    "tool_result",
 					ID:      req.ID,
 					Content: "echoed:" + req.Name,
@@ -275,7 +275,7 @@ func TestHelperPlugin(t *testing.T) {
 				data, _ := json.Marshal(r)
 				fmt.Fprintln(os.Stdout, string(data))
 			case "command":
-				r := PluginMessage{
+				r := Message{
 					Type: "command_result",
 					Text: "hello:" + req.Args,
 				}
@@ -294,12 +294,12 @@ func TestHelperPlugin(t *testing.T) {
 			os.Exit(1)
 		}
 		// Reply to initialize with capabilities.
-		resp := PluginMessage{Type: "capabilities"}
+		resp := Message{Type: "capabilities"}
 		data, _ := json.Marshal(resp)
 		fmt.Fprintln(os.Stdout, string(data))
 
 		// Now send some inject messages.
-		for _, msg := range []PluginMessage{
+		for _, msg := range []Message{
 			{Type: "inject_message", Role: "assistant", Content: "injected text"},
 			{Type: "log", Level: "info", Message: "log line"},
 		} {
@@ -322,12 +322,12 @@ func TestHelperPlugin(t *testing.T) {
 			os.Exit(1)
 		}
 		// Reply to initialize with capabilities.
-		resp := PluginMessage{Type: "capabilities"}
+		resp := Message{Type: "capabilities"}
 		data, _ := json.Marshal(resp)
 		fmt.Fprintln(os.Stdout, string(data))
 
 		// Send some UI requests.
-		for _, msg := range []PluginMessage{
+		for _, msg := range []Message{
 			{Type: "ui_request", ID: "req1", UIType: "input", UITitle: "Enter name:", UIDefault: "John"},
 			{Type: "ui_request", ID: "req2", UIType: "confirm", UITitle: "Continue?"},
 		} {
@@ -349,7 +349,7 @@ func TestHelperPlugin(t *testing.T) {
 		if !scanner.Scan() {
 			os.Exit(1)
 		}
-		resp := PluginMessage{Type: "capabilities"}
+		resp := Message{Type: "capabilities"}
 		data, _ := json.Marshal(resp)
 		fmt.Fprintln(os.Stdout, string(data))
 
@@ -358,7 +358,7 @@ func TestHelperPlugin(t *testing.T) {
 			json.Unmarshal(scanner.Bytes(), &req)
 			switch req.Type {
 			case "tool_call":
-				r := PluginMessage{
+				r := Message{
 					Type:    "tool_result",
 					ID:      req.ID,
 					Content: "something went wrong",
@@ -382,7 +382,7 @@ func TestHelperPlugin(t *testing.T) {
 			os.Exit(1)
 		}
 		fmt.Fprintln(os.Stdout, "NOT VALID JSON {{{")
-		resp := PluginMessage{Type: "capabilities"}
+		resp := Message{Type: "capabilities"}
 		data, _ := json.Marshal(resp)
 		fmt.Fprintln(os.Stdout, string(data))
 		for scanner.Scan() {
@@ -398,7 +398,7 @@ func TestHelperPlugin(t *testing.T) {
 		if !scanner.Scan() {
 			os.Exit(1)
 		}
-		resp := PluginMessage{Type: "capabilities"}
+		resp := Message{Type: "capabilities"}
 		data, _ := json.Marshal(resp)
 		fmt.Fprintln(os.Stdout, string(data))
 
@@ -418,7 +418,7 @@ func TestHelperPlugin(t *testing.T) {
 		if !scanner.Scan() {
 			os.Exit(1)
 		}
-		resp := PluginMessage{Type: "capabilities"}
+		resp := Message{Type: "capabilities"}
 		data, _ := json.Marshal(resp)
 		fmt.Fprintln(os.Stdout, string(data))
 		os.Stdout.Close()
@@ -436,7 +436,7 @@ func TestHelperPlugin(t *testing.T) {
 		if !scanner.Scan() {
 			os.Exit(1)
 		}
-		resp := PluginMessage{Type: "capabilities"}
+		resp := Message{Type: "capabilities"}
 		data, _ := json.Marshal(resp)
 		fmt.Fprintln(os.Stdout, string(data))
 
@@ -461,7 +461,7 @@ func TestHelperPlugin(t *testing.T) {
 		if !scanner.Scan() {
 			os.Exit(1)
 		}
-		resp := PluginMessage{
+		resp := Message{
 			Type: "capabilities",
 			Tools: []ToolDef{
 				{Name: "echo", Description: "echoes input", InputSchema: map[string]any{"type": "object"}},
@@ -485,7 +485,7 @@ func TestHelperPlugin(t *testing.T) {
 			json.Unmarshal(scanner.Bytes(), &req)
 			switch req.Type {
 			case "tool_call":
-				r := PluginMessage{
+				r := Message{
 					Type:    "tool_result",
 					ID:      req.ID,
 					Content: "echoed:" + req.Name,
@@ -503,7 +503,7 @@ func TestHelperPlugin(t *testing.T) {
 		if !scanner.Scan() {
 			os.Exit(1)
 		}
-		resp := PluginMessage{Type: "capabilities"}
+		resp := Message{Type: "capabilities"}
 		data, _ := json.Marshal(resp)
 		fmt.Fprintln(os.Stdout, string(data))
 
@@ -513,7 +513,7 @@ func TestHelperPlugin(t *testing.T) {
 			switch req.Type {
 			case "tool_call":
 				time.Sleep(200 * time.Millisecond)
-				r := PluginMessage{
+				r := Message{
 					Type:    "tool_result",
 					ID:      req.ID,
 					Content: "late:" + req.Name,
@@ -530,7 +530,7 @@ func TestHelperPlugin(t *testing.T) {
 		if !scanner.Scan() {
 			os.Exit(1)
 		}
-		resp := PluginMessage{Type: "capabilities"}
+		resp := Message{Type: "capabilities"}
 		data, _ := json.Marshal(resp)
 		fmt.Fprintln(os.Stdout, string(data))
 
@@ -539,7 +539,7 @@ func TestHelperPlugin(t *testing.T) {
 			json.Unmarshal(scanner.Bytes(), &req)
 			switch req.Type {
 			case "heartbeat":
-				r := PluginMessage{
+				r := Message{
 					Type: "heartbeat_ack",
 					Status: &HeartbeatStatus{
 						MemoryBytes: 1024000,
@@ -550,7 +550,7 @@ func TestHelperPlugin(t *testing.T) {
 				data, _ := json.Marshal(r)
 				fmt.Fprintln(os.Stdout, string(data))
 			case "tool_call":
-				r := PluginMessage{
+				r := Message{
 					Type:    "tool_result",
 					ID:      req.ID,
 					Content: "echoed:" + req.Name,
@@ -568,7 +568,7 @@ func TestHelperPlugin(t *testing.T) {
 		if !scanner.Scan() {
 			os.Exit(1)
 		}
-		resp := PluginMessage{Type: "capabilities"}
+		resp := Message{Type: "capabilities"}
 		data, _ := json.Marshal(resp)
 		fmt.Fprintln(os.Stdout, string(data))
 
@@ -578,7 +578,7 @@ func TestHelperPlugin(t *testing.T) {
 			switch req.Type {
 			case "heartbeat":
 				time.Sleep(500 * time.Millisecond)
-				r := PluginMessage{
+				r := Message{
 					Type: "heartbeat_ack",
 					Status: &HeartbeatStatus{
 						MemoryBytes: 999,
@@ -597,7 +597,7 @@ func TestHelperPlugin(t *testing.T) {
 		if !scanner.Scan() {
 			os.Exit(1)
 		}
-		resp := PluginMessage{Type: "capabilities"}
+		resp := Message{Type: "capabilities"}
 		data, _ := json.Marshal(resp)
 		fmt.Fprintln(os.Stdout, string(data))
 
@@ -629,8 +629,8 @@ func helperPluginCmd(mode string) *exec.Cmd {
 	return cmd
 }
 
-// startTestPlugin starts a PluginProcess backed by the test helper subprocess.
-func startTestPlugin(t *testing.T, mode string) *PluginProcess {
+// startTestPlugin starts a Process backed by the test helper subprocess.
+func startTestPlugin(t *testing.T, mode string) *Process {
 	t.Helper()
 
 	cmd := helperPluginCmd(mode)
@@ -651,7 +651,7 @@ func startTestPlugin(t *testing.T, mode string) *PluginProcess {
 	scanner := bufio.NewScanner(stdoutPipe)
 	scanner.Buffer(make([]byte, maxScannerBuffer), maxScannerBuffer)
 
-	p := &PluginProcess{
+	p := &Process{
 		name:        "test-plugin",
 		path:        os.Args[0],
 		spawnCmd:    func() *exec.Cmd { return helperPluginCmd(mode) },
@@ -659,10 +659,10 @@ func startTestPlugin(t *testing.T, mode string) *PluginProcess {
 		stdin:       stdinPipe,
 		stdout:      stdoutPipe,
 		scanner:     scanner,
-		injectCh:    make(chan PluginMessage, 64),
-		responseCh:  make(chan PluginMessage, 16),
-		uiRequestCh: make(chan PluginMessage, 16),
-		heartbeatCh: make(chan PluginMessage, 4),
+		injectCh:    make(chan Message, 64),
+		responseCh:  make(chan Message, 16),
+		uiRequestCh: make(chan Message, 16),
+		heartbeatCh: make(chan Message, 4),
 		healthy:     true,
 		timeouts:    DefaultTimeoutConfig(),
 	}
@@ -681,7 +681,7 @@ func startTestPlugin(t *testing.T, mode string) *PluginProcess {
 func TestInitialize_Success(t *testing.T) {
 	p := startTestPlugin(t, "echo_caps")
 
-	err := p.Initialize(context.Background(), PluginConfig{
+	err := p.Initialize(context.Background(), Config{
 		Cwd:       "/tmp",
 		Model:     "test-model",
 		Provider:  "test",
@@ -708,7 +708,7 @@ func TestInitialize_Success(t *testing.T) {
 
 func TestExecuteTool_RoundTrip(t *testing.T) {
 	p := startTestPlugin(t, "echo_caps")
-	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), Config{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -726,7 +726,7 @@ func TestExecuteTool_RoundTrip(t *testing.T) {
 
 func TestExecuteTool_ErrorResult(t *testing.T) {
 	p := startTestPlugin(t, "tool_error")
-	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), Config{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -744,7 +744,7 @@ func TestExecuteTool_ErrorResult(t *testing.T) {
 
 func TestExecuteCommand_RoundTrip(t *testing.T) {
 	p := startTestPlugin(t, "echo_caps")
-	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), Config{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -762,7 +762,7 @@ func TestExecuteCommand_RoundTrip(t *testing.T) {
 
 func TestSendEvent_FireAndForget(t *testing.T) {
 	p := startTestPlugin(t, "echo_caps")
-	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), Config{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -779,12 +779,12 @@ func TestSendEvent_FireAndForget(t *testing.T) {
 
 func TestInjectMessages_Routing(t *testing.T) {
 	p := startTestPlugin(t, "inject_messages")
-	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), Config{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
 	// Collect inject messages sent by the helper.
-	var msgs []PluginMessage
+	var msgs []Message
 	timeout := time.After(5 * time.Second)
 	for i := 0; i < 2; i++ {
 		select {
@@ -814,7 +814,7 @@ func TestInjectMessages_Routing(t *testing.T) {
 
 func TestStop_GracefulShutdown(t *testing.T) {
 	p := startTestPlugin(t, "echo_caps")
-	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), Config{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -830,7 +830,7 @@ func TestStop_GracefulShutdown(t *testing.T) {
 
 func TestStop_Idempotent(t *testing.T) {
 	p := startTestPlugin(t, "echo_caps")
-	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), Config{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -844,7 +844,7 @@ func TestStop_Idempotent(t *testing.T) {
 
 func TestSend_AfterClose(t *testing.T) {
 	p := startTestPlugin(t, "echo_caps")
-	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), Config{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 	p.Stop()
@@ -861,7 +861,7 @@ func TestSend_AfterClose(t *testing.T) {
 func TestInitialize_ProcessExitedDuringInit(t *testing.T) {
 	p := startTestPlugin(t, "exit_immediately")
 
-	err := p.Initialize(context.Background(), PluginConfig{})
+	err := p.Initialize(context.Background(), Config{})
 	if err == nil {
 		t.Fatal("expected error from crashed process")
 	}
@@ -940,22 +940,22 @@ func TestReadLoop_SkipsBadJSON(t *testing.T) {
 
 	// Initialize should succeed because the helper sends bad JSON first
 	// (which readLoop skips), then valid capabilities.
-	err := p.Initialize(context.Background(), PluginConfig{})
+	err := p.Initialize(context.Background(), Config{})
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 }
 
 func TestName(t *testing.T) {
-	p := &PluginProcess{name: "foo"}
+	p := &Process{name: "foo"}
 	if p.Name() != "foo" {
 		t.Errorf("Name() = %q, want %q", p.Name(), "foo")
 	}
 }
 
-func TestCommands(t *testing.T) {
+func TestProcess_Commands(t *testing.T) {
 	cmds := []CommandDef{{Name: "a"}, {Name: "b"}}
-	p := &PluginProcess{commands: cmds}
+	p := &Process{commands: cmds}
 	got := p.Commands()
 	if len(got) != 2 {
 		t.Fatalf("Commands() len = %d, want 2", len(got))
@@ -966,23 +966,23 @@ func TestCommands(t *testing.T) {
 }
 
 func TestAlive_DefaultTrue(t *testing.T) {
-	p := &PluginProcess{}
+	p := &Process{}
 	if !p.Alive() {
 		t.Error("Alive() = false for new process, want true")
 	}
 }
 
 func TestAlive_FalseAfterClose(t *testing.T) {
-	p := &PluginProcess{closed: true}
+	p := &Process{closed: true}
 	if p.Alive() {
 		t.Error("Alive() = true for closed process, want false")
 	}
 }
 
 func TestWaitResponse_Timeout(t *testing.T) {
-	p := &PluginProcess{
+	p := &Process{
 		name:       "timeout-test",
-		responseCh: make(chan PluginMessage), // unbuffered, nothing will send
+		responseCh: make(chan Message), // unbuffered, nothing will send
 	}
 
 	start := time.Now()
@@ -1001,10 +1001,10 @@ func TestWaitResponse_Timeout(t *testing.T) {
 }
 
 func TestWaitResponse_ChannelClosed(t *testing.T) {
-	responseCh := make(chan PluginMessage)
+	responseCh := make(chan Message)
 	close(responseCh)
 
-	p := &PluginProcess{
+	p := &Process{
 		name:       "closed-test",
 		responseCh: responseCh,
 	}
@@ -1022,7 +1022,7 @@ func TestWaitResponse_ChannelClosed(t *testing.T) {
 
 func TestCrashDuringActiveSend(t *testing.T) {
 	p := startTestPlugin(t, "crash_on_tool")
-	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), Config{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -1041,7 +1041,7 @@ func TestCrashDuringActiveSend(t *testing.T) {
 
 func TestPrematureStdoutClose(t *testing.T) {
 	p := startTestPlugin(t, "close_stdout_early")
-	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), Config{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -1068,7 +1068,7 @@ func TestPrematureStdoutClose(t *testing.T) {
 
 func TestHangingPluginTimeout(t *testing.T) {
 	p := startTestPlugin(t, "hang_on_tool")
-	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), Config{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -1093,7 +1093,7 @@ func TestHangingPluginTimeout(t *testing.T) {
 
 func TestExecuteToolOnClosedProcess(t *testing.T) {
 	p := startTestPlugin(t, "echo_caps")
-	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), Config{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 	p.Stop()
@@ -1109,7 +1109,7 @@ func TestExecuteToolOnClosedProcess(t *testing.T) {
 
 func TestExecuteCommandOnClosedProcess(t *testing.T) {
 	p := startTestPlugin(t, "echo_caps")
-	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), Config{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 	p.Stop()
@@ -1127,7 +1127,7 @@ func TestExecuteCommandOnClosedProcess(t *testing.T) {
 
 func TestAutoRestart_RecoverFromCrash(t *testing.T) {
 	p := startTestPlugin(t, "echo_caps")
-	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), Config{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -1183,7 +1183,7 @@ func TestAutoRestart_RecoverFromCrash(t *testing.T) {
 
 func TestAutoRestart_NoRestartOnCleanShutdown(t *testing.T) {
 	p := startTestPlugin(t, "echo_caps")
-	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), Config{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -1208,7 +1208,7 @@ func TestAutoRestart_NoRestartOnCleanShutdown(t *testing.T) {
 
 func TestAutoRestart_MaxAttemptsExhausted(t *testing.T) {
 	p := startTestPlugin(t, "echo_caps")
-	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), Config{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -1251,7 +1251,7 @@ func TestAutoRestart_MaxAttemptsExhausted(t *testing.T) {
 
 func TestAutoRestart_RestartingState(t *testing.T) {
 	p := startTestPlugin(t, "echo_caps")
-	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), Config{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -1304,7 +1304,7 @@ func TestAutoRestart_RestartingState(t *testing.T) {
 
 func TestAutoRestart_StopDuringRestart(t *testing.T) {
 	p := startTestPlugin(t, "echo_caps")
-	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), Config{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -1358,7 +1358,7 @@ func TestAutoRestart_NoGoroutineLeakOnFailedRespawn(t *testing.T) {
 	goroutinesBefore := runtime.NumGoroutine()
 
 	p := startTestPlugin(t, "echo_caps")
-	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), Config{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -1426,7 +1426,7 @@ func TestDefaultRestartConfig(t *testing.T) {
 
 func TestHeartbeat_Success(t *testing.T) {
 	p := startTestPlugin(t, "heartbeat_ack")
-	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), Config{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -1465,7 +1465,7 @@ func TestHeartbeat_Success(t *testing.T) {
 
 func TestHeartbeat_Timeout(t *testing.T) {
 	p := startTestPlugin(t, "heartbeat_slow")
-	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), Config{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -1487,7 +1487,7 @@ func TestHeartbeat_Timeout(t *testing.T) {
 
 func TestHeartbeat_OldPluginIgnores(t *testing.T) {
 	p := startTestPlugin(t, "heartbeat_ignore")
-	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), Config{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -1507,7 +1507,7 @@ func TestHeartbeat_OldPluginIgnores(t *testing.T) {
 
 func TestHeartbeat_ClosedProcess(t *testing.T) {
 	p := startTestPlugin(t, "heartbeat_ack")
-	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), Config{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 	p.Stop()
@@ -1525,7 +1525,7 @@ func TestHeartbeat_ClosedProcess(t *testing.T) {
 
 func TestHeartbeat_DoesNotInterfereWithTools(t *testing.T) {
 	p := startTestPlugin(t, "heartbeat_ack")
-	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), Config{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -1554,7 +1554,7 @@ func TestHeartbeat_DoesNotInterfereWithTools(t *testing.T) {
 }
 
 func TestHealthy_DefaultTrue(t *testing.T) {
-	p := &PluginProcess{healthy: true}
+	p := &Process{healthy: true}
 	if !p.Healthy() {
 		t.Error("Healthy() = false for new process, want true")
 	}
@@ -1574,7 +1574,7 @@ func TestReadLoop_HeartbeatAckRouted(t *testing.T) {
 	input := `{"type":"heartbeat_ack","status":{"memory_bytes":42}}` + "\n"
 
 	p := newTestProcess("test-hb", input)
-	p.heartbeatCh = make(chan PluginMessage, 4)
+	p.heartbeatCh = make(chan Message, 4)
 	p.readLoop(context.Background())
 
 	msg, ok := <-p.heartbeatCh
@@ -1596,7 +1596,7 @@ func TestToolTimeout_NoGoroutineLeak(t *testing.T) {
 	goroutinesBefore := runtime.NumGoroutine()
 
 	p := startTestPlugin(t, "slow_tool")
-	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), Config{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -1642,7 +1642,7 @@ func TestToolTimeout_NoGoroutineLeak(t *testing.T) {
 // --- Per-plugin timeout and kill tests ---
 
 func TestSetTimeouts_Override(t *testing.T) {
-	p := &PluginProcess{timeouts: DefaultTimeoutConfig()}
+	p := &Process{timeouts: DefaultTimeoutConfig()}
 
 	// Override only tool timeout.
 	p.SetTimeouts(TimeoutConfig{ToolTimeout: 5 * time.Second})
@@ -1658,7 +1658,7 @@ func TestSetTimeouts_Override(t *testing.T) {
 }
 
 func TestSetTimeouts_ZeroKeepsCurrent(t *testing.T) {
-	p := &PluginProcess{timeouts: DefaultTimeoutConfig()}
+	p := &Process{timeouts: DefaultTimeoutConfig()}
 
 	// Zero values should keep existing.
 	p.SetTimeouts(TimeoutConfig{})
@@ -1720,7 +1720,7 @@ func TestTimeoutConfigFromManifest_ZeroUsesDefaults(t *testing.T) {
 
 func TestExecuteTool_CustomTimeout(t *testing.T) {
 	p := startTestPlugin(t, "hang_on_tool")
-	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), Config{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -1748,7 +1748,7 @@ func TestExecuteCommand_CustomTimeout(t *testing.T) {
 	// which hangs on tool_call. For commands, it just never responds (no
 	// command handler), so it will also timeout.
 	p := startTestPlugin(t, "hang_on_tool")
-	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), Config{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -1772,7 +1772,7 @@ func TestExecuteCommand_CustomTimeout(t *testing.T) {
 
 func TestExecuteTool_KillsProcessOnTimeout(t *testing.T) {
 	p := startTestPlugin(t, "hang_on_tool")
-	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), Config{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -1814,7 +1814,7 @@ func TestIsTimeout(t *testing.T) {
 
 func TestHandleTimeout_NilCmd(t *testing.T) {
 	// handleTimeout should not panic when cmd is nil.
-	p := &PluginProcess{
+	p := &Process{
 		name:     "nil-cmd",
 		timeouts: DefaultTimeoutConfig(),
 	}
@@ -1824,12 +1824,12 @@ func TestHandleTimeout_NilCmd(t *testing.T) {
 
 func TestUIRequests_Routing(t *testing.T) {
 	p := startTestPlugin(t, "ui_requests")
-	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), Config{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
 	// Collect UI requests sent by the helper.
-	var msgs []PluginMessage
+	var msgs []Message
 	timeout := time.After(5 * time.Second)
 	for i := 0; i < 2; i++ {
 		select {
@@ -1868,7 +1868,7 @@ func TestUIRequests_Routing(t *testing.T) {
 
 func TestRespondToUIRequest(t *testing.T) {
 	p := startTestPlugin(t, "ui_requests")
-	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), Config{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -1920,13 +1920,13 @@ func TestReadLoop_PanicRecovery(t *testing.T) {
 	scanner := bufio.NewScanner(pr)
 	scanner.Buffer(make([]byte, maxScannerBuffer), maxScannerBuffer)
 
-	p := &PluginProcess{
+	p := &Process{
 		name:        "panic-test",
 		scanner:     scanner,
-		injectCh:    make(chan PluginMessage, 64),
-		responseCh:  make(chan PluginMessage, 16),
-		uiRequestCh: make(chan PluginMessage, 16),
-		heartbeatCh: make(chan PluginMessage, 4),
+		injectCh:    make(chan Message, 64),
+		responseCh:  make(chan Message, 16),
+		uiRequestCh: make(chan Message, 16),
+		heartbeatCh: make(chan Message, 4),
 		healthy:     true,
 	}
 
@@ -1981,7 +1981,7 @@ func TestStartPlugin_InvalidBinary(t *testing.T) {
 }
 
 func TestSend_MarshalError(t *testing.T) {
-	p := &PluginProcess{
+	p := &Process{
 		name:  "marshal-err",
 		stdin: &errWriteCloser{err: nil}, // won't reach Write
 	}
@@ -1998,7 +1998,7 @@ func TestSend_MarshalError(t *testing.T) {
 }
 
 func TestSend_WriteError(t *testing.T) {
-	p := &PluginProcess{
+	p := &Process{
 		name:  "write-err",
 		stdin: &errWriteCloser{err: fmt.Errorf("broken pipe")},
 	}
@@ -2012,9 +2012,9 @@ func TestSend_WriteError(t *testing.T) {
 }
 
 func TestWaitResponse_ContextCancelled(t *testing.T) {
-	p := &PluginProcess{
+	p := &Process{
 		name:       "ctx-cancel",
-		responseCh: make(chan PluginMessage),
+		responseCh: make(chan Message),
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel immediately
@@ -2029,17 +2029,17 @@ func TestWaitResponse_ContextCancelled(t *testing.T) {
 }
 
 func TestInitialize_UnexpectedResponseType(t *testing.T) {
-	responseCh := make(chan PluginMessage, 1)
-	responseCh <- PluginMessage{Type: "tool_result", Content: "wrong"}
+	responseCh := make(chan Message, 1)
+	responseCh <- Message{Type: "tool_result", Content: "wrong"}
 
-	p := &PluginProcess{
+	p := &Process{
 		name:       "bad-init",
 		stdin:      nopWriteCloser{io.Discard},
 		responseCh: responseCh,
 		timeouts:   DefaultTimeoutConfig(),
 	}
 
-	err := p.Initialize(context.Background(), PluginConfig{})
+	err := p.Initialize(context.Background(), Config{})
 	if err == nil {
 		t.Fatal("expected error for unexpected response type")
 	}
@@ -2049,10 +2049,10 @@ func TestInitialize_UnexpectedResponseType(t *testing.T) {
 }
 
 func TestExecuteTool_UnexpectedResponseType(t *testing.T) {
-	responseCh := make(chan PluginMessage, 1)
-	responseCh <- PluginMessage{Type: "command_result", Text: "wrong"}
+	responseCh := make(chan Message, 1)
+	responseCh <- Message{Type: "command_result", Text: "wrong"}
 
-	p := &PluginProcess{
+	p := &Process{
 		name:       "bad-tool",
 		stdin:      nopWriteCloser{io.Discard},
 		responseCh: responseCh,
@@ -2072,10 +2072,10 @@ func TestExecuteTool_UnexpectedResponseType(t *testing.T) {
 }
 
 func TestExecuteCommand_UnexpectedResponseType(t *testing.T) {
-	responseCh := make(chan PluginMessage, 1)
-	responseCh <- PluginMessage{Type: "tool_result", Content: "wrong"}
+	responseCh := make(chan Message, 1)
+	responseCh <- Message{Type: "tool_result", Content: "wrong"}
 
-	p := &PluginProcess{
+	p := &Process{
 		name:       "bad-cmd",
 		stdin:      nopWriteCloser{io.Discard},
 		responseCh: responseCh,
@@ -2102,13 +2102,13 @@ func TestReadLoop_UIRequestDroppedWhenFull(t *testing.T) {
 
 	scanner := bufio.NewScanner(strings.NewReader(lines))
 	scanner.Buffer(make([]byte, maxScannerBuffer), maxScannerBuffer)
-	p := &PluginProcess{
+	p := &Process{
 		name:        "test-drop-ui",
 		scanner:     scanner,
-		injectCh:    make(chan PluginMessage, 64),
-		responseCh:  make(chan PluginMessage, 16),
-		uiRequestCh: make(chan PluginMessage, 2), // small buffer
-		heartbeatCh: make(chan PluginMessage, 4),
+		injectCh:    make(chan Message, 64),
+		responseCh:  make(chan Message, 16),
+		uiRequestCh: make(chan Message, 2), // small buffer
+		heartbeatCh: make(chan Message, 4),
 		healthy:     true,
 	}
 
@@ -2144,13 +2144,13 @@ func TestReadLoop_HeartbeatAckDroppedWhenFull(t *testing.T) {
 
 	scanner := bufio.NewScanner(strings.NewReader(lines))
 	scanner.Buffer(make([]byte, maxScannerBuffer), maxScannerBuffer)
-	p := &PluginProcess{
+	p := &Process{
 		name:        "test-drop-hb",
 		scanner:     scanner,
-		injectCh:    make(chan PluginMessage, 64),
-		responseCh:  make(chan PluginMessage, 16),
-		uiRequestCh: make(chan PluginMessage, 16),
-		heartbeatCh: make(chan PluginMessage, 1), // small buffer
+		injectCh:    make(chan Message, 64),
+		responseCh:  make(chan Message, 16),
+		uiRequestCh: make(chan Message, 16),
+		heartbeatCh: make(chan Message, 1), // small buffer
 		healthy:     true,
 	}
 
@@ -2179,10 +2179,10 @@ func TestReadLoop_HeartbeatAckDroppedWhenFull(t *testing.T) {
 }
 
 func TestHeartbeat_SendFailure(t *testing.T) {
-	p := &PluginProcess{
+	p := &Process{
 		name:        "hb-send-fail",
 		stdin:       &errWriteCloser{err: fmt.Errorf("broken pipe")},
-		heartbeatCh: make(chan PluginMessage, 4),
+		heartbeatCh: make(chan Message, 4),
 		healthy:     true,
 	}
 
@@ -2196,10 +2196,10 @@ func TestHeartbeat_SendFailure(t *testing.T) {
 }
 
 func TestHeartbeat_ProcessExitedDuringWait(t *testing.T) {
-	heartbeatCh := make(chan PluginMessage)
+	heartbeatCh := make(chan Message)
 	close(heartbeatCh)
 
-	p := &PluginProcess{
+	p := &Process{
 		name:        "hb-exit",
 		stdin:       nopWriteCloser{io.Discard},
 		heartbeatCh: heartbeatCh,
@@ -2219,9 +2219,9 @@ func TestHeartbeat_ProcessExitedDuringWait(t *testing.T) {
 }
 
 func TestWaitUIRequest_Timeout(t *testing.T) {
-	p := &PluginProcess{
+	p := &Process{
 		name:        "ui-timeout",
-		uiRequestCh: make(chan PluginMessage),
+		uiRequestCh: make(chan Message),
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
@@ -2237,10 +2237,10 @@ func TestWaitUIRequest_Timeout(t *testing.T) {
 }
 
 func TestWaitUIRequest_ChannelClosed(t *testing.T) {
-	uiRequestCh := make(chan PluginMessage)
+	uiRequestCh := make(chan Message)
 	close(uiRequestCh)
 
-	p := &PluginProcess{
+	p := &Process{
 		name:        "ui-closed",
 		uiRequestCh: uiRequestCh,
 	}
@@ -2255,7 +2255,7 @@ func TestWaitUIRequest_ChannelClosed(t *testing.T) {
 }
 
 func TestRespondToUIRequest_ClosedProcess(t *testing.T) {
-	p := &PluginProcess{
+	p := &Process{
 		name:   "ui-resp-closed",
 		closed: true,
 	}
@@ -2271,7 +2271,7 @@ func TestRespondToUIRequest_ClosedProcess(t *testing.T) {
 
 func TestHandleTimeout_Supervised(t *testing.T) {
 	p := startTestPlugin(t, "hang_on_tool")
-	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), Config{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -2295,7 +2295,7 @@ func TestHandleTimeout_Supervised(t *testing.T) {
 
 func TestHandleTimeout_Unsupervised(t *testing.T) {
 	p := startTestPlugin(t, "hang_on_tool")
-	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), Config{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -2308,7 +2308,7 @@ func TestHandleTimeout_Unsupervised(t *testing.T) {
 
 func TestHandleTimeout_NilProcess(t *testing.T) {
 	// handleTimeout should not panic when cmd.Process is nil.
-	p := &PluginProcess{
+	p := &Process{
 		name: "nil-process",
 		cmd:  &exec.Cmd{}, // cmd set but Process is nil
 	}
@@ -2317,7 +2317,7 @@ func TestHandleTimeout_NilProcess(t *testing.T) {
 }
 
 func TestSendEvent_ClosedProcess(t *testing.T) {
-	p := &PluginProcess{
+	p := &Process{
 		name:   "event-closed",
 		closed: true,
 	}

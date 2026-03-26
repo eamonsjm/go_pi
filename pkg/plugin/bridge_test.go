@@ -13,8 +13,8 @@ type discardWriteCloser struct{}
 func (discardWriteCloser) Write(p []byte) (int, error) { return len(p), nil }
 func (discardWriteCloser) Close() error                { return nil }
 
-func TestPluginTool_NameDescriptionSchema(t *testing.T) {
-	pt := &PluginTool{
+func TestTool_NameDescriptionSchema(t *testing.T) {
+	pt := &Tool{
 		def: ToolDef{
 			Name:        "my_tool",
 			Description: "does stuff",
@@ -37,13 +37,13 @@ func TestPluginTool_NameDescriptionSchema(t *testing.T) {
 	}
 }
 
-func TestPluginTool_Execute_Success(t *testing.T) {
+func TestTool_Execute_Success(t *testing.T) {
 	p := startTestPlugin(t, "echo_caps")
-	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), Config{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
-	pt := &PluginTool{
+	pt := &Tool{
 		def:     ToolDef{Name: "echo", Description: "echoes"},
 		process: p,
 	}
@@ -57,13 +57,13 @@ func TestPluginTool_Execute_Success(t *testing.T) {
 	}
 }
 
-func TestPluginTool_Execute_PluginError(t *testing.T) {
+func TestTool_Execute_Error(t *testing.T) {
 	p := startTestPlugin(t, "tool_error")
-	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), Config{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
-	pt := &PluginTool{
+	pt := &Tool{
 		def:     ToolDef{Name: "fail", Description: "fails"},
 		process: p,
 	}
@@ -72,23 +72,23 @@ func TestPluginTool_Execute_PluginError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error from plugin tool error")
 	}
-	var pluginErr *PluginError
+	var pluginErr *Error
 	if !errors.As(err, &pluginErr) {
-		t.Fatalf("error type = %T, want *PluginError", err)
+		t.Fatalf("error type = %T, want *Error", err)
 	}
 	if !strings.Contains(pluginErr.Content, "something went wrong") {
-		t.Errorf("PluginError.Content = %q, want containing %q", pluginErr.Content, "something went wrong")
+		t.Errorf("Error.Content = %q, want containing %q", pluginErr.Content, "something went wrong")
 	}
 }
 
-func TestPluginTool_Execute_DeadProcess(t *testing.T) {
+func TestTool_Execute_DeadProcess(t *testing.T) {
 	p := startTestPlugin(t, "echo_caps")
-	if err := p.Initialize(context.Background(), PluginConfig{}); err != nil {
+	if err := p.Initialize(context.Background(), Config{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 	p.Stop()
 
-	pt := &PluginTool{
+	pt := &Tool{
 		def:     ToolDef{Name: "echo"},
 		process: p,
 	}
@@ -102,22 +102,22 @@ func TestPluginTool_Execute_DeadProcess(t *testing.T) {
 	}
 }
 
-func TestPluginTool_Execute_CommunicationError(t *testing.T) {
+func TestTool_Execute_CommunicationError(t *testing.T) {
 	// Simulate a process that passes the Alive() check but whose response
 	// channel is already closed — e.g., the plugin process exited while a
 	// tool call was in flight.
-	responseCh := make(chan PluginMessage)
+	responseCh := make(chan Message)
 	close(responseCh)
 
-	p := &PluginProcess{
+	p := &Process{
 		name:       "crashed",
 		stdin:      discardWriteCloser{},
-		injectCh:   make(chan PluginMessage, 64),
+		injectCh:   make(chan Message, 64),
 		responseCh: responseCh,
 		timeouts:   DefaultTimeoutConfig(),
 	}
 
-	pt := &PluginTool{
+	pt := &Tool{
 		def:     ToolDef{Name: "my_tool"},
 		process: p,
 	}

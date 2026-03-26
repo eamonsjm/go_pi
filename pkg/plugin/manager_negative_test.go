@@ -410,23 +410,23 @@ func TestShutdown_Idempotent(t *testing.T) {
 
 // --- Accessors on empty manager ----------------------------------------------
 
-func TestPluginTools_Empty(t *testing.T) {
+func TestTools_Empty(t *testing.T) {
 	reg := tools.NewRegistry()
 	m := NewManager(reg)
 
-	td := m.PluginTools()
+	td := m.Tools()
 	if len(td) != 0 {
-		t.Errorf("PluginTools() = %d, want 0", len(td))
+		t.Errorf("Tools() = %d, want 0", len(td))
 	}
 }
 
-func TestPluginCommands_Empty(t *testing.T) {
+func TestCommands_Empty(t *testing.T) {
 	reg := tools.NewRegistry()
 	m := NewManager(reg)
 
-	cmds := m.PluginCommands()
+	cmds := m.Commands()
 	if len(cmds) != 0 {
-		t.Errorf("PluginCommands() = %d, want 0", len(cmds))
+		t.Errorf("Commands() = %d, want 0", len(cmds))
 	}
 }
 

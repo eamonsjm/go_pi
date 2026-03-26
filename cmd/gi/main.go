@@ -182,7 +182,7 @@ func run() int {
 			}
 		}
 	}
-	if err := pluginMgr.Initialize(context.Background(), plugin.PluginConfig{
+	if err := pluginMgr.Initialize(context.Background(), plugin.Config{
 		Cwd:       cwd,
 		Model:     cfg.DefaultModel,
 		Provider:  cfg.DefaultProvider,
@@ -733,7 +733,7 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 	}
 
 	// Create a map of plugin processes for UI response handling
-	pluginsByName := make(map[string]*plugin.PluginProcess)
+	pluginsByName := make(map[string]*plugin.Process)
 	for _, proc := range pluginMgr.Plugins() {
 		pluginsByName[proc.Name()] = proc
 	}
@@ -795,7 +795,7 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 	// Consume inject messages from all plugins and route to TUI/agent.
 	// Channels are re-acquired after plugin restart so consumers survive crashes.
 	for _, proc := range pluginMgr.Plugins() {
-		go func(proc *plugin.PluginProcess) {
+		go func(proc *plugin.Process) {
 			injectCh := proc.InjectMessages()
 			for {
 				select {
@@ -841,7 +841,7 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 	// Consume UI requests from all plugins and route to TUI.
 	// Channels are re-acquired after plugin restart so consumers survive crashes.
 	for _, proc := range pluginMgr.Plugins() {
-		go func(proc *plugin.PluginProcess) {
+		go func(proc *plugin.Process) {
 			uiCh := proc.UIRequests()
 			for {
 				select {
@@ -889,7 +889,7 @@ func runInteractive(agentLoop *agent.AgentLoop, sessionMgr *session.Manager, cfg
 // communication channels have been closed. Returns true if the caller should
 // re-acquire channels (a restart may have occurred), false if the consumer
 // should exit (context cancelled, TUI exiting, or plugin permanently dead).
-func waitForPluginRestart(ctx context.Context, proc *plugin.PluginProcess, done <-chan struct{}) bool {
+func waitForPluginRestart(ctx context.Context, proc *plugin.Process, done <-chan struct{}) bool {
 	// Brief grace period for the supervisor to detect the process exit
 	// and set the restarting flag.
 	select {

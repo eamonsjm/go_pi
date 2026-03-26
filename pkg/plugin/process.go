@@ -63,8 +63,8 @@ func DefaultHeartbeatConfig() HeartbeatConfig {
 	}
 }
 
-// PluginProcess manages a single plugin subprocess and its JSONL communication.
-type PluginProcess struct {
+// Process manages a single plugin subprocess and its JSONL communication.
+type Process struct {
 	name         string
 	path         string
 	spawnCmd     func() *exec.Cmd // creates the exec.Cmd for (re)spawning
@@ -83,22 +83,22 @@ type PluginProcess struct {
 	readCancel   context.CancelFunc // cancels readLoop's context to unblock scanner.Scan
 
 	// injectCh receives inject_message and log messages from the background reader.
-	injectCh chan PluginMessage
+	injectCh chan Message
 
 	// responseCh receives tool_result, command_result, and capabilities messages.
-	responseCh chan PluginMessage
+	responseCh chan Message
 
 	// uiRequestCh receives ui_request messages from plugins (dialog/notification requests).
-	uiRequestCh chan PluginMessage
+	uiRequestCh chan Message
 
 	// Auto-restart fields.
 	restartCfg   *RestartConfig // nil means no auto-restart
-	pluginCfg    PluginConfig   // saved for re-initialization on restart
+	pluginCfg    Config   // saved for re-initialization on restart
 	restartCount int            // total restart attempts made
 	restarting   bool           // true while restart is in progress
 
 	// Heartbeat fields.
-	heartbeatCh         chan PluginMessage // receives heartbeat_ack messages
+	heartbeatCh         chan Message // receives heartbeat_ack messages
 	healthy             bool               // true when last heartbeat succeeded or no heartbeat sent yet
 	lastHeartbeatAck    time.Time          // time of last successful heartbeat ack
 	lastHeartbeatStatus *HeartbeatStatus   // status from last ack
@@ -117,7 +117,7 @@ type PluginProcess struct {
 }
 
 // startPlugin spawns a plugin subprocess and sets up JSONL communication pipes.
-func startPlugin(name, path string) (*PluginProcess, error) {
+func startPlugin(name, path string) (*Process, error) {
 	cmd := exec.Command(path)
 	cmd.Dir = ""
 
@@ -144,7 +144,7 @@ func startPlugin(name, path string) (*PluginProcess, error) {
 	scanner := bufio.NewScanner(stdoutPipe)
 	scanner.Buffer(make([]byte, maxScannerBuffer), maxScannerBuffer)
 
-	p := &PluginProcess{
+	p := &Process{
 		name:        name,
 		path:        path,
 		spawnCmd:    func() *exec.Cmd { return exec.Command(path) },
@@ -152,10 +152,10 @@ func startPlugin(name, path string) (*PluginProcess, error) {
 		stdin:       stdinPipe,
 		stdout:      stdoutPipe,
 		scanner:     scanner,
-		injectCh:    make(chan PluginMessage, 64),
-		responseCh:  make(chan PluginMessage, 16),
-		uiRequestCh: make(chan PluginMessage, 16),
-		heartbeatCh: make(chan PluginMessage, 4),
+		injectCh:    make(chan Message, 64),
+		responseCh:  make(chan Message, 16),
+		uiRequestCh: make(chan Message, 16),
+		heartbeatCh: make(chan Message, 4),
 		healthy:     true,
 		timeouts:    DefaultTimeoutConfig(),
 	}
@@ -171,7 +171,7 @@ func startPlugin(name, path string) (*PluginProcess, error) {
 // applyMemoryLimit applies the configured memory limit to the running process.
 // Called after Start() for both initial spawn and respawn. No-op if memLimitMB
 // is zero or the platform does not support rlimit.
-func (p *PluginProcess) applyMemoryLimit() {
+func (p *Process) applyMemoryLimit() {
 	p.mu.Lock()
 	limitMB := p.memLimitMB
 	cmd := p.cmd
@@ -195,7 +195,7 @@ func (p *PluginProcess) applyMemoryLimit() {
 // references at entry so that a concurrent respawn does not cause it to
 // close the wrong channels. When ctx is cancelled, stdout is closed to
 // unblock scanner.Scan() and allow prompt shutdown.
-func (p *PluginProcess) readLoop(ctx context.Context) {
+func (p *Process) readLoop(ctx context.Context) {
 	p.mu.Lock()
 	injectCh := p.injectCh
 	responseCh := p.responseCh
@@ -260,7 +260,7 @@ func (p *PluginProcess) readLoop(ctx context.Context) {
 	}()
 
 	for scanner.Scan() {
-		var msg PluginMessage
+		var msg Message
 		if err := json.Unmarshal(scanner.Bytes(), &msg); err != nil {
 			log.Printf("plugin %s: skipping malformed JSON: %v", p.name, err)
 			continue
@@ -299,7 +299,7 @@ func (p *PluginProcess) readLoop(ctx context.Context) {
 
 // startReadLoop launches readLoop in a goroutine with WaitGroup tracking,
 // enabling callers to wait for the goroutine to finish via readLoopWg.
-func (p *PluginProcess) startReadLoop(ctx context.Context) {
+func (p *Process) startReadLoop(ctx context.Context) {
 	p.readLoopWg.Add(1)
 	go func() {
 		defer p.readLoopWg.Done()
@@ -308,7 +308,7 @@ func (p *PluginProcess) startReadLoop(ctx context.Context) {
 }
 
 // Send writes a HostMessage to the plugin's stdin as a JSONL line.
-func (p *PluginProcess) Send(msg HostMessage) error {
+func (p *Process) Send(msg HostMessage) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -340,7 +340,7 @@ func (e *timeoutError) Error() string {
 
 // waitResponse waits for a response message on the response channel with a timeout.
 // If ctx is cancelled before a response arrives, ctx.Err() is returned.
-func (p *PluginProcess) waitResponse(ctx context.Context, timeout time.Duration) (PluginMessage, error) {
+func (p *Process) waitResponse(ctx context.Context, timeout time.Duration) (Message, error) {
 	p.mu.Lock()
 	responseCh := p.responseCh
 	p.mu.Unlock()
@@ -351,19 +351,19 @@ func (p *PluginProcess) waitResponse(ctx context.Context, timeout time.Duration)
 	select {
 	case msg, ok := <-responseCh:
 		if !ok {
-			return PluginMessage{}, fmt.Errorf("plugin %s: process exited", p.name)
+			return Message{}, fmt.Errorf("plugin %s: process exited", p.name)
 		}
 		return msg, nil
 	case <-timer.C:
-		return PluginMessage{}, &timeoutError{plugin: p.name}
+		return Message{}, &timeoutError{plugin: p.name}
 	case <-ctx.Done():
-		return PluginMessage{}, fmt.Errorf("plugin %s: %w", p.name, ctx.Err())
+		return Message{}, fmt.Errorf("plugin %s: %w", p.name, ctx.Err())
 	}
 }
 
 // Initialize sends the initialize message and waits for a capabilities response.
 // The config is saved for automatic re-initialization on restart.
-func (p *PluginProcess) Initialize(ctx context.Context, cfg PluginConfig) error {
+func (p *Process) Initialize(ctx context.Context, cfg Config) error {
 	p.mu.Lock()
 	p.pluginCfg = cfg
 	p.mu.Unlock()
@@ -396,7 +396,7 @@ func (p *PluginProcess) Initialize(ctx context.Context, cfg PluginConfig) error 
 // ExecuteTool sends a tool_call message and waits for the tool_result response.
 // Returns the result content, whether it was an error, and any communication error.
 // If the plugin exceeds the configured tool timeout, the process is killed.
-func (p *PluginProcess) ExecuteTool(ctx context.Context, id, name string, params map[string]any) (string, bool, error) {
+func (p *Process) ExecuteTool(ctx context.Context, id, name string, params map[string]any) (string, bool, error) {
 	if err := p.Send(HostMessage{
 		Type:   "tool_call",
 		ID:     id,
@@ -428,7 +428,7 @@ func (p *PluginProcess) ExecuteTool(ctx context.Context, id, name string, params
 // ExecuteCommand sends a command message and waits for the command_result response.
 // Returns the result text, whether it was an error, and any communication error.
 // If the plugin exceeds the configured command timeout, the process is killed.
-func (p *PluginProcess) ExecuteCommand(ctx context.Context, name, args string) (string, bool, error) {
+func (p *Process) ExecuteCommand(ctx context.Context, name, args string) (string, bool, error) {
 	if err := p.Send(HostMessage{
 		Type: "command",
 		Name: name,
@@ -458,7 +458,7 @@ func (p *PluginProcess) ExecuteCommand(ctx context.Context, name, args string) (
 
 // SendEvent sends an event notification to the plugin. This is fire-and-forget;
 // no response is expected.
-func (p *PluginProcess) SendEvent(event EventPayload) error {
+func (p *Process) SendEvent(event EventPayload) error {
 	return p.Send(HostMessage{
 		Type:  "event",
 		Event: &event,
@@ -469,7 +469,7 @@ func (p *PluginProcess) SendEvent(event EventPayload) error {
 // messages from the plugin. Note: when a plugin restarts, this channel is
 // closed and a new one is created internally; callers that need inject
 // messages after restart should call InjectMessages() again.
-func (p *PluginProcess) InjectMessages() <-chan PluginMessage {
+func (p *Process) InjectMessages() <-chan Message {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.injectCh
@@ -479,7 +479,7 @@ func (p *PluginProcess) InjectMessages() <-chan PluginMessage {
 // Note: when a plugin restarts, this channel is closed and a new one is created
 // internally; callers that need ui_request messages after restart should call
 // UIRequests() again.
-func (p *PluginProcess) UIRequests() <-chan PluginMessage {
+func (p *Process) UIRequests() <-chan Message {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.uiRequestCh
@@ -492,7 +492,7 @@ func (p *PluginProcess) UIRequests() <-chan PluginMessage {
 // should treat the first missed heartbeat as the signal to mark unhealthy
 // (the Manager handles backward compatibility by assuming healthy until the
 // first heartbeat is actually sent).
-func (p *PluginProcess) Heartbeat(ctx context.Context) (*HeartbeatStatus, error) {
+func (p *Process) Heartbeat(ctx context.Context) (*HeartbeatStatus, error) {
 	p.mu.Lock()
 	if p.closed || p.restarting {
 		p.mu.Unlock()
@@ -532,7 +532,7 @@ func (p *PluginProcess) Heartbeat(ctx context.Context) (*HeartbeatStatus, error)
 
 // Healthy returns whether the plugin's last heartbeat succeeded. A plugin
 // that has never been heartbeated is considered healthy.
-func (p *PluginProcess) Healthy() bool {
+func (p *Process) Healthy() bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.healthy
@@ -540,7 +540,7 @@ func (p *PluginProcess) Healthy() bool {
 
 // LastHeartbeatStatus returns the status from the last successful heartbeat ack,
 // or nil if no heartbeat has been acknowledged yet.
-func (p *PluginProcess) LastHeartbeatStatus() *HeartbeatStatus {
+func (p *Process) LastHeartbeatStatus() *HeartbeatStatus {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.lastHeartbeatStatus
@@ -548,7 +548,7 @@ func (p *PluginProcess) LastHeartbeatStatus() *HeartbeatStatus {
 
 // LastHeartbeatAck returns the time of the last successful heartbeat ack,
 // or the zero time if no heartbeat has been acknowledged yet.
-func (p *PluginProcess) LastHeartbeatAck() time.Time {
+func (p *Process) LastHeartbeatAck() time.Time {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.lastHeartbeatAck
@@ -557,7 +557,7 @@ func (p *PluginProcess) LastHeartbeatAck() time.Time {
 // Stop sends a shutdown message and waits for the plugin process to exit.
 // If the process does not exit within shutdownTimeout, it is killed.
 // When auto-restart is enabled, Stop cancels any pending restarts first.
-func (p *PluginProcess) Stop() error {
+func (p *Process) Stop() error {
 	p.mu.Lock()
 	if p.closed {
 		p.mu.Unlock()
@@ -646,7 +646,7 @@ func (p *PluginProcess) Stop() error {
 
 // shutdownCurrentProcess sends a shutdown message and closes stdin for the
 // current process. Used by the supervised Stop path.
-func (p *PluginProcess) shutdownCurrentProcess() {
+func (p *Process) shutdownCurrentProcess() {
 	p.mu.Lock()
 	stdin := p.stdin
 	stdout := p.stdout
@@ -680,7 +680,7 @@ func isTimeout(err error) bool {
 
 // handleTimeout logs a timeout event and kills the plugin process. If
 // auto-restart is enabled, the supervisor will handle respawning.
-func (p *PluginProcess) handleTimeout(opType, opName string, timeout time.Duration) {
+func (p *Process) handleTimeout(opType, opName string, timeout time.Duration) {
 	log.Printf("plugin %s: timeout after %v on %s %q — killing process",
 		p.name, timeout, opType, opName)
 
@@ -710,7 +710,7 @@ func (p *PluginProcess) handleTimeout(opType, opName string, timeout time.Durati
 
 // SetTimeouts configures per-plugin timeouts. Any zero-value field in cfg
 // keeps the current value.
-func (p *PluginProcess) SetTimeouts(cfg TimeoutConfig) {
+func (p *Process) SetTimeouts(cfg TimeoutConfig) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if cfg.InitTimeout > 0 {
@@ -727,39 +727,39 @@ func (p *PluginProcess) SetTimeouts(cfg TimeoutConfig) {
 // SetMemoryLimit sets the memory limit in MB for the plugin process. Must be
 // called before the process is started for it to take effect on spawn. On
 // restart, the limit is re-applied to the new process.
-func (p *PluginProcess) SetMemoryLimit(limitMB int64) {
+func (p *Process) SetMemoryLimit(limitMB int64) {
 	p.mu.Lock()
 	p.memLimitMB = limitMB
 	p.mu.Unlock()
 }
 
 // Name returns the plugin's display name.
-func (p *PluginProcess) Name() string {
+func (p *Process) Name() string {
 	return p.name
 }
 
 // Commands returns the slash commands declared by this plugin during initialization.
-func (p *PluginProcess) Commands() []CommandDef {
+func (p *Process) Commands() []CommandDef {
 	return p.commands
 }
 
 // Alive returns true if the plugin process is running and not in the middle
 // of a restart.
-func (p *PluginProcess) Alive() bool {
+func (p *Process) Alive() bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return !p.closed && !p.restarting
 }
 
 // Restarting returns true if the plugin is currently restarting after a crash.
-func (p *PluginProcess) Restarting() bool {
+func (p *Process) Restarting() bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.restarting
 }
 
 // RestartCount returns the number of restart attempts that have been made.
-func (p *PluginProcess) RestartCount() int {
+func (p *Process) RestartCount() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.restartCount
@@ -768,7 +768,7 @@ func (p *PluginProcess) RestartCount() int {
 // EnableAutoRestart enables automatic restart with the given configuration.
 // A supervisor goroutine is started that monitors the process and handles
 // restarts with exponential backoff. Must be called after Initialize.
-func (p *PluginProcess) EnableAutoRestart(cfg RestartConfig) {
+func (p *Process) EnableAutoRestart(cfg RestartConfig) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -784,7 +784,7 @@ func (p *PluginProcess) EnableAutoRestart(cfg RestartConfig) {
 // waitAndSupervise is the supervisor goroutine. It calls cmd.Wait() in a loop,
 // restarting the process on unexpected exit with exponential backoff. It is the
 // sole owner of cmd.Wait() — no other code should call it when supervised.
-func (p *PluginProcess) waitAndSupervise(stopCh <-chan struct{}) {
+func (p *Process) waitAndSupervise(stopCh <-chan struct{}) {
 	defer close(p.stopped)
 	defer p.readLoopWg.Wait() // ensure readLoop is done before signaling stopped
 
@@ -908,7 +908,7 @@ func (p *PluginProcess) waitAndSupervise(stopCh <-chan struct{}) {
 // respawn creates a new plugin subprocess, sets up communication channels,
 // and re-initializes the plugin. The old channels must already be closed
 // (by readLoop exiting) before calling this.
-func (p *PluginProcess) respawn(ctx context.Context) error {
+func (p *Process) respawn(ctx context.Context) error {
 	// Ensure the previous readLoop goroutine has fully exited before
 	// replacing channels and starting a new one.
 	p.readLoopWg.Wait()
@@ -941,10 +941,10 @@ func (p *PluginProcess) respawn(ctx context.Context) error {
 	scanner := bufio.NewScanner(stdoutPipe)
 	scanner.Buffer(make([]byte, maxScannerBuffer), maxScannerBuffer)
 
-	newInjectCh := make(chan PluginMessage, 64)
-	newResponseCh := make(chan PluginMessage, 16)
-	newUIRequestCh := make(chan PluginMessage, 16)
-	newHeartbeatCh := make(chan PluginMessage, 4)
+	newInjectCh := make(chan Message, 64)
+	newResponseCh := make(chan Message, 16)
+	newUIRequestCh := make(chan Message, 16)
+	newHeartbeatCh := make(chan Message, 4)
 
 	readCtx, readCancel := context.WithCancel(ctx)
 
@@ -998,7 +998,7 @@ func (p *PluginProcess) respawn(ctx context.Context) error {
 // WaitUIRequest waits for a ui_request message from the plugin.
 // Returns the UI request message from the plugin or an error if the context
 // expires first.
-func (p *PluginProcess) WaitUIRequest(ctx context.Context) (PluginMessage, error) {
+func (p *Process) WaitUIRequest(ctx context.Context) (Message, error) {
 	p.mu.Lock()
 	uiRequestCh := p.uiRequestCh
 	p.mu.Unlock()
@@ -1006,17 +1006,17 @@ func (p *PluginProcess) WaitUIRequest(ctx context.Context) (PluginMessage, error
 	select {
 	case msg, ok := <-uiRequestCh:
 		if !ok {
-			return PluginMessage{}, fmt.Errorf("plugin %s: process exited", p.name)
+			return Message{}, fmt.Errorf("plugin %s: process exited", p.name)
 		}
 		return msg, nil
 	case <-ctx.Done():
-		return PluginMessage{}, &timeoutError{plugin: p.name}
+		return Message{}, &timeoutError{plugin: p.name}
 	}
 }
 
 // RespondToUIRequest sends a ui_response to a ui_request from the plugin.
 // The response includes the user's input/selection and an optional error message.
-func (p *PluginProcess) RespondToUIRequest(id string, value string, closed bool, errMsg string) error {
+func (p *Process) RespondToUIRequest(id string, value string, closed bool, errMsg string) error {
 	if err := p.Send(HostMessage{
 		Type: "ui_response",
 		UIResponse: &UIResponse{

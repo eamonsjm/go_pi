@@ -18,13 +18,13 @@ type HostMessage struct {
 	Name       string         `json:"name,omitempty"`
 	Params     map[string]any `json:"params,omitempty"`
 	Args       string         `json:"args,omitempty"`
-	Config     *PluginConfig  `json:"config,omitempty"`
+	Config     *Config  `json:"config,omitempty"`
 	Event      *EventPayload  `json:"event,omitempty"`
 	UIResponse *UIResponse    `json:"ui_response,omitempty"` // response to ui_request
 }
 
-// PluginConfig is the configuration sent to a plugin during initialization.
-type PluginConfig struct {
+// Config is the configuration sent to a plugin during initialization.
+type Config struct {
 	Cwd       string `json:"cwd"`
 	Model     string `json:"model"`
 	Provider  string `json:"provider"`
@@ -52,8 +52,8 @@ type UIResponse struct {
 
 // --- Plugin -> Host message types ---
 
-// PluginMessage is a message sent from a plugin to the host over stdout.
-type PluginMessage struct {
+// Message is a message sent from a plugin to the host over stdout.
+type Message struct {
 	Type     string           `json:"type"`
 	ID       string           `json:"id,omitempty"`
 	Content  string           `json:"content,omitempty"`
