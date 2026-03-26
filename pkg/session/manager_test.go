@@ -204,7 +204,9 @@ func TestLatestSessionID(t *testing.T) {
 	m := NewManager(dir)
 
 	// No sessions — should return empty.
-	if got := m.LatestSessionID(context.Background()); got != "" {
+	if got, err := m.LatestSessionID(context.Background()); err != nil {
+		t.Fatalf("LatestSessionID: %v", err)
+	} else if got != "" {
 		t.Errorf("expected empty, got %q", got)
 	}
 
@@ -222,7 +224,9 @@ func TestLatestSessionID(t *testing.T) {
 		t.Fatalf("SaveMessage: %v", err)
 	}
 
-	if got := m.LatestSessionID(context.Background()); got != id2 {
+	if got, err := m.LatestSessionID(context.Background()); err != nil {
+		t.Fatalf("LatestSessionID: %v", err)
+	} else if got != id2 {
 		t.Errorf("expected latest %q, got %q", id2, got)
 	}
 }

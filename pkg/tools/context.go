@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"log"
 	"os"
 	"path/filepath"
 )
@@ -19,7 +20,10 @@ func WorkingDirFromContext(ctx context.Context) string {
 	if dir, ok := ctx.Value(workingDirKey{}).(string); ok && dir != "" {
 		return dir
 	}
-	dir, _ := os.Getwd()
+	dir, err := os.Getwd()
+	if err != nil {
+		log.Printf("tools: getwd: %v", err)
+	}
 	return dir
 }
 

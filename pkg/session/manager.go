@@ -89,7 +89,7 @@ type Manager struct {
 }
 
 // NewManager creates a new session manager rooted at the given directory.
-// The directory is created if it does not exist.
+// The directory is created automatically when the first entry is appended.
 func NewManager(dir string) *Manager {
 	return &Manager{
 		dir:             dir,
@@ -172,7 +172,10 @@ func (m *Manager) LoadSession(ctx context.Context, id string) (retErr error) {
 func (m *Manager) ListSessions(ctx context.Context) ([]SessionInfo, error) {
 	pattern := filepath.Join(m.dir, "*.jsonl")
 	matches, err := filepath.Glob(pattern)
-	if err != nil || len(matches) == 0 {
+	if err != nil {
+		return nil, fmt.Errorf("glob session files: %w", err)
+	}
+	if len(matches) == 0 {
 		return nil, nil
 	}
 
@@ -185,6 +188,7 @@ func (m *Manager) ListSessions(ctx context.Context) ([]SessionInfo, error) {
 		id := strings.TrimSuffix(base, ".jsonl")
 		info, err := os.Stat(path)
 		if err != nil {
+			log.Printf("session: stat %s: %v", path, err)
 			continue
 		}
 		si := SessionInfo{
@@ -209,6 +213,7 @@ func (m *Manager) ListSessions(ctx context.Context) ([]SessionInfo, error) {
 				count++
 				var e Entry
 				if err := json.Unmarshal([]byte(line), &e); err != nil {
+					log.Printf("session: parse entry in %s: %v", path, err)
 					continue
 				}
 				allEntries = append(allEntries, e)
@@ -248,13 +253,16 @@ func (m *Manager) ListSessions(ctx context.Context) ([]SessionInfo, error) {
 }
 
 // LatestSessionID returns the ID of the most recently updated session, or
-// empty string if no sessions exist on disk or the context is cancelled.
-func (m *Manager) LatestSessionID(ctx context.Context) string {
+// empty string if no sessions exist on disk.
+func (m *Manager) LatestSessionID(ctx context.Context) (string, error) {
 	sessions, err := m.ListSessions(ctx)
-	if err != nil || len(sessions) == 0 {
-		return ""
+	if err != nil {
+		return "", fmt.Errorf("latest session: %w", err)
 	}
-	return sessions[0].ID
+	if len(sessions) == 0 {
+		return "", nil
+	}
+	return sessions[0].ID, nil
 }
 
 // AppendEntry appends a single entry to the current session's JSONL file
@@ -809,7 +817,11 @@ func (m *Manager) GetUserEntries() []Entry {
 func (m *Manager) CollectUserPrompts(ctx context.Context, maxPrompts int) []string {
 	pattern := filepath.Join(m.dir, "*.jsonl")
 	matches, err := filepath.Glob(pattern)
-	if err != nil || len(matches) == 0 {
+	if err != nil {
+		log.Printf("session: glob prompts: %v", err)
+		return nil
+	}
+	if len(matches) == 0 {
 		return nil
 	}
 
@@ -827,6 +839,7 @@ func (m *Manager) CollectUserPrompts(ctx context.Context, maxPrompts int) []stri
 		}
 		f, err := os.Open(path)
 		if err != nil {
+			log.Printf("session: open %s: %v", path, err)
 			continue
 		}
 		scanner := bufio.NewScanner(f)

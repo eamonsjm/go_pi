@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -187,6 +188,7 @@ func searchFile(ctx context.Context, path string, re *regexp.Regexp, contextLine
 
 	f, err := os.Open(path)
 	if err != nil {
+		log.Printf("grep: open %s: %v", path, err)
 		return nil, 0
 	}
 	defer func() { _ = f.Close() }()
@@ -213,6 +215,7 @@ func searchFile(ctx context.Context, path string, re *regexp.Regexp, contextLine
 	}
 
 	if err := scanner.Err(); err != nil {
+		log.Printf("grep: scan %s: %v", path, err)
 		return nil, 0
 	}
 
@@ -263,7 +266,10 @@ func matchInclude(name, pattern string) bool {
 			alternatives := strings.Split(pattern[idx+1:idx+end], ",")
 			for _, alt := range alternatives {
 				expanded := prefix + alt + suffix
-				matched, _ := filepath.Match(expanded, name)
+				matched, err := filepath.Match(expanded, name)
+				if err != nil {
+					log.Printf("grep: bad include pattern %q: %v", expanded, err)
+				}
 				if matched {
 					return true
 				}
@@ -272,6 +278,9 @@ func matchInclude(name, pattern string) bool {
 		}
 	}
 
-	matched, _ := filepath.Match(pattern, name)
+	matched, err := filepath.Match(pattern, name)
+	if err != nil {
+		log.Printf("grep: bad include pattern %q: %v", pattern, err)
+	}
 	return matched
 }

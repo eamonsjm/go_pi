@@ -336,7 +336,11 @@ func run() int {
 		sessionMgr.NewSession()
 	} else {
 		// Auto-resume the most recent session.
-		if latest := sessionMgr.LatestSessionID(context.Background()); latest != "" {
+		latest, latestErr := sessionMgr.LatestSessionID(context.Background())
+		if latestErr != nil {
+			log.Printf("session: %v", latestErr)
+		}
+		if latest != "" {
 			if err := sessionMgr.LoadSession(context.Background(), latest); err == nil {
 				restoredMsgs = sessionMgr.GetMessages()
 				restoredSessionID = latest
