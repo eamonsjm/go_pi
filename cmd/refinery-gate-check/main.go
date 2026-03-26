@@ -70,7 +70,11 @@ func run(args []string, stdout, stderr io.Writer, opts ...refinery_gate.GateOpti
 		if *verbose {
 			_, _ = fmt.Fprintf(stderr, "Error checking CI: %v\n", err)
 		}
-		jsonOut, _ := json.MarshalIndent(output, "", "  ")
+		jsonOut, mErr := json.MarshalIndent(output, "", "  ")
+		if mErr != nil {
+			_, _ = fmt.Fprintf(stderr, "ERROR: Failed to marshal error output: %v\n", mErr)
+			return 1
+		}
 		_, _ = fmt.Fprintln(stdout, string(jsonOut))
 		return 1
 	}

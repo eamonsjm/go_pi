@@ -307,6 +307,50 @@ func TestCheckCI_KeepsLatestRunPerWorkflow(t *testing.T) {
 	}
 }
 
+func TestCheckCI_UnknownStatusFailsGate(t *testing.T) {
+	// A workflow with an unexpected status (e.g. "pending", "waiting") must
+	// NOT pass the gate. Only "completed" + "success" should pass.
+	for _, unknownStatus := range []string{"pending", "waiting", "requested", "stale", "action_required"} {
+		t.Run(unknownStatus, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				response := map[string]interface{}{
+					"workflow_runs": []map[string]interface{}{
+						{
+							"id":         1001,
+							"name":       "Build",
+							"status":     unknownStatus,
+							"conclusion": "",
+							"html_url":   "https://github.com/eamonsjm/go_pi/actions/runs/1001",
+						},
+					},
+				}
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(response)
+			}))
+			defer server.Close()
+
+			checker := &GateChecker{
+				client:    server.Client(),
+				owner:     "eamonsjm",
+				repo:      "go_pi",
+				token:     "fake-token",
+				branch:    "main",
+				workflows: []string{"Build"},
+				apiURL:    server.URL + "/repos/eamonsjm/go_pi/actions/runs?branch=main&per_page=50",
+			}
+
+			status, err := checker.CheckCI(context.Background())
+			if err != nil {
+				t.Fatalf("CheckCI failed: %v", err)
+			}
+
+			if status.Passed {
+				t.Errorf("Expected gate to fail for unknown status %q, but it passed", unknownStatus)
+			}
+		})
+	}
+}
+
 // captureTransport records the request URL and returns a canned JSON response.
 type captureTransport struct {
 	capturedURL string

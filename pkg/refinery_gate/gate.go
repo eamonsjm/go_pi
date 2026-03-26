@@ -113,8 +113,10 @@ func (gc *GateChecker) CheckCI(ctx context.Context) (*GateStatus, error) {
 			continue
 		}
 
-		// Check if workflow completed successfully
-		if run.Status == "completed" && run.Conclusion != "success" {
+		// Only "completed" with "success" conclusion passes the gate.
+		// Any other status (pending, waiting, stale, requested, etc.)
+		// is treated as not-yet-passed to prevent false positives.
+		if run.Status != "completed" || run.Conclusion != "success" {
 			allPassed = false
 			continue
 		}

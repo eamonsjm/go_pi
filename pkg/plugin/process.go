@@ -172,6 +172,9 @@ func (p *PluginProcess) applyMemoryLimit() {
 	if p.memLimitMB <= 0 {
 		return
 	}
+	if p.cmd == nil || p.cmd.Process == nil {
+		return
+	}
 	pid := p.cmd.Process.Pid
 	if err := setMemoryLimit(pid, p.memLimitMB); err != nil {
 		log.Printf("plugin %s: failed to set memory limit (%d MB): %v",

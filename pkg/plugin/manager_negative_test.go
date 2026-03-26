@@ -122,7 +122,7 @@ func TestDiscover_ManifestPointsToMissingExecutable(t *testing.T) {
 
 	manifest := Manifest{
 		Name:       "missing-exe",
-		Executable: "/nonexistent/path/to/binary",
+		Executable: "nonexistent-binary",
 	}
 	data, _ := json.Marshal(manifest)
 	os.WriteFile(filepath.Join(pluginDir, "plugin.json"), data, 0644)
@@ -144,13 +144,12 @@ func TestDiscover_ManifestPointsToDirectory(t *testing.T) {
 	pluginDir := filepath.Join(dir, "dir-exe")
 	os.MkdirAll(pluginDir, 0755)
 
-	// Point executable at a directory.
-	subDir := filepath.Join(pluginDir, "subdir")
-	os.MkdirAll(subDir, 0755)
+	// Point executable at a subdirectory (relative path).
+	os.MkdirAll(filepath.Join(pluginDir, "subdir"), 0755)
 
 	manifest := Manifest{
 		Name:       "dir-exe",
-		Executable: subDir,
+		Executable: "subdir",
 	}
 	data, _ := json.Marshal(manifest)
 	os.WriteFile(filepath.Join(pluginDir, "plugin.json"), data, 0644)
@@ -291,10 +290,16 @@ func TestDiscover_MultipleDirsSomeInvalid(t *testing.T) {
 	pluginDir := filepath.Join(goodDir, "test-plugin")
 	os.MkdirAll(pluginDir, 0755)
 
-	exe := makeExitExe(t)
+	exeName := "run.sh"
+	if runtime.GOOS == "windows" {
+		exeName = "run.bat"
+		os.WriteFile(filepath.Join(pluginDir, exeName), []byte("@exit /b 0\n"), 0755)
+	} else {
+		os.WriteFile(filepath.Join(pluginDir, exeName), []byte("#!/bin/sh\nexit 0\n"), 0755)
+	}
 	manifest := Manifest{
 		Name:       "good-plugin",
-		Executable: exe,
+		Executable: exeName,
 	}
 	data, _ := json.Marshal(manifest)
 	os.WriteFile(filepath.Join(pluginDir, "plugin.json"), data, 0644)
@@ -317,12 +322,17 @@ func TestDiscover_MultipleDirsMixedPlugins(t *testing.T) {
 	dir1 := t.TempDir()
 	dir2 := t.TempDir()
 
-	exe := makeExitExe(t)
-
 	// Good plugin in dir1.
 	pluginDir1 := filepath.Join(dir1, "plugin-a")
 	os.MkdirAll(pluginDir1, 0755)
-	data, _ := json.Marshal(Manifest{Name: "plugin-a", Executable: exe})
+	exeName := "run.sh"
+	if runtime.GOOS == "windows" {
+		exeName = "run.bat"
+		os.WriteFile(filepath.Join(pluginDir1, exeName), []byte("@exit /b 0\n"), 0755)
+	} else {
+		os.WriteFile(filepath.Join(pluginDir1, exeName), []byte("#!/bin/sh\nexit 0\n"), 0755)
+	}
+	data, _ := json.Marshal(Manifest{Name: "plugin-a", Executable: exeName})
 	os.WriteFile(filepath.Join(pluginDir1, "plugin.json"), data, 0644)
 
 	// Bad plugin (bad JSON) in dir2.
@@ -363,15 +373,20 @@ func TestShutdown_Empty(t *testing.T) {
 }
 
 func TestShutdown_Idempotent(t *testing.T) {
-	exe := makeExitExe(t)
-
 	reg := tools.NewRegistry()
 	m := NewManager(reg)
 
 	dir := t.TempDir()
 	pluginDir := filepath.Join(dir, "idempotent")
 	os.MkdirAll(pluginDir, 0755)
-	data, _ := json.Marshal(Manifest{Name: "test", Executable: exe})
+	exeName := "run.sh"
+	if runtime.GOOS == "windows" {
+		exeName = "run.bat"
+		os.WriteFile(filepath.Join(pluginDir, exeName), []byte("@exit /b 0\n"), 0755)
+	} else {
+		os.WriteFile(filepath.Join(pluginDir, exeName), []byte("#!/bin/sh\nexit 0\n"), 0755)
+	}
+	data, _ := json.Marshal(Manifest{Name: "test", Executable: exeName})
 	os.WriteFile(filepath.Join(pluginDir, "plugin.json"), data, 0644)
 
 	m.Discover([]string{dir})
