@@ -343,7 +343,11 @@ func (p *PluginProcess) Initialize(ctx context.Context, cfg PluginConfig) error 
 		return fmt.Errorf("sending initialize message: %w", err)
 	}
 
-	msg, err := p.waitResponse(ctx, p.timeouts.InitTimeout)
+	p.mu.Lock()
+	initTimeout := p.timeouts.InitTimeout
+	p.mu.Unlock()
+
+	msg, err := p.waitResponse(ctx, initTimeout)
 	if err != nil {
 		return fmt.Errorf("plugin %s: initialization failed: %w", p.name, err)
 	}
@@ -370,10 +374,14 @@ func (p *PluginProcess) ExecuteTool(ctx context.Context, id, name string, params
 		return "", true, err
 	}
 
-	msg, err := p.waitResponse(ctx, p.timeouts.ToolTimeout)
+	p.mu.Lock()
+	toolTimeout := p.timeouts.ToolTimeout
+	p.mu.Unlock()
+
+	msg, err := p.waitResponse(ctx, toolTimeout)
 	if err != nil {
 		if isTimeout(err) {
-			p.handleTimeout("tool_call", name, p.timeouts.ToolTimeout)
+			p.handleTimeout("tool_call", name, toolTimeout)
 		}
 		return "", true, err
 	}
@@ -397,10 +405,14 @@ func (p *PluginProcess) ExecuteCommand(ctx context.Context, name, args string) (
 		return "", true, err
 	}
 
-	msg, err := p.waitResponse(ctx, p.timeouts.CommandTimeout)
+	p.mu.Lock()
+	cmdTimeout := p.timeouts.CommandTimeout
+	p.mu.Unlock()
+
+	msg, err := p.waitResponse(ctx, cmdTimeout)
 	if err != nil {
 		if isTimeout(err) {
-			p.handleTimeout("command", name, p.timeouts.CommandTimeout)
+			p.handleTimeout("command", name, cmdTimeout)
 		}
 		return "", true, err
 	}
@@ -661,6 +673,8 @@ func (p *PluginProcess) handleTimeout(opType, opName string, timeout time.Durati
 // SetTimeouts configures per-plugin timeouts. Any zero-value field in cfg
 // keeps the current value.
 func (p *PluginProcess) SetTimeouts(cfg TimeoutConfig) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	if cfg.InitTimeout > 0 {
 		p.timeouts.InitTimeout = cfg.InitTimeout
 	}
