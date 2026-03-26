@@ -49,7 +49,7 @@ type PromptGetter interface {
 	GetPrompt(ctx context.Context, name string, arguments map[string]string) (*PromptsGetResult, error)
 }
 
-// BridgePrompt creates a skill.Skill from an PromptInfo, bridging MCP
+// BridgePrompt creates a skill.Skill from a PromptInfo, bridging MCP
 // prompts into the skill registry. The skill's Source is "mcp" and
 // UserInvocable is true so it appears in the skill list.
 //
@@ -99,6 +99,8 @@ func BridgePrompt(serverName string, info PromptInfo, getter PromptGetter) *skil
 
 // formatPromptResult renders a PromptsGetResult as a string suitable for
 // returning to the LLM. Each message is formatted with its role prefix.
+// Only text content is rendered; non-text content types (image, resource)
+// are noted but their payloads are not included.
 func formatPromptResult(result *PromptsGetResult) string {
 	var b strings.Builder
 	if result.Description != "" {
@@ -109,7 +111,11 @@ func formatPromptResult(result *PromptsGetResult) string {
 		if i > 0 {
 			b.WriteString("\n\n")
 		}
-		fmt.Fprintf(&b, "[%s]\n%s", msg.Role, msg.Content.Text)
+		text := msg.Content.Text
+		if text == "" && msg.Content.Type != "" && msg.Content.Type != "text" {
+			text = fmt.Sprintf("[non-text content: %s]", msg.Content.Type)
+		}
+		fmt.Fprintf(&b, "[%s]\n%s", msg.Role, text)
 	}
 	return b.String()
 }
