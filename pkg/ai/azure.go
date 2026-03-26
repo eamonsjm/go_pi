@@ -16,6 +16,9 @@ const (
 	azureDefaultAPIVersion = "2024-10-21"
 )
 
+// Compile-time interface check.
+var _ Provider = (*AzureOpenAIProvider)(nil)
+
 // AzureOpenAIProvider implements the Provider interface for Azure OpenAI deployments.
 // It uses the same request/response format as OpenAI but with deployment-based URLs
 // and api-key authentication.

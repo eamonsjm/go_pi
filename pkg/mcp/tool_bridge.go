@@ -112,6 +112,12 @@ type ToolCaller interface {
 	ServerName() string
 }
 
+// Compile-time interface checks.
+var (
+	_ tools.Tool     = (*MCPTool)(nil)
+	_ tools.RichTool = (*MCPTool)(nil)
+)
+
 // MCPTool implements tools.RichTool for an MCP server tool.
 type MCPTool struct {
 	server       ToolCaller

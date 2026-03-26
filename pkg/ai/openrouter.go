@@ -11,6 +11,9 @@ const (
 	openrouterAPIURL = "https://openrouter.ai/api/v1/chat/completions"
 )
 
+// Compile-time interface check.
+var _ Provider = (*OpenRouterProvider)(nil)
+
 // OpenRouterProvider implements the Provider interface using OpenRouter's
 // OpenAI-compatible API. It delegates all streaming and request construction
 // to OpenAIProvider with a different base URL.

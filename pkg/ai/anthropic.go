@@ -19,6 +19,9 @@ const (
 	anthropicAPIVersion = "2023-06-01"
 )
 
+// Compile-time interface check.
+var _ Provider = (*AnthropicProvider)(nil)
+
 // AnthropicProvider implements the Provider interface for Anthropic's Messages API.
 type AnthropicProvider struct {
 	apiKey     string

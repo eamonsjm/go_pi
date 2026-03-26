@@ -18,6 +18,9 @@ const (
 	openaiAPIURL = "https://api.openai.com/v1/chat/completions"
 )
 
+// Compile-time interface check.
+var _ Provider = (*OpenAIProvider)(nil)
+
 // OpenAIProvider implements the Provider interface for OpenAI's Chat Completions API.
 type OpenAIProvider struct {
 	apiKey       string

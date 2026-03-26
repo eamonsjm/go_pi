@@ -13,6 +13,9 @@ import (
 	"time"
 )
 
+// Compile-time interface check.
+var _ Provider = (*OllamaProvider)(nil)
+
 // OllamaProvider implements the Provider interface for Ollama's local inference API.
 // Ollama runs at localhost:11434 by default and exposes a streaming /api/chat endpoint.
 type OllamaProvider struct {

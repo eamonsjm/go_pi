@@ -52,7 +52,7 @@ func (s *Store) Load() error {
 	// The auth store may contain !command values that are executed via sh -c.
 	// Verify file permissions before trusting its contents.
 	if err := checkFilePermissions(s.path); err != nil {
-		return err
+		return fmt.Errorf("check auth store permissions: %w", err)
 	}
 
 	// Probe the JSON structure to detect format.

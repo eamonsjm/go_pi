@@ -33,6 +33,9 @@ type MetricsRecorder interface {
 	Record(category CommandCategory, originalSize, compressedSize int, duration time.Duration)
 }
 
+// Compile-time interface check.
+var _ Hook = (*GoTestAggregator)(nil)
+
 // GoTestAggregator compresses Go test output while preserving critical information.
 type GoTestAggregator struct {
 	level   CompressionLevel

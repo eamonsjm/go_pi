@@ -333,7 +333,7 @@ func (c *MCPClient) ListResources(ctx context.Context, cursor string) (*Resource
 	}
 	result, err := c.Request(ctx, "resources/list", params)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("resources/list: %w", err)
 	}
 	var page ResourcesListPage
 	if err := json.Unmarshal(result, &page); err != nil {
@@ -350,7 +350,7 @@ func (c *MCPClient) ListResourceTemplates(ctx context.Context, cursor string) (*
 	}
 	result, err := c.Request(ctx, "resources/templates/list", params)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("resources/templates/list: %w", err)
 	}
 	var page ResourceTemplatesListPage
 	if err := json.Unmarshal(result, &page); err != nil {
@@ -364,7 +364,7 @@ func (c *MCPClient) ReadResourceRaw(ctx context.Context, uri string) (*MCPResour
 	params := map[string]any{"uri": uri}
 	result, err := c.Request(ctx, "resources/read", params)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("resources/read %q: %w", uri, err)
 	}
 	var readResult MCPResourceReadResult
 	if err := json.Unmarshal(result, &readResult); err != nil {
@@ -377,14 +377,20 @@ func (c *MCPClient) ReadResourceRaw(ctx context.Context, uri string) (*MCPResour
 func (c *MCPClient) SubscribeResource(ctx context.Context, uri string) error {
 	params := map[string]any{"uri": uri}
 	_, err := c.Request(ctx, "resources/subscribe", params)
-	return err
+	if err != nil {
+		return fmt.Errorf("resources/subscribe %q: %w", uri, err)
+	}
+	return nil
 }
 
 // UnsubscribeResource sends a resources/unsubscribe request.
 func (c *MCPClient) UnsubscribeResource(ctx context.Context, uri string) error {
 	params := map[string]any{"uri": uri}
 	_, err := c.Request(ctx, "resources/unsubscribe", params)
-	return err
+	if err != nil {
+		return fmt.Errorf("resources/unsubscribe %q: %w", uri, err)
+	}
+	return nil
 }
 
 // --- MCPServer resource methods ---

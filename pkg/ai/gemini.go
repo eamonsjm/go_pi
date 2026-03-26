@@ -18,6 +18,9 @@ const (
 	geminiBaseURL = "https://generativelanguage.googleapis.com/v1beta"
 )
 
+// Compile-time interface check.
+var _ Provider = (*GeminiProvider)(nil)
+
 // GeminiProvider implements the Provider interface for Google's Generative AI API.
 type GeminiProvider struct {
 	apiKey     string

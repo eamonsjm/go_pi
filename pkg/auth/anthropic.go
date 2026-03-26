@@ -32,6 +32,9 @@ const (
 // AnthropicOAuth implements OAuthProvider for Anthropic using
 // OAuth 2.0 authorization code grant with PKCE (RFC 7636).
 //
+// Compile-time interface check.
+var _ OAuthProvider = (*AnthropicOAuth)(nil)
+
 // The flow uses Anthropic's hosted callback page: the user authorizes in
 // the browser, gets redirected to console.anthropic.com which displays the
 // authorization code, and then pastes the code back into the TUI.
@@ -267,7 +270,7 @@ func (a *AnthropicOAuth) Login(ctx context.Context, cb OAuthCallbacks) (*Credent
 	}
 
 	if cb.OnPrompt == nil {
-		return nil, fmt.Errorf("Login requires an OnPrompt callback to receive the authorization code")
+		return nil, fmt.Errorf("login requires an OnPrompt callback to receive the authorization code")
 	}
 
 	code, err := cb.OnPrompt("Paste authorization code")
