@@ -2442,3 +2442,44 @@ func TestApp_Update_MCPConfirmMsg_QuitCleansUp(t *testing.T) {
 		t.Error("quit should unblock pending MCP confirmation")
 	}
 }
+
+func TestApp_Update_MCPConfirmMsg_DisplaysDescription(t *testing.T) {
+	app := NewApp()
+	app.SetHasUI(true)
+
+	ch := make(chan bool, 1)
+	app.Update(MCPConfirmMsg{
+		ServerName:  "fs",
+		ToolName:    "write_file",
+		Description: "Write content to a file on disk",
+		ResultCh:    ch,
+	})
+
+	if len(app.chat.blocks) == 0 {
+		t.Fatal("expected a system message block")
+	}
+	prompt := app.chat.blocks[len(app.chat.blocks)-1].text
+	if !strings.Contains(prompt, "Write content to a file on disk") {
+		t.Errorf("prompt should contain description, got: %s", prompt)
+	}
+}
+
+func TestApp_Update_MCPConfirmMsg_NoDescriptionOmitsLine(t *testing.T) {
+	app := NewApp()
+	app.SetHasUI(true)
+
+	ch := make(chan bool, 1)
+	app.Update(MCPConfirmMsg{
+		ServerName: "fs",
+		ToolName:   "write_file",
+		ResultCh:   ch,
+	})
+
+	if len(app.chat.blocks) == 0 {
+		t.Fatal("expected a system message block")
+	}
+	prompt := app.chat.blocks[len(app.chat.blocks)-1].text
+	if strings.Contains(prompt, "Description:") {
+		t.Errorf("prompt should not contain Description line when empty, got: %s", prompt)
+	}
+}

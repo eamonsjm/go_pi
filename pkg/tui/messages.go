@@ -82,9 +82,10 @@ type PluginUIResponseMsg struct {
 // to request interactive user approval for an MCP tool invocation. The caller
 // blocks on ResultCh until the TUI sends a boolean response.
 type MCPConfirmMsg struct {
-	ServerName string
-	ToolName   string
-	ResultCh   chan bool
+	ServerName  string
+	ToolName    string
+	Description string
+	ResultCh    chan bool
 }
 
 // SamplingConfirmMsg is sent by the MCP sampling confirmation callback when a
