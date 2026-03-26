@@ -254,9 +254,10 @@ func (a *App) ConfirmMCPTool(serverName, toolName, description string) (bool, er
 	}
 	ch := make(chan bool, 1)
 	a.program.Send(MCPConfirmMsg{
-		ServerName: serverName,
-		ToolName:   toolName,
-		ResultCh:   ch,
+		ServerName:  serverName,
+		ToolName:    toolName,
+		Description: description,
+		ResultCh:    ch,
 	})
 	if a.ctx != nil {
 		select {
@@ -639,9 +640,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 		a.mcpConfirmCh = msg.ResultCh
-		a.chat.AddSystemMessage(fmt.Sprintf(
-			"MCP tool %q on server %q requires approval. Type y to allow, or n to deny:",
-			msg.ToolName, msg.ServerName))
+		prompt := fmt.Sprintf(
+			"MCP tool %q on server %q requires approval.", msg.ToolName, msg.ServerName)
+		if msg.Description != "" {
+			prompt += fmt.Sprintf("\nDescription: %s", msg.Description)
+		}
+		prompt += "\nType y to allow, or n to deny:"
+		a.chat.AddSystemMessage(prompt)
 		return a, nil
 
 	case authOAuthMsg:
