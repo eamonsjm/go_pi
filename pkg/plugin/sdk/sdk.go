@@ -349,6 +349,7 @@ func (p *Plugin) handleCommand(msg hostMessage, commands []commandEntry) {
 			if err != nil {
 				p.send(pluginMessage{
 					Type:    "command_result",
+					ID:      msg.ID,
 					Text:    err.Error(),
 					IsError: true,
 				})
@@ -356,6 +357,7 @@ func (p *Plugin) handleCommand(msg hostMessage, commands []commandEntry) {
 			}
 			p.send(pluginMessage{
 				Type: "command_result",
+				ID:   msg.ID,
 				Text: result,
 			})
 			return
@@ -363,6 +365,7 @@ func (p *Plugin) handleCommand(msg hostMessage, commands []commandEntry) {
 	}
 	p.send(pluginMessage{
 		Type:    "command_result",
+		ID:      msg.ID,
 		Text:    fmt.Sprintf("unknown command: %s", msg.Name),
 		IsError: true,
 	})
