@@ -527,3 +527,61 @@ func TestStreamableHTTPOpenServerStreamReconnect(t *testing.T) {
 	}
 }
 
+func TestStreamableHTTPOpenServerStreamAfterClose(t *testing.T) {
+	tr := NewStreamableHTTP("http://unused", nil)
+	if err := tr.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	err := tr.OpenServerStream(context.Background())
+	if err == nil {
+		t.Fatal("expected error from OpenServerStream after Close, got nil")
+	}
+	if !strings.Contains(err.Error(), "closed") {
+		t.Errorf("error should mention closed: %v", err)
+	}
+}
+
+func TestStreamableHTTPSSEMalformedJSON(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Fatal("expected http.Flusher")
+		}
+
+		// First event: malformed JSON — should be skipped.
+		fmt.Fprint(w, "data: {not valid json\n\n")
+		flusher.Flush()
+
+		// Second event: valid JSON — should be delivered.
+		fmt.Fprint(w, "data: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}\n\n")
+		flusher.Flush()
+	}))
+	defer server.Close()
+
+	tr := NewStreamableHTTP(server.URL, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	msg := json.RawMessage(`{"jsonrpc":"2.0","id":1,"method":"test"}`)
+	if err := tr.Send(ctx, msg); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	// Should only receive the valid JSON message (malformed one is skipped).
+	select {
+	case got := <-tr.Receive():
+		if !json.Valid(got) {
+			t.Errorf("received invalid JSON: %s", got)
+		}
+		want := `{"jsonrpc":"2.0","id":1,"result":{}}`
+		if string(got) != want {
+			t.Errorf("got %s, want %s", got, want)
+		}
+	case <-ctx.Done():
+		t.Fatal("timeout waiting for valid JSON message")
+	}
+}
+

@@ -126,18 +126,6 @@ func (t *StreamableHTTP) Send(ctx context.Context, msg json.RawMessage) error {
 		return fmt.Errorf("HTTP %d from MCP server: %s", resp.StatusCode, body)
 	}
 
-	// Check for HTTP-level errors before content-type dispatch. Non-2xx
-	// responses indicate transport-level failures (auth, routing, server
-	// errors) that should be reported as errors, not silently parsed.
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(resp.Body)
-		_ = resp.Body.Close()
-		if len(body) > 200 {
-			body = body[:200]
-		}
-		return fmt.Errorf("MCP server returned HTTP %d: %s", resp.StatusCode, string(body))
-	}
-
 	// Content-Type dispatch: handle both response formats.
 	ct := resp.Header.Get("Content-Type")
 	switch {
@@ -188,6 +176,13 @@ func (t *StreamableHTTP) SetNegotiatedVersion(version string) {
 // parseSSEStream clears the active flag, allowing the next call to
 // re-establish the stream with Last-Event-ID for resumption.
 func (t *StreamableHTTP) OpenServerStream(ctx context.Context) error {
+	t.closeMu.Lock()
+	closed := t.closed
+	t.closeMu.Unlock()
+	if closed {
+		return fmt.Errorf("transport is closed")
+	}
+
 	t.getStreamMu.Lock()
 	if t.getStreamActive {
 		t.getStreamMu.Unlock()
@@ -363,6 +358,14 @@ func (t *StreamableHTTP) parseSSEStream(body io.ReadCloser, streamName string) {
 		case line == "":
 			if data.Len() > 0 {
 				msg := json.RawMessage(data.String())
+
+				// Validate JSON before forwarding, matching Stdio's readLoop.
+				if !json.Valid(msg) {
+					log.Printf("mcp http: skipping malformed JSON from SSE stream: %s", msg)
+					data.Reset()
+					eventID = ""
+					continue
+				}
 
 				if eventID != "" {
 					t.lastEventMu.Lock()
