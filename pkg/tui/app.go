@@ -336,6 +336,8 @@ func (a *App) RegisterBuiltinCommands(ctx context.Context, agentLoop *agent.Agen
 		a.providerInfo.Auth = "env"
 	}
 
+	a.footer.SetModel(cfg.DefaultModel)
+
 	a.RegisterCommand(NewCompactCommand(ctx, agentLoop))
 	a.RegisterCommand(NewSettingsCommand(cfg, agentLoop, a.header))
 	a.RegisterCommand(NewRTKCommand(cfg, agentLoop.Metrics()))
@@ -721,6 +723,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case modelSelectedMsg:
 		a.modelSelector.Hide()
 		a.header.SetModel(msg.model)
+		a.footer.SetModel(msg.model)
 		a.chat.AddSystemMessage(fmt.Sprintf("Switched to model: %s", msg.model))
 		a.editor.Focus()
 		if a.onModelChange != nil {
