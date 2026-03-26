@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/ejm/go_pi/pkg/ai"
 	"github.com/ejm/go_pi/pkg/tools"
@@ -177,6 +178,17 @@ func convertResourceResult(result *ResourceReadResult) []ai.ContentBlock {
 
 // convertBlobContent handles binary resource content with size cap enforcement.
 func convertBlobContent(item ResourceContent) []ai.ContentBlock {
+	// Pre-check: reject obviously oversized blobs without decoding to avoid
+	// memory spikes from malicious servers (e.g. 100 MB base64 blobs).
+	// len/4*3 underestimates slightly due to padding, so borderline cases
+	// still get decoded and checked exactly below.
+	if len(item.Blob)/4*3 > maxResourceBinaryBytes {
+		return []ai.ContentBlock{{
+			Type: ai.ContentTypeText,
+			Text: fmt.Sprintf("[resource %s: binary content too large (estimated %d bytes, max %d)]",
+				item.URI, len(item.Blob)/4*3, maxResourceBinaryBytes),
+		}}
+	}
 	decoded, err := base64.StdEncoding.DecodeString(item.Blob)
 	if err != nil {
 		return []ai.ContentBlock{{
@@ -209,7 +221,16 @@ func convertBlobContent(item ResourceContent) []ai.ContentBlock {
 func convertTextContent(item ResourceContent) ai.ContentBlock {
 	text := item.Text
 	if len(text) > maxResourceTextBytes {
-		text = text[:maxResourceTextBytes] + fmt.Sprintf("\n[truncated at %d bytes]", maxResourceTextBytes)
+		text = text[:maxResourceTextBytes]
+		// Trim any partial UTF-8 rune at the truncation boundary.
+		for len(text) > 0 {
+			r, size := utf8.DecodeLastRuneInString(text)
+			if r != utf8.RuneError || size > 1 {
+				break
+			}
+			text = text[:len(text)-1]
+		}
+		text += fmt.Sprintf("\n[truncated at %d bytes]", maxResourceTextBytes)
 	}
 	return ai.ContentBlock{
 		Type: ai.ContentTypeText,
@@ -455,6 +476,13 @@ func (s *Server) discoverAndRegisterResources(ctx context.Context) error {
 
 // handleResourcesListChanged re-discovers resources and updates the tool.
 func (s *Server) handleResourcesListChanged() {
+	s.mu.Lock()
+	closed := s.closed
+	s.mu.Unlock()
+	if closed {
+		return
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -528,14 +556,19 @@ func (sm *subscriptionManager) touch(ctx context.Context, uri string) {
 		sm.mu.Unlock()
 		return
 	}
-	sm.subs[uri] = &subscription{lastAccess: time.Now()}
+	addedAt := time.Now()
+	sm.subs[uri] = &subscription{lastAccess: addedAt}
 	sm.mu.Unlock()
 
 	// Subscribe (best-effort -- don't fail the read on subscribe error).
 	if err := sm.client.SubscribeResource(ctx, uri); err != nil {
 		log.Printf("mcp: failed to subscribe to resource %q: %v", uri, err)
 		sm.mu.Lock()
-		delete(sm.subs, uri)
+		// Only delete if no other goroutine refreshed the subscription
+		// between our unlock and the failed subscribe RPC.
+		if sub, ok := sm.subs[uri]; ok && sub.lastAccess.Equal(addedAt) {
+			delete(sm.subs, uri)
+		}
 		sm.mu.Unlock()
 	}
 }
