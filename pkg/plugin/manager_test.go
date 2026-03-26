@@ -97,15 +97,23 @@ func TestDiscover_SkipsFiles(t *testing.T) {
 }
 
 func TestDiscover_WithManifest(t *testing.T) {
-	exe := makeExitExe(t)
 	dir := t.TempDir()
 
 	pluginDir := filepath.Join(dir, "test-plugin")
 	os.MkdirAll(pluginDir, 0755)
 
+	// Create executable inside the plugin directory (manifest uses relative path).
+	exeName := "run.sh"
+	if runtime.GOOS == "windows" {
+		exeName = "run.bat"
+		os.WriteFile(filepath.Join(pluginDir, exeName), []byte("@exit /b 0\n"), 0755)
+	} else {
+		os.WriteFile(filepath.Join(pluginDir, exeName), []byte("#!/bin/sh\nexit 0\n"), 0755)
+	}
+
 	manifest := Manifest{
 		Name:       "test-plugin",
-		Executable: exe,
+		Executable: exeName,
 	}
 	data, _ := json.Marshal(manifest)
 	os.WriteFile(filepath.Join(pluginDir, "plugin.json"), data, 0644)
@@ -129,15 +137,23 @@ func TestDiscover_WithManifest(t *testing.T) {
 }
 
 func TestDiscover_ManifestDefaultName(t *testing.T) {
-	exe := makeExitExe(t)
 	dir := t.TempDir()
 
 	pluginDir := filepath.Join(dir, "my-plugin")
 	os.MkdirAll(pluginDir, 0755)
 
+	// Create executable inside the plugin directory.
+	exeName := "run.sh"
+	if runtime.GOOS == "windows" {
+		exeName = "run.bat"
+		os.WriteFile(filepath.Join(pluginDir, exeName), []byte("@exit /b 0\n"), 0755)
+	} else {
+		os.WriteFile(filepath.Join(pluginDir, exeName), []byte("#!/bin/sh\nexit 0\n"), 0755)
+	}
+
 	manifest := Manifest{
 		// Name omitted — should default to directory name.
-		Executable: exe,
+		Executable: exeName,
 	}
 	data, _ := json.Marshal(manifest)
 	os.WriteFile(filepath.Join(pluginDir, "plugin.json"), data, 0644)
@@ -244,14 +260,22 @@ func TestLoadPlugin_NonExistent(t *testing.T) {
 }
 
 func TestLoadPlugin_DirectoryPath(t *testing.T) {
-	exe := makeExitExe(t)
 	dir := t.TempDir()
 	pluginDir := filepath.Join(dir, "test-plugin")
 	os.MkdirAll(pluginDir, 0755)
 
+	// Create executable inside the plugin directory.
+	exeName := "run.sh"
+	if runtime.GOOS == "windows" {
+		exeName = "run.bat"
+		os.WriteFile(filepath.Join(pluginDir, exeName), []byte("@exit /b 0\n"), 0755)
+	} else {
+		os.WriteFile(filepath.Join(pluginDir, exeName), []byte("#!/bin/sh\nexit 0\n"), 0755)
+	}
+
 	manifest := Manifest{
 		Name:       "dir-loaded",
-		Executable: exe,
+		Executable: exeName,
 	}
 	data, _ := json.Marshal(manifest)
 	os.WriteFile(filepath.Join(pluginDir, "plugin.json"), data, 0644)
@@ -271,6 +295,50 @@ func TestLoadPlugin_DirectoryPath(t *testing.T) {
 	}
 
 	m.Shutdown()
+}
+
+func TestDiscover_RejectsAbsoluteExecutablePath(t *testing.T) {
+	dir := t.TempDir()
+	pluginDir := filepath.Join(dir, "evil-plugin")
+	os.MkdirAll(pluginDir, 0755)
+
+	manifest := Manifest{
+		Name:       "evil",
+		Executable: "/bin/sh",
+	}
+	data, _ := json.Marshal(manifest)
+	os.WriteFile(filepath.Join(pluginDir, "plugin.json"), data, 0644)
+
+	reg := tools.NewRegistry()
+	m := NewManager(reg)
+	m.Discover([]string{dir})
+
+	if len(m.plugins) != 0 {
+		t.Errorf("plugins = %d, want 0 (absolute path should be rejected)", len(m.plugins))
+		m.Shutdown()
+	}
+}
+
+func TestDiscover_RejectsPathTraversal(t *testing.T) {
+	dir := t.TempDir()
+	pluginDir := filepath.Join(dir, "evil-plugin")
+	os.MkdirAll(pluginDir, 0755)
+
+	manifest := Manifest{
+		Name:       "evil",
+		Executable: "../../../../../../bin/sh",
+	}
+	data, _ := json.Marshal(manifest)
+	os.WriteFile(filepath.Join(pluginDir, "plugin.json"), data, 0644)
+
+	reg := tools.NewRegistry()
+	m := NewManager(reg)
+	m.Discover([]string{dir})
+
+	if len(m.plugins) != 0 {
+		t.Errorf("plugins = %d, want 0 (path traversal should be rejected)", len(m.plugins))
+		m.Shutdown()
+	}
 }
 
 func TestInitialize_RegistersTools(t *testing.T) {

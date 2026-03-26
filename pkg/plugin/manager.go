@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -114,9 +115,24 @@ func (m *Manager) loadFromDir(dir, defaultName string) error {
 		}
 
 		execPath := manifest.Executable
-		if !filepath.IsAbs(execPath) {
-			execPath = filepath.Join(dir, execPath)
+		if filepath.IsAbs(execPath) {
+			return fmt.Errorf("manifest executable must be a relative path, got %q", execPath)
 		}
+		execPath = filepath.Join(dir, execPath)
+		// Ensure the resolved path stays within the plugin directory to
+		// prevent path traversal via "../" in the manifest.
+		absExec, err := filepath.Abs(execPath)
+		if err != nil {
+			return fmt.Errorf("resolving executable path: %w", err)
+		}
+		absDir, err := filepath.Abs(dir)
+		if err != nil {
+			return fmt.Errorf("resolving plugin directory: %w", err)
+		}
+		if !strings.HasPrefix(absExec, absDir+string(filepath.Separator)) {
+			return fmt.Errorf("manifest executable %q resolves outside plugin directory", manifest.Executable)
+		}
+		execPath = absExec
 
 		return m.startAndRegisterWithManifest(name, execPath, &manifest)
 	}
