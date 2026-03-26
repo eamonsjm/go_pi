@@ -209,7 +209,7 @@ func (p *PluginProcess) readLoop(ctx context.Context) {
 		go func() {
 			select {
 			case <-ctx.Done():
-				stdout.Close()
+				_ = stdout.Close()
 			case <-loopDone:
 			}
 		}()
