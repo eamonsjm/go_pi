@@ -290,6 +290,9 @@ func mergeFromFile(cfg *Config, path string) error {
 	if v, ok := raw["default_provider"]; ok {
 		var s string
 		if json.Unmarshal(v, &s) == nil && s != "" {
+			if !isValidProvider(s) {
+				return fmt.Errorf("unknown default_provider %q in %s (valid: %s)", s, path, strings.Join(ValidProviderNames(), ", "))
+			}
 			cfg.DefaultProvider = s
 		}
 	}
@@ -302,7 +305,12 @@ func mergeFromFile(cfg *Config, path string) error {
 	if v, ok := raw["thinking_level"]; ok {
 		var s string
 		if json.Unmarshal(v, &s) == nil && s != "" {
-			cfg.ThinkingLevel = s
+			switch s {
+			case "off", "low", "medium", "high":
+				cfg.ThinkingLevel = s
+			default:
+				return fmt.Errorf("invalid thinking_level %q in %s (valid: off, low, medium, high)", s, path)
+			}
 		}
 	}
 	if v, ok := raw["max_tokens"]; ok {

@@ -701,6 +701,190 @@ func TestLoadConfigSetsServerOrigin(t *testing.T) {
 	}
 }
 
+func TestMergeFromFileInvalidThinkingLevel(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "settings.json")
+
+	data := []byte(`{"thinking_level": "turbo"}`)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	cfg := mustDefaultConfig(t)
+	err := mergeFromFile(cfg, path)
+	if err == nil {
+		t.Fatal("expected error for invalid thinking_level")
+	}
+	if cfg.ThinkingLevel != "off" {
+		t.Errorf("ThinkingLevel should remain default, got %q", cfg.ThinkingLevel)
+	}
+}
+
+func TestMergeFromFileValidThinkingLevels(t *testing.T) {
+	for _, level := range []string{"off", "low", "medium", "high"} {
+		t.Run(level, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "settings.json")
+
+			data := []byte(`{"thinking_level": "` + level + `"}`)
+			if err := os.WriteFile(path, data, 0o600); err != nil {
+				t.Fatalf("WriteFile: %v", err)
+			}
+
+			cfg := mustDefaultConfig(t)
+			if err := mergeFromFile(cfg, path); err != nil {
+				t.Fatalf("mergeFromFile: %v", err)
+			}
+			if cfg.ThinkingLevel != level {
+				t.Errorf("got %q, want %q", cfg.ThinkingLevel, level)
+			}
+		})
+	}
+}
+
+func TestMergeFromFileInvalidDefaultProvider(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "settings.json")
+
+	data := []byte(`{"default_provider": "fakeprovider"}`)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	cfg := mustDefaultConfig(t)
+	err := mergeFromFile(cfg, path)
+	if err == nil {
+		t.Fatal("expected error for unknown default_provider")
+	}
+	if cfg.DefaultProvider != "anthropic" {
+		t.Errorf("DefaultProvider should remain default, got %q", cfg.DefaultProvider)
+	}
+}
+
+func TestMergeFromFileAliasesAdditivePerKey(t *testing.T) {
+	dir := t.TempDir()
+
+	// Start with some aliases already set (simulating global config).
+	cfg := mustDefaultConfig(t)
+	cfg.Aliases = map[string]string{
+		"gs":  "git status",
+		"gl":  "git log",
+	}
+
+	// Merge a file that adds a new alias and overrides one.
+	path := filepath.Join(dir, "settings.json")
+	data := []byte(`{"aliases": {"gl": "git log --oneline", "gd": "git diff"}}`)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	if err := mergeFromFile(cfg, path); err != nil {
+		t.Fatalf("mergeFromFile: %v", err)
+	}
+
+	// "gs" should survive from the original config.
+	if cfg.Aliases["gs"] != "git status" {
+		t.Errorf("gs alias lost: got %q", cfg.Aliases["gs"])
+	}
+	// "gl" should be overridden.
+	if cfg.Aliases["gl"] != "git log --oneline" {
+		t.Errorf("gl alias not overridden: got %q", cfg.Aliases["gl"])
+	}
+	// "gd" should be added.
+	if cfg.Aliases["gd"] != "git diff" {
+		t.Errorf("gd alias not added: got %q", cfg.Aliases["gd"])
+	}
+}
+
+func TestMergeFromFileRTKFieldByField(t *testing.T) {
+	dir := t.TempDir()
+
+	cfg := mustDefaultConfig(t)
+	// Default RTK has Enabled=true, MetricsEnabled=true, etc.
+
+	// Merge a partial RTK override that only sets export_path.
+	// Booleans should NOT be reset to false.
+	path := filepath.Join(dir, "settings.json")
+	data := []byte(`{"rtk": {"export_path": "/tmp/custom.json"}}`)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	if err := mergeFromFile(cfg, path); err != nil {
+		t.Fatalf("mergeFromFile: %v", err)
+	}
+
+	if !cfg.RTK.Enabled {
+		t.Error("RTK.Enabled should remain true after partial override")
+	}
+	if !cfg.RTK.MetricsEnabled {
+		t.Error("RTK.MetricsEnabled should remain true after partial override")
+	}
+	if cfg.RTK.ExportPath != "/tmp/custom.json" {
+		t.Errorf("RTK.ExportPath = %q, want /tmp/custom.json", cfg.RTK.ExportPath)
+	}
+	// Compression levels from default should survive.
+	if len(cfg.RTK.CompressionLevels) == 0 {
+		t.Error("RTK.CompressionLevels should survive partial override")
+	}
+}
+
+func TestMergeFromFileRTKSubMapAdditive(t *testing.T) {
+	dir := t.TempDir()
+
+	cfg := mustDefaultConfig(t)
+	// Default has compression_levels: go-test, go-build, git-log, linter, generic
+
+	// Override only one compression level — others should survive.
+	path := filepath.Join(dir, "settings.json")
+	data := []byte(`{"rtk": {"compression_levels": {"go-test": "high", "custom": "low"}}}`)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	if err := mergeFromFile(cfg, path); err != nil {
+		t.Fatalf("mergeFromFile: %v", err)
+	}
+
+	// Overridden.
+	if cfg.RTK.CompressionLevels["go-test"] != "high" {
+		t.Errorf("go-test = %q, want high", cfg.RTK.CompressionLevels["go-test"])
+	}
+	// Added.
+	if cfg.RTK.CompressionLevels["custom"] != "low" {
+		t.Errorf("custom = %q, want low", cfg.RTK.CompressionLevels["custom"])
+	}
+	// Survived from default.
+	if cfg.RTK.CompressionLevels["go-build"] != "high" {
+		t.Errorf("go-build should survive: got %q", cfg.RTK.CompressionLevels["go-build"])
+	}
+}
+
+func TestMergeFromFileRTKBoolExplicitFalse(t *testing.T) {
+	dir := t.TempDir()
+
+	cfg := mustDefaultConfig(t)
+
+	// Explicitly setting enabled=false should take effect.
+	path := filepath.Join(dir, "settings.json")
+	data := []byte(`{"rtk": {"enabled": false}}`)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	if err := mergeFromFile(cfg, path); err != nil {
+		t.Fatalf("mergeFromFile: %v", err)
+	}
+
+	if cfg.RTK.Enabled {
+		t.Error("RTK.Enabled should be false when explicitly set")
+	}
+	// MetricsEnabled should remain true (not mentioned in override).
+	if !cfg.RTK.MetricsEnabled {
+		t.Error("RTK.MetricsEnabled should remain true")
+	}
+}
+
 func TestMergeFromFileAllowProjectEnvVars(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "settings.json")
@@ -910,7 +1094,7 @@ func TestLoadConfigRejectsInvalidProvider(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for invalid default_provider")
 	}
-	if !strings.Contains(err.Error(), `invalid default_provider "anthrpoic"`) {
+	if !strings.Contains(err.Error(), `unknown default_provider "anthrpoic"`) {
 		t.Errorf("unexpected error: %v", err)
 	}
 }

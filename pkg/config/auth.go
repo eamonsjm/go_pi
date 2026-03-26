@@ -32,6 +32,13 @@ func ProviderConfigEnvVar(provider string) (string, bool) {
 	return v, ok
 }
 
+// isValidProvider reports whether name is a known provider.
+func isValidProvider(name string) bool {
+	_, apiOK := providerAPIKeyEnvVars[name]
+	_, cfgOK := providerConfigEnvVars[name]
+	return apiOK || cfgOK
+}
+
 // ValidProviderNames returns a sorted list of all known provider names.
 func ValidProviderNames() []string {
 	seen := make(map[string]struct{}, len(providerAPIKeyEnvVars)+len(providerConfigEnvVars))
