@@ -250,7 +250,8 @@ func run() int {
 	}
 
 	// Resolve provider (may fail if no API key — that's ok for interactive mode)
-	provider, providerErr := resolveProvider(context.Background(), cfg, authResolver)
+	resolved, providerErr := resolveProvider(context.Background(), cfg, authResolver)
+	provider := resolved.provider
 
 	// Wire the provider into the sampling bridge so MCP servers can delegate
 	// sampling requests to the configured AI provider.
@@ -374,7 +375,13 @@ func setupAuth() (*auth.Store, *auth.Resolver, error) {
 	return store, resolver, nil
 }
 
-func resolveProvider(ctx context.Context, cfg *config.Config, resolver *auth.Resolver) (ai.Provider, error) {
+type providerResult struct {
+	provider     ai.Provider
+	providerName string
+	isOAuth      bool
+}
+
+func resolveProvider(ctx context.Context, cfg *config.Config, resolver *auth.Resolver) (providerResult, error) {
 	providerName := cfg.DefaultProvider
 	if providerName == "" {
 		// Auto-detect based on available credentials.
@@ -394,7 +401,7 @@ func resolveProvider(ctx context.Context, cfg *config.Config, resolver *auth.Res
 			providerName = "ollama"
 		}
 		if providerName == "" {
-			return nil, fmt.Errorf("no API key found. Set ANTHROPIC_API_KEY, OPENROUTER_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, AZURE_OPENAI_API_KEY, AWS credentials, or OLLAMA_HOST, or use /login <provider>")
+			return providerResult{}, fmt.Errorf("no API key found. Set ANTHROPIC_API_KEY, OPENROUTER_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, AZURE_OPENAI_API_KEY, AWS credentials, or OLLAMA_HOST, or use /login <provider>")
 		}
 	}
 
@@ -421,38 +428,48 @@ func resolveProvider(ctx context.Context, cfg *config.Config, resolver *auth.Res
 
 	// Bedrock uses AWS credential chain, not API keys.
 	if providerName == "bedrock" {
-		return ai.NewBedrockProvider(ctx, os.Getenv("AWS_REGION"))
+		p, err := ai.NewBedrockProvider(ctx, os.Getenv("AWS_REGION"))
+		return providerResult{p, "bedrock", false}, err
 	}
 
 	// Ollama is local and needs no API key — just a host URL.
 	if providerName == "ollama" {
-		return ai.NewOllamaProvider(os.Getenv("OLLAMA_HOST"))
+		p, err := ai.NewOllamaProvider(os.Getenv("OLLAMA_HOST"))
+		return providerResult{p, "ollama", false}, err
 	}
 
 	key, err := resolver.Resolve(ctx, providerName)
 	if err != nil {
-		return nil, fmt.Errorf("resolve %s credentials: %w", providerName, err)
+		return providerResult{}, fmt.Errorf("resolve %s credentials: %w", providerName, err)
 	}
 	if key == "" {
-		return nil, fmt.Errorf("%s: no API key configured (set env var or use /login %s)", providerName, providerName)
+		return providerResult{}, fmt.Errorf("%s: no API key configured (set env var or use /login %s)", providerName, providerName)
 	}
 
 	switch providerName {
 	case "anthropic":
-		if resolver.IsOAuthToken(providerName) {
-			return ai.NewAnthropicProviderWithToken(key)
+		isOAuth := resolver.IsOAuthToken(providerName)
+		if isOAuth {
+			p, err := ai.NewAnthropicProviderWithToken(key)
+			return providerResult{p, "anthropic", true}, err
 		}
-		return ai.NewAnthropicProvider(key)
+		p, err := ai.NewAnthropicProvider(key)
+		return providerResult{p, "anthropic", false}, err
 	case "openrouter":
-		return ai.NewOpenRouterProvider(key)
+		p, err := ai.NewOpenRouterProvider(key)
+		return providerResult{p, "openrouter", false}, err
 	case "openai":
-		return ai.NewOpenAIProvider(key)
+		isOAuth := resolver.IsOAuthToken(providerName)
+		p, err := ai.NewOpenAIProvider(key)
+		return providerResult{p, "openai", isOAuth}, err
 	case "gemini":
-		return ai.NewGeminiProvider(key)
+		p, err := ai.NewGeminiProvider(key)
+		return providerResult{p, "gemini", false}, err
 	case "azure":
-		return ai.NewAzureOpenAIProvider(key, "", "")
+		p, err := ai.NewAzureOpenAIProvider(key, "", "")
+		return providerResult{p, "azure", false}, err
 	default:
-		return nil, fmt.Errorf("unknown provider: %s", providerName)
+		return providerResult{}, fmt.Errorf("unknown provider: %s", providerName)
 	}
 }
 
@@ -633,16 +650,16 @@ func runInteractive(agentLoop *agent.Loop, sessionMgr *session.Manager, cfg *con
 		}
 	})
 	app.SetLoginSuccessCallback(func(providerName string) {
-		p, err := resolveProvider(ctx, cfg, authResolver)
+		result, err := resolveProvider(ctx, cfg, authResolver)
 		if err != nil {
 			log.Printf("Failed to resolve provider after login: %v", err)
 			return
 		}
-		agentLoop.SetProvider(p)
+		agentLoop.SetProvider(result.provider)
 		agentLoop.SetModel(cfg.DefaultModel)
 		app.SetModel(cfg.DefaultModel)
 		if sb != nil {
-			sb.SetProvider(p, cfg.DefaultModel)
+			sb.SetProvider(result.provider, cfg.DefaultModel)
 		}
 	})
 
