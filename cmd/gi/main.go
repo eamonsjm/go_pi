@@ -80,24 +80,12 @@ func run() int {
 
 	flag.Parse()
 
-	// Create pointers for rest of code compatibility
-	modelFlag := &modelVal
-	providerFlag := &providerVal
-	thinkingFlag := &thinkingVal
-	printFlag := &printVal
-	sessionFlag := &sessionVal
-	newFlag := &newVal
-	cwdFlag := &cwdVal
-	jsonFlag := &jsonVal
-	rpcFlag := &rpcVal
-	pluginFlag := &pluginVal
-
 	// Check if the first positional arg is a known model name (e.g. `gi claude-haiku-4-5-20251001`).
 	args := flag.Args()
-	if len(args) > 0 && *modelFlag == "" {
+	if len(args) > 0 && modelVal == "" {
 		if opt, ok := tui.ResolveModelArg(args[0]); ok {
-			modelFlag = &opt.Model
-			providerFlag = &opt.Provider
+			modelVal = opt.Model
+			providerVal = opt.Provider
 			args = args[1:]
 		}
 	}
@@ -115,14 +103,14 @@ func run() int {
 		return 1
 	}
 
-	if *modelFlag != "" {
-		cfg.DefaultModel = *modelFlag
+	if modelVal != "" {
+		cfg.DefaultModel = modelVal
 	}
-	if *providerFlag != "" {
-		cfg.DefaultProvider = *providerFlag
+	if providerVal != "" {
+		cfg.DefaultProvider = providerVal
 	}
-	if *thinkingFlag != "" {
-		cfg.ThinkingLevel = *thinkingFlag
+	if thinkingVal != "" {
+		cfg.ThinkingLevel = thinkingVal
 	}
 
 	// Initialize theme from config (must happen before TUI creation).
@@ -130,8 +118,8 @@ func run() int {
 		tui.SetTheme(theme)
 	}
 
-	if *cwdFlag != "" {
-		if err := os.Chdir(*cwdFlag); err != nil {
+	if cwdVal != "" {
+		if err := os.Chdir(cwdVal); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to change directory: %v\n", err)
 			return 1
 		}
@@ -153,7 +141,7 @@ func run() int {
 	// Set up approval for project-local plugins. Non-interactive modes
 	// (print, json, rpc) deny project-local plugins by default — use
 	// --plugin to load them explicitly.
-	isInteractive := *printFlag == "" && !*jsonFlag && !*rpcFlag
+	isInteractive := printVal == "" && !jsonVal && !rpcVal
 	if isInteractive {
 		pluginMgr.SetApprover(makePluginApprover(cfg))
 	}
@@ -174,8 +162,8 @@ func run() int {
 	if err := pluginMgr.Discover(context.Background(), pluginDirs); err != nil {
 		log.Printf("Failed to discover plugins: %v", err)
 	}
-	if *pluginFlag != "" {
-		for _, p := range strings.Split(*pluginFlag, ",") {
+	if pluginVal != "" {
+		for _, p := range strings.Split(pluginVal, ",") {
 			p = strings.TrimSpace(p)
 			if p == "" {
 				continue
@@ -263,14 +251,14 @@ func run() int {
 	}
 
 	// Print mode requires a working provider
-	if *printFlag != "" {
+	if printVal != "" {
 		if providerErr != nil {
 			log.Printf("Cannot use print mode: %v", providerErr)
 			return 1
 		}
 		agentLoop, _ := makeAgentLoop(provider, registry, cfg, skillRegistry, mcpMgr)
 		sessionMgr.NewSession()
-		prompt := *printFlag
+		prompt := printVal
 		if initialPrompt != "" {
 			prompt = initialPrompt + "\n\n" + prompt
 		}
@@ -281,7 +269,7 @@ func run() int {
 	}
 
 	// JSON event stream mode
-	if *jsonFlag {
+	if jsonVal {
 		if providerErr != nil {
 			log.Printf("Cannot use JSON mode: %v", providerErr)
 			return 1
@@ -291,7 +279,7 @@ func run() int {
 	}
 
 	// JSON-RPC 2.0 mode
-	if *rpcFlag {
+	if rpcVal {
 		if providerErr != nil {
 			log.Printf("Cannot use RPC mode: %v", providerErr)
 			return 1
@@ -326,16 +314,16 @@ func run() int {
 	var restoredMsgs []ai.Message
 	var restoredSessionID string
 
-	if *sessionFlag != "" {
+	if sessionVal != "" {
 		// Explicit --session flag: load the specified session.
-		if err := sessionMgr.LoadSession(context.Background(), *sessionFlag); err != nil {
+		if err := sessionMgr.LoadSession(context.Background(), sessionVal); err != nil {
 			log.Printf("Failed to load session: %v", err)
 			return 1
 		}
 		restoredMsgs = sessionMgr.GetMessages()
 		restoredSessionID = sessionMgr.CurrentID()
 		agentLoop.SetMessages(restoredMsgs)
-	} else if *newFlag {
+	} else if newVal {
 		// Explicit --new flag: start fresh.
 		sessionMgr.NewSession()
 	} else {
