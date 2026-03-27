@@ -85,45 +85,47 @@ func renderSessionHTML(sessionID string, msgs []ai.Message) string {
 	var body strings.Builder
 	for _, msg := range msgs {
 		role := string(msg.Role)
-		roleClass := role
-
 		for _, block := range msg.Content {
-			switch block.Type {
-			case ai.ContentTypeText:
-				text := html.EscapeString(block.Text)
-				text = renderCodeBlocks(text)
-				fmt.Fprintf(&body, "<div class=\"message %s\"><div class=\"role\">%s</div><div class=\"content\">%s</div></div>\n",
-					roleClass, role, text)
-
-			case ai.ContentTypeToolUse:
-				inputJSON, err := json.MarshalIndent(block.Input, "", "  ")
-				if err != nil {
-					inputJSON = []byte(fmt.Sprintf("%v", block.Input))
-				}
-				fmt.Fprintf(&body, "<div class=\"message tool\"><div class=\"role\">tool_use</div>"+
-					"<details><summary>%s</summary><pre><code>%s</code></pre></details></div>\n",
-					html.EscapeString(block.ToolName),
-					html.EscapeString(string(inputJSON)))
-
-			case ai.ContentTypeToolResult:
-				errClass := ""
-				if block.IsError {
-					errClass = " error"
-				}
-				fmt.Fprintf(&body, "<div class=\"message tool-result%s\"><div class=\"role\">tool_result</div>"+
-					"<details><summary>result</summary><pre><code>%s</code></pre></details></div>\n",
-					errClass,
-					html.EscapeString(block.Content))
-
-			case ai.ContentTypeThinking:
-				fmt.Fprintf(&body, "<div class=\"message thinking\"><div class=\"role\">thinking</div>"+
-					"<details><summary>thinking</summary><pre>%s</pre></details></div>\n",
-					html.EscapeString(block.Thinking))
-			}
+			renderContentBlock(&body, block, role)
 		}
 	}
-
 	return fmt.Sprintf(htmlTemplate, html.EscapeString(sessionID), time.Now().Format("2006-01-02 15:04:05"), body.String())
+}
+
+// renderContentBlock writes the HTML for a single content block within a
+// conversation message.
+func renderContentBlock(sb *strings.Builder, block ai.ContentBlock, role string) {
+	switch block.Type {
+	case ai.ContentTypeText:
+		text := renderCodeBlocks(html.EscapeString(block.Text))
+		fmt.Fprintf(sb, "<div class=\"message %s\"><div class=\"role\">%s</div><div class=\"content\">%s</div></div>\n",
+			role, role, text)
+
+	case ai.ContentTypeToolUse:
+		inputJSON, err := json.MarshalIndent(block.Input, "", "  ")
+		if err != nil {
+			inputJSON = []byte(fmt.Sprintf("%v", block.Input))
+		}
+		fmt.Fprintf(sb, "<div class=\"message tool\"><div class=\"role\">tool_use</div>"+
+			"<details><summary>%s</summary><pre><code>%s</code></pre></details></div>\n",
+			html.EscapeString(block.ToolName),
+			html.EscapeString(string(inputJSON)))
+
+	case ai.ContentTypeToolResult:
+		errClass := ""
+		if block.IsError {
+			errClass = " error"
+		}
+		fmt.Fprintf(sb, "<div class=\"message tool-result%s\"><div class=\"role\">tool_result</div>"+
+			"<details><summary>result</summary><pre><code>%s</code></pre></details></div>\n",
+			errClass,
+			html.EscapeString(block.Content))
+
+	case ai.ContentTypeThinking:
+		fmt.Fprintf(sb, "<div class=\"message thinking\"><div class=\"role\">thinking</div>"+
+			"<details><summary>thinking</summary><pre>%s</pre></details></div>\n",
+			html.EscapeString(block.Thinking))
+	}
 }
 
 // renderCodeBlocks converts markdown-style fenced code blocks (```) in

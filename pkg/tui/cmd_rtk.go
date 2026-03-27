@@ -117,7 +117,6 @@ func rtkStatus(cfg *config.Config, metrics *tools.Metrics) tea.Cmd {
 			metricsStatus = "enabled"
 		}
 
-		// Calculate token savings
 		totalTokens := metrics.GetTotalTokens()
 		savedTokens := metrics.GetSavedTokens()
 		compressionRatio := 0.0
@@ -125,56 +124,33 @@ func rtkStatus(cfg *config.Config, metrics *tools.Metrics) tea.Cmd {
 			compressionRatio = float64(savedTokens*100) / float64(totalTokens)
 		}
 
-		text := fmt.Sprintf(
-			"RTK Status:\n"+
-				"  Status:              %s\n"+
-				"  Metrics:             %s\n"+
-				"  Total Tokens:        %d\n"+
-				"  Saved Tokens:        %d (%.1f%% reduction)\n"+
-				"\n"+
-				"Active Compressors:\n"+
-				"  go-test:    %s\n"+
-				"  go-build:   %s\n"+
-				"  git-log:    %s\n"+
-				"  linter:     %s\n"+
-				"  generic:    %s\n"+
-				"\n"+
-				"Enabled Categories:\n"+
-				"  git:     %v\n"+
-				"  docker:  %v\n"+
-				"  build:   %v\n"+
-				"  package: %v\n"+
-				"  test:    %v\n"+
-				"  file:    %v\n"+
-				"  other:   %v\n"+
-				"\n"+
-				"Commands:\n"+
-				"  /rtk status              - Show this status\n"+
-				"  /rtk metrics             - Show detailed metrics\n"+
-				"  /rtk config              - Show full configuration\n"+
-				"  /rtk enable <category>   - Enable a category\n"+
-				"  /rtk disable <category>  - Disable a category\n"+
-				"  /rtk level <comp> <lvl>  - Set compression level\n"+
-				"  /rtk toggle              - Toggle RTK on/off",
-			status,
-			metricsStatus,
-			totalTokens,
-			savedTokens,
-			compressionRatio,
-			rtk.CompressionLevels["go-test"],
-			rtk.CompressionLevels["go-build"],
-			rtk.CompressionLevels["git-log"],
-			rtk.CompressionLevels["linter"],
-			rtk.CompressionLevels["generic"],
-			rtk.EnabledCategories["git"],
-			rtk.EnabledCategories["docker"],
-			rtk.EnabledCategories["build"],
-			rtk.EnabledCategories["package"],
-			rtk.EnabledCategories["test"],
-			rtk.EnabledCategories["file"],
-			rtk.EnabledCategories["other"],
-		)
-		return rtkDisplayMsg{text: text}
+		var sb strings.Builder
+		fmt.Fprintf(&sb, "RTK Status:\n")
+		fmt.Fprintf(&sb, "  Status:              %s\n", status)
+		fmt.Fprintf(&sb, "  Metrics:             %s\n", metricsStatus)
+		fmt.Fprintf(&sb, "  Total Tokens:        %d\n", totalTokens)
+		fmt.Fprintf(&sb, "  Saved Tokens:        %d (%.1f%% reduction)\n", savedTokens, compressionRatio)
+
+		sb.WriteString("\nActive Compressors:\n")
+		for _, name := range []string{"go-test", "go-build", "git-log", "linter", "generic"} {
+			fmt.Fprintf(&sb, "  %-13s %s\n", name+":", rtk.CompressionLevels[name])
+		}
+
+		sb.WriteString("\nEnabled Categories:\n")
+		for _, name := range []string{"git", "docker", "build", "package", "test", "file", "other"} {
+			fmt.Fprintf(&sb, "  %-10s %v\n", name+":", rtk.EnabledCategories[name])
+		}
+
+		sb.WriteString("\nCommands:\n")
+		sb.WriteString("  /rtk status              - Show this status\n")
+		sb.WriteString("  /rtk metrics             - Show detailed metrics\n")
+		sb.WriteString("  /rtk config              - Show full configuration\n")
+		sb.WriteString("  /rtk enable <category>   - Enable a category\n")
+		sb.WriteString("  /rtk disable <category>  - Disable a category\n")
+		sb.WriteString("  /rtk level <comp> <lvl>  - Set compression level\n")
+		sb.WriteString("  /rtk toggle              - Toggle RTK on/off")
+
+		return rtkDisplayMsg{text: sb.String()}
 	}
 }
 

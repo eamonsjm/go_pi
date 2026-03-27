@@ -322,41 +322,14 @@ func (ms *ModelSelector) View() string {
 	s := Styles()
 	var sb strings.Builder
 
-	// Title.
 	title := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(s.ColorPrimary).
 		Render("Select Model")
 	sb.WriteString(title + "\n\n")
 
-	// Provider tabs with auth status
-	providerTabs := ""
-	for i, provider := range ms.providers {
-		authStatus := "✗"
-		if ms.authStatus[provider] {
-			authStatus = "✓"
-		}
-		displayName := provider + " " + authStatus
+	sb.WriteString(ms.renderProviderTabs(s) + "\n\n")
 
-		if i == ms.providerIdx {
-			// Highlight current provider
-			providerTabs += lipgloss.NewStyle().
-				Foreground(s.ColorPrimary).
-				Bold(true).
-				Render("[" + displayName + "]")
-		} else {
-			providerTabs += lipgloss.NewStyle().
-				Foreground(s.ColorMuted).
-				Render("[" + displayName + "]")
-		}
-
-		if i < len(ms.providers)-1 {
-			providerTabs += " "
-		}
-	}
-	sb.WriteString(providerTabs + "\n\n")
-
-	// Filter prompt if active.
 	if ms.filter != "" {
 		filterLine := lipgloss.NewStyle().
 			Foreground(s.ColorSecondary).
@@ -364,29 +337,7 @@ func (ms *ModelSelector) View() string {
 		sb.WriteString(filterLine + "\n\n")
 	}
 
-	// Model list (filtered).
-	if len(ms.filtered) > 0 {
-		for i, idx := range ms.filtered {
-			opt := ms.models[idx]
-			label := opt.Label
-			detail := lipgloss.NewStyle().Foreground(s.ColorMuted).Render(
-				fmt.Sprintf("  %s", opt.Model),
-			)
-
-			if i == ms.cursor {
-				pointer := lipgloss.NewStyle().Foreground(s.ColorPrimary).Bold(true).Render("> ")
-				name := lipgloss.NewStyle().Foreground(s.ColorText).Bold(true).Render(label)
-				sb.WriteString(pointer + name + "\n")
-				sb.WriteString("  " + detail + "\n")
-			} else {
-				name := lipgloss.NewStyle().Foreground(s.ColorText).Render("  " + label)
-				sb.WriteString(name + "\n")
-			}
-		}
-	} else {
-		noMatch := lipgloss.NewStyle().Foreground(s.ColorMuted).Italic(true).Render("  No matching models")
-		sb.WriteString(noMatch + "\n")
-	}
+	sb.WriteString(ms.renderModelList(s))
 
 	sb.WriteString("\n")
 	help := lipgloss.NewStyle().Foreground(s.ColorMuted).Render(
@@ -394,7 +345,6 @@ func (ms *ModelSelector) View() string {
 	)
 	sb.WriteString(help)
 
-	// Wrap in a styled box.
 	box := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(s.ColorPrimary).
@@ -402,17 +352,68 @@ func (ms *ModelSelector) View() string {
 		Width(innerWidth).
 		Render(sb.String())
 
-	// Center the box horizontally.
 	if ms.width > 0 {
 		box = lipgloss.PlaceHorizontal(ms.width, lipgloss.Center, box)
 	}
-
-	// Center vertically (roughly).
 	if ms.height > 0 {
 		box = lipgloss.PlaceVertical(ms.height, lipgloss.Center, box)
 	}
 
 	return box
+}
+
+// renderProviderTabs builds the row of provider tab labels with auth indicators.
+func (ms *ModelSelector) renderProviderTabs(s *styleSnapshot) string {
+	var tabs strings.Builder
+	for i, provider := range ms.providers {
+		authIndicator := "✗"
+		if ms.authStatus[provider] {
+			authIndicator = "✓"
+		}
+		displayName := provider + " " + authIndicator
+
+		if i == ms.providerIdx {
+			tabs.WriteString(lipgloss.NewStyle().
+				Foreground(s.ColorPrimary).
+				Bold(true).
+				Render("[" + displayName + "]"))
+		} else {
+			tabs.WriteString(lipgloss.NewStyle().
+				Foreground(s.ColorMuted).
+				Render("[" + displayName + "]"))
+		}
+
+		if i < len(ms.providers)-1 {
+			tabs.WriteString(" ")
+		}
+	}
+	return tabs.String()
+}
+
+// renderModelList builds the filtered model list with cursor highlighting.
+func (ms *ModelSelector) renderModelList(s *styleSnapshot) string {
+	if len(ms.filtered) == 0 {
+		return lipgloss.NewStyle().Foreground(s.ColorMuted).Italic(true).Render("  No matching models") + "\n"
+	}
+
+	var sb strings.Builder
+	for i, idx := range ms.filtered {
+		opt := ms.models[idx]
+		detail := lipgloss.NewStyle().Foreground(s.ColorMuted).Render(
+			fmt.Sprintf("  %s", opt.Model),
+		)
+
+		if i == ms.cursor {
+			pointer := lipgloss.NewStyle().Foreground(s.ColorPrimary).Bold(true).Render("> ")
+			name := lipgloss.NewStyle().Foreground(s.ColorText).Bold(true).Render(opt.Label)
+			sb.WriteString(pointer + name + "\n")
+			sb.WriteString("  " + detail + "\n")
+		} else {
+			name := lipgloss.NewStyle().Foreground(s.ColorText).Render("  " + opt.Label)
+			sb.WriteString(name + "\n")
+		}
+	}
+	return sb.String()
 }
 
 // ---------------------------------------------------------------------------

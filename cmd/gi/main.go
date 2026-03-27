@@ -628,7 +628,14 @@ func runInteractive(agentLoop *agent.Loop, sessionMgr *session.Manager, cfg *con
 	app.SetHasUI(true) // Interactive mode has UI
 	app.SetModel(cfg.DefaultModel)
 	app.SetThinking(cfg.ThinkingLevel)
-	app.RegisterBuiltinCommands(ctx, agentLoop, sessionMgr, cfg, authStore, authResolver)
+	app.RegisterBuiltinCommands(tui.AppDeps{
+		Ctx:          ctx,
+		AgentLoop:    agentLoop,
+		SessionMgr:   sessionMgr,
+		Cfg:          cfg,
+		AuthStore:    authStore,
+		AuthResolver: authResolver,
+	})
 	app.SetModelChangeCallback(func(provider, model string) {
 		agentLoop.SetModel(model)
 		// Persist the model selection to config

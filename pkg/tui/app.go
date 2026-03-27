@@ -351,11 +351,27 @@ func (a *App) RestoreSession(sessionID string, msgs []ai.Message) {
 	a.header.SetSession(shortID(sessionID))
 }
 
+// AppDeps groups the external dependencies needed by built-in slash commands.
+type AppDeps struct {
+	Ctx          context.Context
+	AgentLoop    *agent.Loop
+	SessionMgr   *session.Manager
+	Cfg          *config.Config
+	AuthStore    *auth.Store
+	AuthResolver *auth.Resolver
+}
+
 // RegisterBuiltinCommands registers all built-in slash commands that need
 // access to external dependencies (agent loop, session manager, config).
-// The ctx should be the application lifecycle context so that long-running
+// The Ctx should be the application lifecycle context so that long-running
 // commands like /compact are cancelled when the application exits.
-func (a *App) RegisterBuiltinCommands(ctx context.Context, agentLoop *agent.Loop, sessionMgr *session.Manager, cfg *config.Config, authStore *auth.Store, authResolver *auth.Resolver) {
+func (a *App) RegisterBuiltinCommands(deps AppDeps) {
+	ctx := deps.Ctx
+	agentLoop := deps.AgentLoop
+	sessionMgr := deps.SessionMgr
+	cfg := deps.Cfg
+	authStore := deps.AuthStore
+	authResolver := deps.AuthResolver
 	// Store dependencies needed for keybinding actions.
 	a.ctx = ctx
 	a.cfg = cfg
@@ -535,31 +551,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, cmd.Execute(msg.args)
 
 	case editorShellResultMsg:
-		if msg.errorMsg != "" {
-			a.chat.AddSystemMessage(fmt.Sprintf("Error executing command: %s", msg.errorMsg))
-			return a, nil
-		}
-
-		// Display the command output as a system message.
-		outputDisplay := msg.output
-		if outputDisplay == "" {
-			outputDisplay = "(no output)"
-		}
-		a.chat.AddSystemMessage(fmt.Sprintf("$ %s\n%s", msg.command, outputDisplay))
-
-		// If sendToAI is true, submit the command result to the agent.
-		if msg.sendToAI {
-			fullMessage := fmt.Sprintf("!%s\n\nOutput:\n%s", msg.command, msg.output)
-			a.chat.AddUserMessage(fullMessage)
-			a.agentRunning = true
-			a.editor.SetState(editorRunning)
-			if a.onSubmit != nil {
-				a.onSubmit(fullMessage)
-			}
-			return a, tickRender()
-		}
-
-		return a, nil
+		return a, a.handleShellResult(msg)
 
 	case CommandResultMsg:
 		if msg.IsError {
@@ -729,20 +721,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case editorQuitMsg:
-		if a.authCancelFn != nil {
-			a.authCancelFn()
-		}
-		// Unblock any pending MCP confirm so the caller goroutine doesn't hang.
-		if a.mcpConfirmCh != nil {
-			a.mcpConfirmCh <- false
-			a.mcpConfirmCh = nil
-		}
-		if a.samplingConfirmCh != nil {
-			a.samplingConfirmCh <- false
-			a.samplingConfirmCh = nil
-		}
-		a.quitting = true
-		return a, tea.Quit
+		return a, a.handleQuit()
 
 	// ---- Keyboard shortcuts handled at app level ----
 	case tea.KeyMsg:
@@ -855,6 +834,53 @@ func (a *App) handleEditorSubmit(msg editorSubmitMsg) tea.Cmd {
 		a.onSubmit(msg.text)
 	}
 	return tickRender()
+}
+
+// handleShellResult processes the output of a shell command executed via the
+// editor's ! prefix. If sendToAI is true, the output is also submitted to
+// the agent as a user message.
+func (a *App) handleShellResult(msg editorShellResultMsg) tea.Cmd {
+	if msg.errorMsg != "" {
+		a.chat.AddSystemMessage(fmt.Sprintf("Error executing command: %s", msg.errorMsg))
+		return nil
+	}
+
+	outputDisplay := msg.output
+	if outputDisplay == "" {
+		outputDisplay = "(no output)"
+	}
+	a.chat.AddSystemMessage(fmt.Sprintf("$ %s\n%s", msg.command, outputDisplay))
+
+	if msg.sendToAI {
+		fullMessage := fmt.Sprintf("!%s\n\nOutput:\n%s", msg.command, msg.output)
+		a.chat.AddUserMessage(fullMessage)
+		a.agentRunning = true
+		a.editor.SetState(editorRunning)
+		if a.onSubmit != nil {
+			a.onSubmit(fullMessage)
+		}
+		return tickRender()
+	}
+
+	return nil
+}
+
+// handleQuit cancels in-flight operations and unblocks pending confirmation
+// channels so background goroutines don't hang on TUI exit.
+func (a *App) handleQuit() tea.Cmd {
+	if a.authCancelFn != nil {
+		a.authCancelFn()
+	}
+	if a.mcpConfirmCh != nil {
+		a.mcpConfirmCh <- false
+		a.mcpConfirmCh = nil
+	}
+	if a.samplingConfirmCh != nil {
+		a.samplingConfirmCh <- false
+		a.samplingConfirmCh = nil
+	}
+	a.quitting = true
+	return tea.Quit
 }
 
 // handlePluginUIRequest processes a plugin UI dialog request, returning

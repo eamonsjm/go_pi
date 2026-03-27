@@ -75,153 +75,146 @@ func NewLoginCommand(store *auth.Store, resolver *auth.Resolver) *SlashCommand {
 			}
 
 			return func() tea.Msg {
-				anthProv, ok := oauthProv.(*auth.AnthropicOAuth)
-				if !ok {
-					// Non-Anthropic provider (e.g. OpenAI): uses a local callback
-					// server. Capture the authorize URL via OnAuth so the TUI can
-					// display it and open the browser. Login() runs in a background
-					// goroutine; the waitCmd blocks until the callback completes.
-					//
-					// Use a cancellable context so the Login goroutine (which may
-					// hold an HTTP server or browser process) is cleaned up if the
-					// TUI exits before Login completes. Channels are buffered so
-					// the goroutine never blocks on sends.
-					type loginResult struct {
-						cred *auth.Credential
-						err  error
-					}
-					ctx, cancel := context.WithCancel(context.Background())
-					urlCh := make(chan string, 1)
-					resultCh := make(chan loginResult, 1)
-
-					go func() {
-						cred, err := oauthProv.Login(ctx, auth.OAuthCallbacks{
-							OnAuth: func(url, _ string) {
-								urlCh <- url
-							},
-						})
-						resultCh <- loginResult{cred: cred, err: err}
-					}()
-
-					// Wait for either the URL (OnAuth fired) or an early failure.
-					select {
-					case authURL := <-urlCh:
-						return authOAuthMsg{
-							providerName: oauthProv.Name(),
-							url:          authURL,
-							codeCh:       nil, // callback-based: no code paste needed
-							cancelAuth:   cancel,
-							waitCmd: func() tea.Msg {
-								defer cancel()
-								result := <-resultCh
-								if result.err != nil {
-									return CommandResultMsg{
-										Text:    fmt.Sprintf("Login failed: %v", result.err),
-										IsError: true,
-									}
-								}
-								store.Set(provider, result.cred)
-								if err := store.Save(); err != nil {
-									return CommandResultMsg{
-										Text:    fmt.Sprintf("Login succeeded but failed to save: %v", err),
-										IsError: true,
-									}
-								}
-								return authLoginSuccessMsg{
-									providerName: provider,
-									text:         fmt.Sprintf("Logged in to %s!", oauthProv.Name()),
-								}
-							},
-						}
-					case result := <-resultCh:
-						// Login completed or failed before OnAuth was called.
-						cancel()
-						if result.err != nil {
-							return CommandResultMsg{
-								Text:    fmt.Sprintf("Login failed: %v", result.err),
-								IsError: true,
-							}
-						}
-						store.Set(provider, result.cred)
-						if err := store.Save(); err != nil {
-							return CommandResultMsg{
-								Text:    fmt.Sprintf("Login succeeded but failed to save: %v", err),
-								IsError: true,
-							}
-						}
-						return authLoginSuccessMsg{
-							providerName: provider,
-							text:         fmt.Sprintf("Logged in to %s!", oauthProv.Name()),
-						}
-					}
+				if anthProv, ok := oauthProv.(*auth.AnthropicOAuth); ok {
+					return loginCodePasteFlow(anthProv, oauthProv, provider, store)
 				}
+				return loginCallbackFlow(oauthProv, provider, store)
+			}
+		},
+	}
+}
 
-				// Anthropic: code-paste flow. Start the auth flow (generates
-				// PKCE + authorize URL), then let the TUI prompt for the code.
-				session, err := anthProv.StartAuthFlow()
-				if err != nil {
+// loginCallbackFlow handles OAuth for providers that use a local callback
+// server (e.g. OpenAI). It starts Login in a background goroutine and waits
+// for the authorize URL via OnAuth, then returns an authOAuthMsg whose
+// waitCmd blocks until the callback completes.
+func loginCallbackFlow(oauthProv auth.OAuthProvider, provider string, store *auth.Store) tea.Msg {
+	type loginResult struct {
+		cred *auth.Credential
+		err  error
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	urlCh := make(chan string, 1)
+	resultCh := make(chan loginResult, 1)
+
+	go func() {
+		cred, err := oauthProv.Login(ctx, auth.OAuthCallbacks{
+			OnAuth: func(url, _ string) {
+				urlCh <- url
+			},
+		})
+		resultCh <- loginResult{cred: cred, err: err}
+	}()
+
+	saveAndReturn := func(cred *auth.Credential) tea.Msg {
+		store.Set(provider, cred)
+		if err := store.Save(); err != nil {
+			return CommandResultMsg{
+				Text:    fmt.Sprintf("Login succeeded but failed to save: %v", err),
+				IsError: true,
+			}
+		}
+		return authLoginSuccessMsg{
+			providerName: provider,
+			text:         fmt.Sprintf("Logged in to %s!", oauthProv.Name()),
+		}
+	}
+
+	select {
+	case authURL := <-urlCh:
+		return authOAuthMsg{
+			providerName: oauthProv.Name(),
+			url:          authURL,
+			codeCh:       nil,
+			cancelAuth:   cancel,
+			waitCmd: func() tea.Msg {
+				defer cancel()
+				result := <-resultCh
+				if result.err != nil {
 					return CommandResultMsg{
-						Text:    fmt.Sprintf("Login failed: %v", err),
+						Text:    fmt.Sprintf("Login failed: %v", result.err),
 						IsError: true,
 					}
 				}
+				return saveAndReturn(result.cred)
+			},
+		}
+	case result := <-resultCh:
+		cancel()
+		if result.err != nil {
+			return CommandResultMsg{
+				Text:    fmt.Sprintf("Login failed: %v", result.err),
+				IsError: true,
+			}
+		}
+		return saveAndReturn(result.cred)
+	}
+}
 
-				codeCh := make(chan string, 1)
-				ctx, cancel := context.WithCancel(context.Background())
+// loginCodePasteFlow handles Anthropic's code-paste OAuth flow. It starts
+// the PKCE auth flow to get an authorize URL, then returns an authOAuthMsg
+// that prompts the user to paste the authorization code.
+func loginCodePasteFlow(anthProv *auth.AnthropicOAuth, oauthProv auth.OAuthProvider, provider string, store *auth.Store) tea.Msg {
+	session, err := anthProv.StartAuthFlow()
+	if err != nil {
+		return CommandResultMsg{
+			Text:    fmt.Sprintf("Login failed: %v", err),
+			IsError: true,
+		}
+	}
 
-				return authOAuthMsg{
-					providerName: oauthProv.Name(),
-					url:          session.AuthorizeURL,
-					codeCh:       codeCh,
-					cancelAuth:   cancel,
-					waitCmd: func() tea.Msg {
-						defer cancel()
-						// Block until the user pastes the code.
-						var code string
-						select {
-						case code = <-codeCh:
-						case <-ctx.Done():
-							return CommandResultMsg{
-								Text:    "Login cancelled.",
-								IsError: true,
-							}
-						case <-time.After(defaultLoginTimeout):
-							return CommandResultMsg{
-								Text:    "Login timed out — no code entered within 10 minutes.",
-								IsError: true,
-							}
-						}
+	codeCh := make(chan string, 1)
+	ctx, cancel := context.WithCancel(context.Background())
 
-						code = strings.TrimSpace(code)
-						if code == "" {
-							return CommandResultMsg{
-								Text:    "Login cancelled — empty code.",
-								IsError: true,
-							}
-						}
-
-						exchCtx, exchCancel := context.WithTimeout(ctx, 30*time.Second)
-						defer exchCancel()
-						cred, err := anthProv.ExchangeCode(exchCtx, session, code)
-						if err != nil {
-							return CommandResultMsg{
-								Text:    fmt.Sprintf("Login failed: %v", err),
-								IsError: true,
-							}
-						}
-						store.Set(provider, cred)
-						if err := store.Save(); err != nil {
-							return CommandResultMsg{
-								Text:    fmt.Sprintf("Login succeeded but failed to save: %v", err),
-								IsError: true,
-							}
-						}
-						return authLoginSuccessMsg{
-							providerName: provider,
-							text:         fmt.Sprintf("Successfully logged in to %s!", oauthProv.Name()),
-						}
-					},
+	return authOAuthMsg{
+		providerName: oauthProv.Name(),
+		url:          session.AuthorizeURL,
+		codeCh:       codeCh,
+		cancelAuth:   cancel,
+		waitCmd: func() tea.Msg {
+			defer cancel()
+			var code string
+			select {
+			case code = <-codeCh:
+			case <-ctx.Done():
+				return CommandResultMsg{
+					Text:    "Login cancelled.",
+					IsError: true,
 				}
+			case <-time.After(defaultLoginTimeout):
+				return CommandResultMsg{
+					Text:    "Login timed out — no code entered within 10 minutes.",
+					IsError: true,
+				}
+			}
+
+			code = strings.TrimSpace(code)
+			if code == "" {
+				return CommandResultMsg{
+					Text:    "Login cancelled — empty code.",
+					IsError: true,
+				}
+			}
+
+			exchCtx, exchCancel := context.WithTimeout(ctx, 30*time.Second)
+			defer exchCancel()
+			cred, err := anthProv.ExchangeCode(exchCtx, session, code)
+			if err != nil {
+				return CommandResultMsg{
+					Text:    fmt.Sprintf("Login failed: %v", err),
+					IsError: true,
+				}
+			}
+			store.Set(provider, cred)
+			if err := store.Save(); err != nil {
+				return CommandResultMsg{
+					Text:    fmt.Sprintf("Login succeeded but failed to save: %v", err),
+					IsError: true,
+				}
+			}
+			return authLoginSuccessMsg{
+				providerName: provider,
+				text:         fmt.Sprintf("Successfully logged in to %s!", oauthProv.Name()),
 			}
 		},
 	}
