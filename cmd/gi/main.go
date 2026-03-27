@@ -105,12 +105,14 @@ func run() int {
 	// Process @filepath arguments from remaining CLI args.
 	initialPrompt, err := processFileArgs(args)
 	if err != nil {
-		log.Fatalf("Error processing arguments: %v", err)
+		fmt.Fprintf(os.Stderr, "Error processing arguments: %v\n", err)
+		return 1
 	}
 
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
+		fmt.Fprintf(os.Stderr, "Failed to load config: %v\n", err)
+		return 1
 	}
 
 	if *modelFlag != "" {
@@ -130,7 +132,8 @@ func run() int {
 
 	if *cwdFlag != "" {
 		if err := os.Chdir(*cwdFlag); err != nil {
-			log.Fatalf("Failed to change directory: %v", err)
+			fmt.Fprintf(os.Stderr, "Failed to change directory: %v\n", err)
+			return 1
 		}
 	}
 
