@@ -105,15 +105,33 @@ func fuzzyFind(content, oldString string) (matchedContent string, normName strin
 // far, and track when we cross the start and end boundaries in normalized
 // space.
 func mapNormalizedRange(s string, normFn func(string) string, normStart, normEnd int) string {
-	// Optimization: work line-by-line to narrow down the search.
 	lines := strings.SplitAfter(s, "\n")
-	normOffset := 0
-	origOffset := 0
+	startLine, endLine, lineNormOffsets := findMatchingLines(lines, normFn, normStart, normEnd)
+	if startLine < 0 || endLine < 0 {
+		return ""
+	}
 
-	// Find which lines contain the match.
-	startLine := -1
-	endLine := -1
-	lineNormOffsets := make([]int, 0, len(lines)) // normOffset at start of each line
+	// Reconstruct the relevant original lines.
+	var origChunk strings.Builder
+	for i := startLine; i <= endLine; i++ {
+		origChunk.WriteString(lines[i])
+	}
+	chunk := origChunk.String()
+
+	// Map normalized byte range to original byte range within the chunk.
+	relStart := normStart - lineNormOffsets[startLine]
+	relEnd := normEnd - lineNormOffsets[startLine]
+	return walkCharsToRange(chunk, normFn, relStart, relEnd)
+}
+
+// findMatchingLines scans lines to find which ones span [normStart, normEnd)
+// in normalized space. Returns start/end line indices and the normalized offset
+// at the start of each line.
+func findMatchingLines(lines []string, normFn func(string) string, normStart, normEnd int) (startLine, endLine int, lineNormOffsets []int) {
+	startLine = -1
+	endLine = -1
+	lineNormOffsets = make([]int, 0, len(lines))
+	normOffset := 0
 
 	for i, line := range lines {
 		normLine := normFn(line)
@@ -127,34 +145,21 @@ func mapNormalizedRange(s string, normFn func(string) string, normStart, normEnd
 		}
 
 		normOffset += len(normLine)
-		origOffset += len(line)
 	}
 
-	if startLine < 0 || endLine < 0 {
-		return ""
-	}
+	return startLine, endLine, lineNormOffsets
+}
 
-	// Reconstruct the relevant original lines and find precise byte offsets.
-	var origChunk strings.Builder
-	for i := startLine; i <= endLine; i++ {
-		origChunk.WriteString(lines[i])
-	}
-	chunk := origChunk.String()
-	chunkNormStart := lineNormOffsets[startLine]
-
-	// The target in normalized space relative to chunk start.
-	relStart := normStart - chunkNormStart
-	relEnd := normEnd - chunkNormStart
-
-	// Walk through the original chunk, character by character, tracking the
-	// normalized position to find original byte boundaries.
+// walkCharsToRange walks through chunk character by character, tracking the
+// normalized position, and returns the original substring corresponding to
+// [relStart, relEnd) in normalized space.
+func walkCharsToRange(chunk string, normFn func(string) string, relStart, relEnd int) string {
 	normPos := 0
 	origStart := -1
 	origEnd := -1
 
 	for i := 0; i < len(chunk); {
 		if normPos == relStart && origStart < 0 {
-			// Check: does normalizing from here produce the right start?
 			origStart = i
 		}
 

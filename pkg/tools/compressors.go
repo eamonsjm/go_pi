@@ -62,12 +62,33 @@ func (a *GoTestAggregator) AfterExecute(ctx context.Context, toolName string, pa
 	return a.compress(result), nil
 }
 
+// testScanResult holds the output of scanning test lines.
+type testScanResult struct {
+	lines       []string
+	hasFailures bool
+	passSummary string
+	failSummary string
+}
+
 func (a *GoTestAggregator) compress(output string) string {
 	lines := strings.Split(output, "\n")
-	result := make([]string, 0, len(lines))
+	scan := a.scanTestOutput(lines)
+
+	if scan.hasFailures && scan.failSummary != "" {
+		scan.lines = append(scan.lines, scan.failSummary)
+	} else if scan.passSummary != "" {
+		scan.lines = append(scan.lines, scan.passSummary)
+	}
+
+	compressed := strings.Join(scan.lines, "\n")
+	a.metrics.Record(CategoryTest, len(output), len(compressed), 0)
+	return compressed
+}
+
+// scanTestOutput classifies each test output line and collects the relevant ones.
+func (a *GoTestAggregator) scanTestOutput(lines []string) testScanResult {
+	result := testScanResult{lines: make([]string, 0, len(lines))}
 	seenTests := make(map[string]bool)
-	var passSummary, failSummary string
-	hasFailures := false
 
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
@@ -77,12 +98,12 @@ func (a *GoTestAggregator) compress(output string) string {
 
 		// Capture package summary line (ok/FAIL)
 		if strings.HasPrefix(line, "FAIL\t") {
-			failSummary = line
-			hasFailures = true
+			result.failSummary = line
+			result.hasFailures = true
 			continue
 		}
 		if strings.HasPrefix(line, "ok\t") {
-			passSummary = line
+			result.passSummary = line
 			continue
 		}
 
@@ -99,9 +120,9 @@ func (a *GoTestAggregator) compress(output string) string {
 		// Only keep FAIL lines
 		if strings.HasPrefix(line, "=== FAIL") {
 			if !seenTests[line] {
-				result = append(result, line)
+				result.lines = append(result.lines, line)
 				seenTests[line] = true
-				hasFailures = true
+				result.hasFailures = true
 			}
 			continue
 		}
@@ -109,7 +130,7 @@ func (a *GoTestAggregator) compress(output string) string {
 		// Skip PASS: lines unless compressed heavily
 		if strings.HasPrefix(line, "--- PASS:") {
 			if a.level == CompressionLow {
-				result = append(result, line)
+				result.lines = append(result.lines, line)
 			}
 			continue
 		}
@@ -117,7 +138,7 @@ func (a *GoTestAggregator) compress(output string) string {
 		// Keep FAIL: lines (test failures)
 		if strings.HasPrefix(line, "--- FAIL:") {
 			if !seenTests[line] {
-				result = append(result, line)
+				result.lines = append(result.lines, line)
 				seenTests[line] = true
 			}
 			continue
@@ -126,7 +147,7 @@ func (a *GoTestAggregator) compress(output string) string {
 		// Keep error context lines (file:line references, panic, etc.)
 		if strings.Contains(line, ".go:") || strings.Contains(line, "panic") ||
 			strings.Contains(line, "Error:") || strings.Contains(line, "error:") {
-			result = append(result, line)
+			result.lines = append(result.lines, line)
 			continue
 		}
 
@@ -134,22 +155,13 @@ func (a *GoTestAggregator) compress(output string) string {
 		if strings.Contains(line, "expected") || strings.Contains(line, "assertion") ||
 			strings.Contains(line, "got ") || strings.Contains(line, "want ") {
 			if a.level != CompressionHigh {
-				result = append(result, line)
+				result.lines = append(result.lines, line)
 			}
 			continue
 		}
 	}
 
-	// Add summary at the end
-	if hasFailures && failSummary != "" {
-		result = append(result, failSummary)
-	} else if passSummary != "" {
-		result = append(result, passSummary)
-	}
-
-	compressed := strings.Join(result, "\n")
-	a.metrics.Record(CategoryTest, len(output), len(compressed), 0)
-	return compressed
+	return result
 }
 
 // GoBuildErrorExtractor pulls out build errors from verbose output.
@@ -180,16 +192,24 @@ func (e *GoBuildErrorExtractor) AfterExecute(ctx context.Context, toolName strin
 
 func (e *GoBuildErrorExtractor) extract(output string) string {
 	lines := strings.Split(output, "\n")
-	fileErrors := make([]string, 0, len(lines))
-	summaryErrors := make([]string, 0)
-	seenErrors := make(map[string]bool)
+	fileErrors, summaryErrors := parseBuildErrors(lines)
+	result := formatBuildErrors(fileErrors, summaryErrors, e.level)
 
-	errorPattern := buildErrorPattern
-	summaryPattern := buildSummaryPattern
+	compressed := strings.Join(result, "\n")
+	e.metrics.Record(CategoryBuild, len(output), len(compressed), 0)
+	return compressed
+}
+
+// parseBuildErrors scans build output lines and returns deduplicated file-level
+// errors and summary errors.
+func parseBuildErrors(lines []string) (fileErrors, summaryErrors []string) {
+	fileErrors = make([]string, 0, len(lines))
+	summaryErrors = make([]string, 0)
+	seenErrors := make(map[string]bool)
 
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
-		if line == "" || len(line) == 0 {
+		if line == "" {
 			continue
 		}
 
@@ -205,12 +225,12 @@ func (e *GoBuildErrorExtractor) extract(output string) string {
 		}
 
 		// Match detailed error format: file.go:line:col: message
-		if matches := errorPattern.FindStringSubmatch(line); matches != nil {
+		if matches := buildErrorPattern.FindStringSubmatch(line); matches != nil {
 			file := matches[1]
 			lineNo := matches[2]
 			msg := matches[4]
 
-			errKey := file + ":" + lineNo + ":" + msg[:min(len(msg), 40)] // Key by file, line, and first 40 chars of message
+			errKey := file + ":" + lineNo + ":" + msg[:min(len(msg), 40)]
 			if !seenErrors[errKey] {
 				seenErrors[errKey] = true
 				fileErrors = append(fileErrors, line)
@@ -219,7 +239,7 @@ func (e *GoBuildErrorExtractor) extract(output string) string {
 		}
 
 		// Keep critical summary errors
-		if summaryPattern.MatchString(line) {
+		if buildSummaryPattern.MatchString(line) {
 			if !seenErrors[line] {
 				seenErrors[line] = true
 				summaryErrors = append(summaryErrors, line)
@@ -227,13 +247,17 @@ func (e *GoBuildErrorExtractor) extract(output string) string {
 		}
 	}
 
+	return fileErrors, summaryErrors
+}
+
+// formatBuildErrors selects which errors to include based on compression level.
+func formatBuildErrors(fileErrors, summaryErrors []string, level CompressionLevel) []string {
 	result := make([]string, 0, len(fileErrors)+len(summaryErrors))
 
-	// At high compression, only show first unique error per file prefix
-	if e.level == CompressionHigh {
+	if level == CompressionHigh {
 		seenFiles := make(map[string]bool)
 		for _, errLine := range fileErrors {
-			if matches := errorPattern.FindStringSubmatch(errLine); matches != nil {
+			if matches := buildErrorPattern.FindStringSubmatch(errLine); matches != nil {
 				file := matches[1]
 				if !seenFiles[file] {
 					result = append(result, errLine)
@@ -241,19 +265,15 @@ func (e *GoBuildErrorExtractor) extract(output string) string {
 				}
 			}
 		}
-		// Add summary errors if no file errors
 		if len(result) == 0 {
 			result = summaryErrors
 		}
 	} else {
-		// Medium/Low compression: keep all unique errors
 		result = fileErrors
 		result = append(result, summaryErrors...)
 	}
 
-	compressed := strings.Join(result, "\n")
-	e.metrics.Record(CategoryBuild, len(output), len(compressed), 0)
-	return compressed
+	return result
 }
 
 // GitLogCompactor reduces git log output size.
@@ -284,27 +304,33 @@ func (c *GitLogCompactor) AfterExecute(ctx context.Context, toolName string, par
 
 func (c *GitLogCompactor) compact(output string) string {
 	lines := strings.Split(output, "\n")
+	result := c.classifyLogLines(lines)
+	result = deduplicateBlankLines(result)
+
+	compressed := strings.Join(result, "\n")
+	c.metrics.Record(CategoryGit, len(output), len(compressed), 0)
+	return compressed
+}
+
+// classifyLogLines walks git log output and selects lines to keep based on
+// the compression level.
+func (c *GitLogCompactor) classifyLogLines(lines []string) []string {
 	result := make([]string, 0, len(lines))
 	var inMessage bool
 	var messageLines int
-
-	commitPattern := gitCommitPattern
-	authorPattern := gitAuthorPattern
 
 	for i := 0; i < len(lines); i++ {
 		line := lines[i]
 		trimmed := strings.TrimSpace(line)
 
-		// Skip entirely blank lines
 		if trimmed == "" {
 			inMessage = false
 			continue
 		}
 
 		// Extract and compress commit hash
-		if matches := commitPattern.FindStringSubmatch(line); matches != nil {
+		if matches := gitCommitPattern.FindStringSubmatch(line); matches != nil {
 			hash := matches[1]
-			// At high compression, only keep short hash
 			if c.level == CompressionHigh {
 				result = append(result, "commit "+hash[:7])
 			} else {
@@ -316,9 +342,8 @@ func (c *GitLogCompactor) compact(output string) string {
 		}
 
 		// Compress Author line
-		if matches := authorPattern.FindStringSubmatch(line); matches != nil {
+		if matches := gitAuthorPattern.FindStringSubmatch(line); matches != nil {
 			author := matches[1]
-			// At high compression, just show name
 			if c.level == CompressionHigh {
 				result = append(result, author)
 			} else {
@@ -341,20 +366,16 @@ func (c *GitLogCompactor) compact(output string) string {
 			compactedLine := strings.TrimSpace(line)
 
 			if messageLines == 1 {
-				// Always keep first line of message
 				result = append(result, compactedLine)
 			} else if messageLines == 2 && c.level == CompressionLow {
-				// Low: keep second line
 				result = append(result, compactedLine)
 			} else if messageLines <= 2 && c.level == CompressionMedium {
-				// Medium: keep first two lines
 				result = append(result, compactedLine)
 			}
-			// High compression: only keep first line, skip rest
 			continue
 		}
 
-		// Skip merge/branch decorations (lines starting with spaces or parentheses)
+		// Skip merge/branch decorations
 		if strings.HasPrefix(line, "  (") || strings.HasPrefix(line, " ") {
 			continue
 		}
@@ -362,24 +383,25 @@ func (c *GitLogCompactor) compact(output string) string {
 		inMessage = false
 	}
 
-	// Remove duplicate blank lines that may have been created
-	var finalResult []string
+	return result
+}
+
+// deduplicateBlankLines collapses consecutive blank lines into a single blank.
+func deduplicateBlankLines(lines []string) []string {
+	result := make([]string, 0, len(lines))
 	var lastWasBlank bool
-	for _, line := range result {
+	for _, line := range lines {
 		if line == "" {
 			if !lastWasBlank {
-				finalResult = append(finalResult, line)
+				result = append(result, line)
 				lastWasBlank = true
 			}
 		} else {
-			finalResult = append(finalResult, line)
+			result = append(result, line)
 			lastWasBlank = false
 		}
 	}
-
-	compressed := strings.Join(finalResult, "\n")
-	c.metrics.Record(CategoryGit, len(output), len(compressed), 0)
-	return compressed
+	return result
 }
 
 // LinterOutputGrouper aggregates linter output by file.
@@ -406,11 +428,18 @@ func (g *LinterOutputGrouper) AfterExecute(ctx context.Context, toolName string,
 
 func (g *LinterOutputGrouper) group(output string) string {
 	lines := strings.Split(output, "\n")
+	errorsByFile := parseLinterErrors(lines)
+	result := g.formatLinterOutput(errorsByFile)
 
-	filePattern := linterFilePattern
+	compressed := strings.Join(result, "\n")
+	g.metrics.Record(CategoryOther, len(output), len(compressed), 0)
+	return compressed
+}
 
+// parseLinterErrors scans linter output lines and returns deduplicated errors
+// grouped by file.
+func parseLinterErrors(lines []string) map[string][]string {
 	errorsByFile := make(map[string][]string)
-	errorCounts := make(map[string]int)
 	seenErrors := make(map[string]bool)
 
 	for _, line := range lines {
@@ -425,43 +454,40 @@ func (g *LinterOutputGrouper) group(output string) string {
 			continue
 		}
 
-		// Try to parse as file:line:col: error format
-		if matches := filePattern.FindStringSubmatch(line); matches != nil {
+		if matches := linterFilePattern.FindStringSubmatch(line); matches != nil {
 			file := matches[1]
 			lineNo := matches[2]
 			msg := matches[4]
 
-			// Deduplicate: same file, line, and message
 			errKey := file + ":" + lineNo + ":" + msg[:min(len(msg), 30)]
 			if !seenErrors[errKey] {
 				seenErrors[errKey] = true
 				errorsByFile[file] = append(errorsByFile[file], line)
-				errorCounts[file]++
 			}
 		}
 	}
 
-	// Build result with files grouped
-	var result []string
+	return errorsByFile
+}
 
-	// Sort files for consistent output
+// formatLinterOutput builds grouped output from parsed errors, applying
+// compression limits.
+func (g *LinterOutputGrouper) formatLinterOutput(errorsByFile map[string][]string) []string {
 	fileList := make([]string, 0, len(errorsByFile))
 	for file := range errorsByFile {
 		fileList = append(fileList, file)
 	}
 	sort.Strings(fileList)
 
-	// At high compression, only show files with most errors
 	if g.level == CompressionHigh && len(fileList) > 5 {
-		// Compress: show only first 5 files
 		fileList = fileList[:5]
 	}
 
+	var result []string
 	for _, file := range fileList {
 		errors := errorsByFile[file]
 		result = append(result, file)
 
-		// Limit errors per file based on compression level
 		maxErrors := len(errors)
 		if g.level == CompressionHigh && maxErrors > 2 {
 			maxErrors = 2
@@ -478,9 +504,7 @@ func (g *LinterOutputGrouper) group(output string) string {
 		}
 	}
 
-	compressed := strings.Join(result, "\n")
-	g.metrics.Record(CategoryOther, len(output), len(compressed), 0)
-	return compressed
+	return result
 }
 
 // CompressionConfig allows configuring compression per tool.

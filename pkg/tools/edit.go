@@ -77,65 +77,20 @@ func (t *EditTool) Execute(ctx context.Context, params map[string]any) (string, 
 		newString = strings.ReplaceAll(newString, "\r\n", "\n")
 	}
 
-	// Try content-based matching first, then fall back to hash-based edit.
-	// Content matching takes priority to avoid false-positive hash detection
-	// (e.g., old_string "add" being treated as a content hash instead of a
-	// literal string to find and replace).
-	var matchTarget string
-	var normNote string
-
-	count := strings.Count(content, oldString)
-	switch {
-	case count == 1:
-		matchTarget = oldString
-	case count > 1:
-		return "", fmt.Errorf("old_string found %d times in %s; it must be unique, provide more surrounding context to make the match unique", count, filePath)
-	default:
-		// Exact match failed — try hash-based edit if oldString looks like a hash.
-		hashMatch, hashNote, hashFound := tryHashBasedEdit(content, oldString)
-		if hashFound {
-			matchTarget = hashMatch
-			normNote = hashNote
-		} else {
-			// Try fuzzy matching with normalization.
-			matched, normName, found := fuzzyFind(content, oldString)
-			if !found {
-				return "", fmt.Errorf("old_string not found in %s; make sure the string matches exactly, including whitespace and indentation", filePath)
-			}
-			matchTarget = matched
-			normNote = fmt.Sprintf("Note: exact match failed. Matched via %s.", normName)
-		}
+	matchTarget, normNote, err := resolveMatch(content, oldString, filePath)
+	if err != nil {
+		return "", err
 	}
 
 	newContent := strings.Replace(content, matchTarget, newString, 1)
 
-	// Restore CRLF line endings if the file originally used them.
-	if lineEnding == "\r\n" {
-		newContent = strings.ReplaceAll(newContent, "\n", "\r\n")
-	}
-
-	// Re-prepend BOM if present.
-	var output []byte
-	if bom != nil {
-		output = append(bom, []byte(newContent)...)
-	} else {
-		output = []byte(newContent)
-	}
-
-	// Preserve original file permissions.
-	mode := os.FileMode(0644)
-	if info, err := os.Stat(filePath); err == nil {
-		mode = info.Mode()
-	}
-
-	if err := os.WriteFile(filePath, output, mode); err != nil {
-		return "", fmt.Errorf("cannot write file: %w", err)
+	if err := writeFilePreservingFormat(filePath, newContent, lineEnding, bom); err != nil {
+		return "", err
 	}
 
 	// Generate a unified diff (use LF-normalized content for readable diffs).
 	originalForDiff := content
 	if lineEnding == "\r\n" {
-		// Re-normalize for diff display.
 		newContent = strings.ReplaceAll(newContent, "\r\n", "\n")
 	}
 	diff := unifiedDiff(filePath, originalForDiff, newContent)
@@ -144,6 +99,56 @@ func (t *EditTool) Execute(ctx context.Context, params map[string]any) (string, 
 		diff = normNote + "\n" + diff
 	}
 	return diff, nil
+}
+
+// resolveMatch finds the exact substring in content that matches oldString,
+// trying exact match first, then hash-based, then fuzzy normalization.
+func resolveMatch(content, oldString, filePath string) (matchTarget, normNote string, err error) {
+	count := strings.Count(content, oldString)
+	switch {
+	case count == 1:
+		return oldString, "", nil
+	case count > 1:
+		return "", "", fmt.Errorf("old_string found %d times in %s; it must be unique, provide more surrounding context to make the match unique", count, filePath)
+	}
+
+	// Exact match failed — try hash-based edit if oldString looks like a hash.
+	hashMatch, hashNote, hashFound := tryHashBasedEdit(content, oldString)
+	if hashFound {
+		return hashMatch, hashNote, nil
+	}
+
+	// Try fuzzy matching with normalization.
+	matched, normName, found := fuzzyFind(content, oldString)
+	if !found {
+		return "", "", fmt.Errorf("old_string not found in %s; make sure the string matches exactly, including whitespace and indentation", filePath)
+	}
+	return matched, fmt.Sprintf("Note: exact match failed. Matched via %s.", normName), nil
+}
+
+// writeFilePreservingFormat writes content to filePath, restoring CRLF line
+// endings and BOM prefix if the original file used them.
+func writeFilePreservingFormat(filePath, content, lineEnding string, bom []byte) error {
+	if lineEnding == "\r\n" {
+		content = strings.ReplaceAll(content, "\n", "\r\n")
+	}
+
+	var output []byte
+	if bom != nil {
+		output = append(bom, []byte(content)...)
+	} else {
+		output = []byte(content)
+	}
+
+	mode := os.FileMode(0644)
+	if info, err := os.Stat(filePath); err == nil {
+		mode = info.Mode()
+	}
+
+	if err := os.WriteFile(filePath, output, mode); err != nil {
+		return fmt.Errorf("cannot write file: %w", err)
+	}
+	return nil
 }
 
 // isValidHashString checks if s is exactly 3 lowercase hex characters,

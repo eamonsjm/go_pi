@@ -128,7 +128,6 @@ func run() int {
 	registry := tools.NewRegistry()
 	tools.RegisterDefaults(registry)
 
-	pluginMgr := plugin.NewManager(registry)
 	home, err := os.UserHomeDir()
 	if err != nil {
 		log.Printf("Warning: could not determine home directory: %v", err)
@@ -138,49 +137,8 @@ func run() int {
 		log.Printf("Warning: could not determine working directory: %v", err)
 	}
 
-	// Set up approval for project-local plugins. Non-interactive modes
-	// (print, json, rpc) deny project-local plugins by default — use
-	// --plugin to load them explicitly.
 	isInteractive := printVal == "" && !jsonVal && !rpcVal
-	if isInteractive {
-		pluginMgr.SetApprover(makePluginApprover(cfg))
-	}
-
-	var pluginDirs []plugin.DiscoverDir
-	if home != "" {
-		pluginDirs = append(pluginDirs, plugin.DiscoverDir{
-			Path:   filepath.Join(home, ".gi", "plugins"),
-			Source: plugin.SourceGlobal,
-		})
-	}
-	if cwd != "" {
-		pluginDirs = append(pluginDirs, plugin.DiscoverDir{
-			Path:   filepath.Join(cwd, ".gi", "plugins"),
-			Source: plugin.SourceProjectLocal,
-		})
-	}
-	if err := pluginMgr.Discover(context.Background(), pluginDirs); err != nil {
-		log.Printf("Failed to discover plugins: %v", err)
-	}
-	if pluginVal != "" {
-		for _, p := range strings.Split(pluginVal, ",") {
-			p = strings.TrimSpace(p)
-			if p == "" {
-				continue
-			}
-			if err := pluginMgr.LoadPlugin(p); err != nil {
-				log.Printf("Failed to load plugin %s: %v", p, err)
-			}
-		}
-	}
-	if err := pluginMgr.Initialize(context.Background(), plugin.Config{
-		Cwd:       cwd,
-		Model:     cfg.DefaultModel,
-		Provider:  cfg.DefaultProvider,
-		GiVersion: "0.1.0",
-	}); err != nil {
-		log.Printf("Failed to initialize plugins: %v", err)
-	}
+	pluginMgr := setupPlugins(cfg, registry, home, cwd, isInteractive, pluginVal)
 	defer func() {
 		if err := pluginMgr.Shutdown(); err != nil {
 			log.Printf("Failed to shutdown plugins: %v", err)
@@ -197,25 +155,8 @@ func run() int {
 	skillTool := skill.NewSkillTool(skillRegistry, cfg.DefaultModel)
 	registry.Register(skillTool)
 
-	// Initialize MCP servers with sampling support.
-	var mcpMgr *mcp.Manager
-	var sb *samplingBridge
-	if len(cfg.MCPServers) > 0 {
-		sb = &samplingBridge{}
-		mcpMgr = mcp.NewManager(mcp.ManagerConfig{
-			ToolRegistry:    registry,
-			SkillRegistry:   skillRegistry,
-			WorkingDir:      cwd,
-			ConfigDir:       cfg.ConfigDir,
-			ProjectPath:     cwd,
-			ClientName:      "gi",
-			ClientVersion:   "0.1.0",
-			SamplingHandler: sb.Handle,
-			ConfirmSampling: sb.Confirm,
-		})
-		if err := mcpMgr.StartAll(context.Background(), cfg); err != nil {
-			log.Printf("Failed to start MCP servers: %v", err)
-		}
+	mcpMgr, sb := setupMCP(cfg, registry, skillRegistry, cwd)
+	if mcpMgr != nil {
 		defer mcpMgr.Shutdown(context.Background())
 	}
 
@@ -310,43 +251,132 @@ func run() int {
 		)
 	}
 
-	// Restore or create session.
-	var restoredMsgs []ai.Message
-	var restoredSessionID string
-
-	if sessionVal != "" {
-		// Explicit --session flag: load the specified session.
-		if err := sessionMgr.LoadSession(context.Background(), sessionVal); err != nil {
-			log.Printf("Failed to load session: %v", err)
-			return 1
-		}
-		restoredMsgs = sessionMgr.GetMessages()
-		restoredSessionID = sessionMgr.CurrentID()
-		agentLoop.SetMessages(restoredMsgs)
-	} else if newVal {
-		// Explicit --new flag: start fresh.
-		sessionMgr.NewSession()
-	} else {
-		// Auto-resume the most recent session.
-		latest, latestErr := sessionMgr.LatestSessionID(context.Background())
-		if latestErr != nil {
-			log.Printf("session: %v", latestErr)
-		}
-		if latest != "" {
-			if err := sessionMgr.LoadSession(context.Background(), latest); err == nil {
-				restoredMsgs = sessionMgr.GetMessages()
-				restoredSessionID = latest
-				agentLoop.SetMessages(restoredMsgs)
-			} else {
-				// Failed to load — start fresh.
-				sessionMgr.NewSession()
-			}
-		} else {
-			sessionMgr.NewSession()
-		}
+	restoredSessionID, restoredMsgs, sessionErr := restoreOrCreateSession(sessionMgr, sessionVal, newVal, agentLoop)
+	if sessionErr != nil {
+		return 1
 	}
 
-	return runInteractive(agentLoop, sessionMgr, cfg, providerErr, pluginMgr, authStore, authResolver, skillRegistry, restoredSessionID, restoredMsgs, initialPrompt, mcpPermHook, sb)
+	return runInteractive(interactiveConfig{
+		agentLoop:         agentLoop,
+		sessionMgr:        sessionMgr,
+		cfg:               cfg,
+		providerErr:       providerErr,
+		pluginMgr:         pluginMgr,
+		authStore:         authStore,
+		authResolver:      authResolver,
+		skillReg:          skillRegistry,
+		restoredSessionID: restoredSessionID,
+		restoredMsgs:      restoredMsgs,
+		initialPrompt:     initialPrompt,
+		mcpPermHook:       mcpPermHook,
+		sb:                sb,
+	})
+}
+
+// setupPlugins creates a plugin manager, discovers and loads plugins, and
+// initialises them. The caller must defer pluginMgr.Shutdown().
+func setupPlugins(cfg *config.Config, registry *tools.Registry, home, cwd string, isInteractive bool, pluginFlag string) *plugin.Manager {
+	pluginMgr := plugin.NewManager(registry)
+
+	if isInteractive {
+		pluginMgr.SetApprover(makePluginApprover(cfg))
+	}
+
+	var pluginDirs []plugin.DiscoverDir
+	if home != "" {
+		pluginDirs = append(pluginDirs, plugin.DiscoverDir{
+			Path:   filepath.Join(home, ".gi", "plugins"),
+			Source: plugin.SourceGlobal,
+		})
+	}
+	if cwd != "" {
+		pluginDirs = append(pluginDirs, plugin.DiscoverDir{
+			Path:   filepath.Join(cwd, ".gi", "plugins"),
+			Source: plugin.SourceProjectLocal,
+		})
+	}
+	if err := pluginMgr.Discover(context.Background(), pluginDirs); err != nil {
+		log.Printf("Failed to discover plugins: %v", err)
+	}
+	if pluginFlag != "" {
+		for _, p := range strings.Split(pluginFlag, ",") {
+			p = strings.TrimSpace(p)
+			if p == "" {
+				continue
+			}
+			if err := pluginMgr.LoadPlugin(p); err != nil {
+				log.Printf("Failed to load plugin %s: %v", p, err)
+			}
+		}
+	}
+	if err := pluginMgr.Initialize(context.Background(), plugin.Config{
+		Cwd:       cwd,
+		Model:     cfg.DefaultModel,
+		Provider:  cfg.DefaultProvider,
+		GiVersion: "0.1.0",
+	}); err != nil {
+		log.Printf("Failed to initialize plugins: %v", err)
+	}
+
+	return pluginMgr
+}
+
+// setupMCP initialises MCP servers if configured. Returns nil manager and
+// bridge when no MCP servers are configured.
+func setupMCP(cfg *config.Config, registry *tools.Registry, skillRegistry *skill.Registry, cwd string) (*mcp.Manager, *samplingBridge) {
+	if len(cfg.MCPServers) == 0 {
+		return nil, nil
+	}
+	sb := &samplingBridge{}
+	mcpMgr := mcp.NewManager(mcp.ManagerConfig{
+		ToolRegistry:    registry,
+		SkillRegistry:   skillRegistry,
+		WorkingDir:      cwd,
+		ConfigDir:       cfg.ConfigDir,
+		ProjectPath:     cwd,
+		ClientName:      "gi",
+		ClientVersion:   "0.1.0",
+		SamplingHandler: sb.Handle,
+		ConfirmSampling: sb.Confirm,
+	})
+	if err := mcpMgr.StartAll(context.Background(), cfg); err != nil {
+		log.Printf("Failed to start MCP servers: %v", err)
+	}
+	return mcpMgr, sb
+}
+
+// restoreOrCreateSession restores an existing session or creates a new one based
+// on the session flag and new flag. Returns the restored session ID, messages,
+// and any fatal error.
+func restoreOrCreateSession(sessionMgr *session.Manager, sessionFlag string, newFlag bool, agentLoop *agent.Loop) (string, []ai.Message, error) {
+	if sessionFlag != "" {
+		if err := sessionMgr.LoadSession(context.Background(), sessionFlag); err != nil {
+			log.Printf("Failed to load session: %v", err)
+			return "", nil, err
+		}
+		msgs := sessionMgr.GetMessages()
+		agentLoop.SetMessages(msgs)
+		return sessionMgr.CurrentID(), msgs, nil
+	}
+
+	if newFlag {
+		sessionMgr.NewSession()
+		return "", nil, nil
+	}
+
+	latest, latestErr := sessionMgr.LatestSessionID(context.Background())
+	if latestErr != nil {
+		log.Printf("session: %v", latestErr)
+	}
+	if latest != "" {
+		if err := sessionMgr.LoadSession(context.Background(), latest); err == nil {
+			msgs := sessionMgr.GetMessages()
+			agentLoop.SetMessages(msgs)
+			return latest, msgs, nil
+		}
+	}
+	sessionMgr.NewSession()
+	return "", nil, nil
 }
 
 // setupAuth creates the auth store and resolver with registered OAuth providers.
@@ -470,59 +500,31 @@ func buildSystemPrompt() string {
 	parts := make([]string, 0, 4)
 	seenContent := make(map[string]bool)
 
-	// Walk directory tree from current to root, collecting files
 	cwd, err := os.Getwd()
 	if err != nil {
 		return base
 	}
 
-	// Check .claude/SYSTEM.md in current directory
-	dotClaudePath := filepath.Join(cwd, ".claude", "SYSTEM.md")
-	if data, err := os.ReadFile(dotClaudePath); err == nil {
-		content := string(data)
-		if !seenContent[content] {
-			parts = append(parts, content)
-			seenContent[content] = true
+	appendFileIfNew := func(path string) {
+		if data, err := os.ReadFile(path); err == nil {
+			content := string(data)
+			if !seenContent[content] {
+				parts = append(parts, content)
+				seenContent[content] = true
+			}
 		}
 	}
 
-	// Walk from current directory up to root
+	appendFileIfNew(filepath.Join(cwd, ".claude", "SYSTEM.md"))
+
 	current := cwd
 	for {
-		// Check CLAUDE.md (deepest first - we're already starting from deepest)
-		claudePath := filepath.Join(current, "CLAUDE.md")
-		if data, err := os.ReadFile(claudePath); err == nil {
-			content := string(data)
-			if !seenContent[content] {
-				parts = append(parts, content)
-				seenContent[content] = true
-			}
-		}
+		appendFileIfNew(filepath.Join(current, "CLAUDE.md"))
+		appendFileIfNew(filepath.Join(current, "AGENTS.md"))
+		appendFileIfNew(filepath.Join(current, "APPEND_SYSTEM.md"))
 
-		// Check AGENTS.md
-		agentsPath := filepath.Join(current, "AGENTS.md")
-		if data, err := os.ReadFile(agentsPath); err == nil {
-			content := string(data)
-			if !seenContent[content] {
-				parts = append(parts, content)
-				seenContent[content] = true
-			}
-		}
-
-		// Check APPEND_SYSTEM.md
-		appendPath := filepath.Join(current, "APPEND_SYSTEM.md")
-		if data, err := os.ReadFile(appendPath); err == nil {
-			content := string(data)
-			if !seenContent[content] {
-				parts = append(parts, content)
-				seenContent[content] = true
-			}
-		}
-
-		// Move to parent directory
 		parent := filepath.Dir(current)
 		if parent == current {
-			// Reached filesystem root
 			break
 		}
 		current = parent
@@ -617,7 +619,24 @@ func makeAgentLoop(provider ai.Provider, registry *tools.Registry, cfg *config.C
 	return loop, permHook
 }
 
-func runInteractive(agentLoop *agent.Loop, sessionMgr *session.Manager, cfg *config.Config, providerErr error, pluginMgr *plugin.Manager, authStore *auth.Store, authResolver *auth.Resolver, skillReg *skill.Registry, restoredSessionID string, restoredMsgs []ai.Message, initialPrompt string, mcpPermHook *mcp.PermissionHook, sb *samplingBridge) int {
+// interactiveConfig bundles the parameters for runInteractive.
+type interactiveConfig struct {
+	agentLoop         *agent.Loop
+	sessionMgr        *session.Manager
+	cfg               *config.Config
+	providerErr       error
+	pluginMgr         *plugin.Manager
+	authStore         *auth.Store
+	authResolver      *auth.Resolver
+	skillReg          *skill.Registry
+	restoredSessionID string
+	restoredMsgs      []ai.Message
+	initialPrompt     string
+	mcpPermHook       *mcp.PermissionHook
+	sb                *samplingBridge
+}
+
+func runInteractive(ic interactiveConfig) int {
 	// Create the application lifecycle context. This is cancelled when
 	// runInteractive returns, ensuring all background operations (such as
 	// compaction) are stopped when the user quits.
@@ -626,43 +645,43 @@ func runInteractive(agentLoop *agent.Loop, sessionMgr *session.Manager, cfg *con
 
 	app := tui.NewApp()
 	app.SetHasUI(true) // Interactive mode has UI
-	app.SetModel(cfg.DefaultModel)
-	app.SetThinking(cfg.ThinkingLevel)
+	app.SetModel(ic.cfg.DefaultModel)
+	app.SetThinking(ic.cfg.ThinkingLevel)
 	app.RegisterBuiltinCommands(tui.AppDeps{
 		Ctx:          ctx,
-		AgentLoop:    agentLoop,
-		SessionMgr:   sessionMgr,
-		Cfg:          cfg,
-		AuthStore:    authStore,
-		AuthResolver: authResolver,
+		AgentLoop:    ic.agentLoop,
+		SessionMgr:   ic.sessionMgr,
+		Cfg:          ic.cfg,
+		AuthStore:    ic.authStore,
+		AuthResolver: ic.authResolver,
 	})
 	app.SetModelChangeCallback(func(provider, model string) {
-		agentLoop.SetModel(model)
+		ic.agentLoop.SetModel(model)
 		// Persist the model selection to config
-		cfg.DefaultModel = model
+		ic.cfg.DefaultModel = model
 		if provider != "" {
-			cfg.DefaultProvider = provider
+			ic.cfg.DefaultProvider = provider
 		}
-		if err := cfg.Save(); err != nil {
+		if err := ic.cfg.Save(); err != nil {
 			log.Printf("Failed to save model change to config: %v", err)
 		}
 	})
 	app.SetLoginSuccessCallback(func(providerName string) {
-		result, err := resolveProvider(ctx, cfg, authResolver)
+		result, err := resolveProvider(ctx, ic.cfg, ic.authResolver)
 		if err != nil {
 			log.Printf("Failed to resolve provider after login: %v", err)
 			return
 		}
-		agentLoop.SetProvider(result.provider)
-		agentLoop.SetModel(cfg.DefaultModel)
-		app.SetModel(cfg.DefaultModel)
-		if sb != nil {
-			sb.SetProvider(result.provider, cfg.DefaultModel)
+		ic.agentLoop.SetProvider(result.provider)
+		ic.agentLoop.SetModel(ic.cfg.DefaultModel)
+		app.SetModel(ic.cfg.DefaultModel)
+		if ic.sb != nil {
+			ic.sb.SetProvider(result.provider, ic.cfg.DefaultModel)
 		}
 	})
 
 	// Register plugin-provided slash commands.
-	for _, proc := range pluginMgr.Plugins() {
+	for _, proc := range ic.pluginMgr.Plugins() {
 		for _, cmdDef := range proc.Commands() {
 			app.RegisterCommand(&tui.SlashCommand{
 				Name:        cmdDef.Name,
@@ -681,8 +700,8 @@ func runInteractive(agentLoop *agent.Loop, sessionMgr *session.Manager, cfg *con
 	}
 
 	// Register user-invocable skills as slash commands.
-	if skillReg != nil {
-		for _, s := range skillReg.UserInvocable() {
+	if ic.skillReg != nil {
+		for _, s := range ic.skillReg.UserInvocable() {
 			s := s // capture for closure
 			app.RegisterCommand(&tui.SlashCommand{
 				Name:        s.Name,
@@ -697,7 +716,7 @@ func runInteractive(agentLoop *agent.Loop, sessionMgr *session.Manager, cfg *con
 						if err != nil {
 							return tui.CommandResultMsg{Text: err.Error(), IsError: true}
 						}
-						vars := skill.ContextVars(ctx, cfg.DefaultModel)
+						vars := skill.ContextVars(ctx, ic.cfg.DefaultModel)
 						for k, v := range argVars {
 							vars[k] = v
 						}
@@ -714,17 +733,17 @@ func runInteractive(agentLoop *agent.Loop, sessionMgr *session.Manager, cfg *con
 	}
 
 	// Replay restored session messages into the chat view.
-	if restoredSessionID != "" && len(restoredMsgs) > 0 {
-		app.RestoreSession(restoredSessionID, restoredMsgs)
+	if ic.restoredSessionID != "" && len(ic.restoredMsgs) > 0 {
+		app.RestoreSession(ic.restoredSessionID, ic.restoredMsgs)
 	}
 
 	// Auto-submit initial prompt from CLI args (e.g. @filepath).
-	if initialPrompt != "" {
-		app.SetInitialPrompt(initialPrompt)
+	if ic.initialPrompt != "" {
+		app.SetInitialPrompt(ic.initialPrompt)
 	}
 
 	// Show setup message if no provider is configured
-	if providerErr != nil {
+	if ic.providerErr != nil {
 		app.ShowWelcome(fmt.Sprintf(
 			"No API key configured. To get started:\n\n"+
 				"  /login anthropic          — OAuth login (Claude Pro/Max)\n"+
@@ -733,23 +752,23 @@ func runInteractive(agentLoop *agent.Loop, sessionMgr *session.Manager, cfg *con
 				"  export OPENAI_API_KEY=sk-...     — OpenAI key\n"+
 				"  export GEMINI_API_KEY=...        — Gemini key\n\n"+
 				"Or save to ~/.gi/auth.json.\n"+
-				"Use /auth to check status. (%v)", providerErr))
+				"Use /auth to check status. (%v)", ic.providerErr))
 	}
 
 	p := tea.NewProgram(app, tea.WithAltScreen())
 	app.SetProgram(p)
-	if sb != nil {
-		sb.SetProgram(p)
+	if ic.sb != nil {
+		ic.sb.SetProgram(p)
 	}
 
 	// Wire MCP permission hook to TUI confirmation now that the program exists.
-	if mcpPermHook != nil {
-		mcpPermHook.SetConfirm(app.ConfirmMCPTool)
+	if ic.mcpPermHook != nil {
+		ic.mcpPermHook.SetConfirm(app.ConfirmMCPTool)
 	}
 
 	// Create a map of plugin processes for UI response handling
 	pluginsByName := make(map[string]*plugin.Process)
-	for _, proc := range pluginMgr.Plugins() {
+	for _, proc := range ic.pluginMgr.Plugins() {
 		pluginsByName[proc.Name()] = proc
 	}
 
@@ -760,25 +779,25 @@ func runInteractive(agentLoop *agent.Loop, sessionMgr *session.Manager, cfg *con
 			go func() {
 				// Save user message to session
 				msg := ai.NewTextMessage(ai.RoleUser, text)
-				if err := sessionMgr.SaveMessage(ctx, msg); err != nil {
+				if err := ic.sessionMgr.SaveMessage(ctx, msg); err != nil {
 					log.Printf("Failed to save user message: %v", err)
 				}
 
 				// Run agent
-				events := agentLoop.Events()
+				events := ic.agentLoop.Events()
 				go func() {
-					if err := agentLoop.Prompt(ctx, text); err != nil {
+					if err := ic.agentLoop.Prompt(ctx, text); err != nil {
 						p.Send(tui.AgentErrorMsg{Err: err})
 					}
 				}()
 
 				for event := range events {
 					p.Send(tui.StreamEventMsg{Event: event})
-					pluginMgr.ForwardEvent(event)
+					ic.pluginMgr.ForwardEvent(event)
 
 					// Save assistant and tool_result messages to session
 					if (event.Type == agent.EventTurnEnd || event.Type == agent.EventToolResult) && event.Message != nil {
-						if err := sessionMgr.SaveMessage(ctx, *event.Message); err != nil {
+						if err := ic.sessionMgr.SaveMessage(ctx, *event.Message); err != nil {
 							log.Printf("Failed to save message: %v", err)
 						}
 					}
@@ -787,11 +806,11 @@ func runInteractive(agentLoop *agent.Loop, sessionMgr *session.Manager, cfg *con
 		},
 		// onSteer
 		func(text string) {
-			agentLoop.Steer(text)
+			ic.agentLoop.Steer(text)
 		},
 		// onCancel
 		func() {
-			agentLoop.Cancel()
+			ic.agentLoop.Cancel()
 		},
 	)
 
@@ -809,7 +828,7 @@ func runInteractive(agentLoop *agent.Loop, sessionMgr *session.Manager, cfg *con
 
 	// Consume inject messages from all plugins and route to TUI/agent.
 	// Channels are re-acquired after plugin restart so consumers survive crashes.
-	for _, proc := range pluginMgr.Plugins() {
+	for _, proc := range ic.pluginMgr.Plugins() {
 		go func(proc *plugin.Process) {
 			injectCh := proc.InjectMessages()
 			for {
@@ -846,7 +865,7 @@ func runInteractive(agentLoop *agent.Loop, sessionMgr *session.Manager, cfg *con
 
 					// If the plugin injects a "user" role message, feed it to the agent.
 					if msg.Type == "inject_message" && msg.Role == "user" && content != "" {
-						agentLoop.FollowUp(content)
+						ic.agentLoop.FollowUp(content)
 					}
 				}
 			}
@@ -855,7 +874,7 @@ func runInteractive(agentLoop *agent.Loop, sessionMgr *session.Manager, cfg *con
 
 	// Consume UI requests from all plugins and route to TUI.
 	// Channels are re-acquired after plugin restart so consumers survive crashes.
-	for _, proc := range pluginMgr.Plugins() {
+	for _, proc := range ic.pluginMgr.Plugins() {
 		go func(proc *plugin.Process) {
 			uiCh := proc.UIRequests()
 			for {
