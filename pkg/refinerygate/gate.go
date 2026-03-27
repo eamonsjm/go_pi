@@ -159,7 +159,7 @@ func (gc *GateChecker) fetchWorkflowRuns(ctx context.Context) ([]Status, error) 
 			Name       string `json:"name"`
 			Status     string `json:"status"`
 			Conclusion string `json:"conclusion"`
-			HtmlURL    string `json:"html_url"`
+			HTMLURL    string `json:"html_url"`
 		} `json:"workflow_runs"`
 	}
 
@@ -174,7 +174,7 @@ func (gc *GateChecker) fetchWorkflowRuns(ctx context.Context) ([]Status, error) 
 			Status:     wr.Status,
 			Conclusion: wr.Conclusion,
 			RunID:      wr.ID,
-			URL:        wr.HtmlURL,
+			URL:        wr.HTMLURL,
 		})
 	}
 

@@ -39,11 +39,11 @@ import (
 
 // ErrNoProvider is returned by [NewSession] when neither [WithAPIKey] nor
 // [WithProvider] has been specified.
-var ErrNoProvider = errors.New("sdk: no API key or provider configured")
+var ErrNoProvider = errors.New("no API key or provider configured")
 
 // ErrUnknownProvider is returned by [NewSession] when the provider name
 // passed to [WithAPIKey] is not recognised.
-var ErrUnknownProvider = errors.New("sdk: unknown provider")
+var ErrUnknownProvider = errors.New("unknown provider")
 
 // Session is the primary SDK type. It wraps an agent loop, tool registry,
 // and session manager into a single, easy-to-use interface for programmatic
