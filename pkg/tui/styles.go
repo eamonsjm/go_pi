@@ -13,19 +13,12 @@ import (
 type styleSnapshot struct {
 	theme Theme
 
-	// Color tokens.
-	ColorPrimary    lipgloss.Color
-	ColorSecondary  lipgloss.Color
-	ColorSuccess    lipgloss.Color
-	ColorWarning    lipgloss.Color
-	ColorError      lipgloss.Color
-	ColorMuted      lipgloss.Color
-	ColorText       lipgloss.Color
-	ColorBg         lipgloss.Color
-	ColorBorder     lipgloss.Color
-	ColorThinking   lipgloss.Color
-	ColorToolName   lipgloss.Color
-	ColorToolResult lipgloss.Color
+	// Color tokens (only tokens read outside buildStyles are kept).
+	ColorPrimary   lipgloss.Color
+	ColorSecondary lipgloss.Color
+	ColorMuted     lipgloss.Color
+	ColorText      lipgloss.Color
+	ColorThinking  lipgloss.Color
 
 	// Header / footer bars.
 	HeaderStyle lipgloss.Style
@@ -86,7 +79,6 @@ func buildStyles(t Theme) styleSnapshot {
 	errColor := lipgloss.Color(t.Error)
 	muted := lipgloss.Color(t.Muted)
 	text := lipgloss.Color(t.Text)
-	bg := lipgloss.Color(t.Background)
 	border := lipgloss.Color(t.Border)
 	thinking := lipgloss.Color(t.Thinking)
 	toolName := lipgloss.Color(t.ToolName)
@@ -96,18 +88,11 @@ func buildStyles(t Theme) styleSnapshot {
 	return styleSnapshot{
 		theme: t,
 
-		ColorPrimary:    primary,
-		ColorSecondary:  secondary,
-		ColorSuccess:    success,
-		ColorWarning:    warning,
-		ColorError:      errColor,
-		ColorMuted:      muted,
-		ColorText:       text,
-		ColorBg:         bg,
-		ColorBorder:     border,
-		ColorThinking:   thinking,
-		ColorToolName:   toolName,
-		ColorToolResult: toolResult,
+		ColorPrimary:   primary,
+		ColorSecondary: secondary,
+		ColorMuted:     muted,
+		ColorText:      text,
+		ColorThinking:  thinking,
 
 		HeaderStyle: lipgloss.NewStyle().
 			Bold(true).

@@ -515,58 +515,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// ---- Editor actions ----
 	case editorSubmitMsg:
-		// If we're waiting for an OAuth code, route the input there.
-		if a.authPendingCodeCh != nil {
-			ch := a.authPendingCodeCh
-			a.authPendingCodeCh = nil
-			a.chat.AddUserMessage(msg.text)
-			ch <- msg.text
-			return a, nil
-		}
-
-		// If we're waiting for an MCP tool confirmation, interpret input.
-		if a.mcpConfirmCh != nil {
-			ch := a.mcpConfirmCh
-			a.mcpConfirmCh = nil
-			a.chat.AddUserMessage(msg.text)
-			answer := strings.TrimSpace(strings.ToLower(msg.text))
-			ch <- (answer == "y" || answer == "yes")
-			return a, nil
-		}
-
-		// If we're waiting for a sampling confirmation, route the input there.
-		if a.samplingConfirmCh != nil {
-			ch := a.samplingConfirmCh
-			a.samplingConfirmCh = nil
-			a.chat.AddUserMessage(msg.text)
-			ch <- strings.HasPrefix(strings.ToLower(strings.TrimSpace(msg.text)), "y")
-			return a, nil
-		}
-
-		// If we're waiting for a UI response, handle it.
-		if a.uiRequestPending != nil {
-			req := a.uiRequestPending
-			a.uiRequestPending = nil
-			a.chat.AddUserMessage(msg.text)
-			if a.onUIResponse != nil {
-				a.onUIResponse(&PluginUIResponseMsg{
-					PluginName: req.PluginName,
-					ID:         req.ID,
-					Value:      msg.text,
-					Closed:     false,
-					Error:      "",
-				})
-			}
-			return a, nil
-		}
-
-		a.chat.AddUserMessage(msg.text)
-		a.agentRunning = true
-		a.editor.SetState(editorRunning)
-		if a.onSubmit != nil {
-			a.onSubmit(msg.text)
-		}
-		return a, tickRender()
+		return a, a.handleEditorSubmit(msg)
 
 	case SkillInvokeMsg:
 		a.chat.AddUserMessage(msg.Display)
@@ -643,37 +592,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case PluginUIRequestMsg:
-		if !a.hasUI {
-			// In headless mode, respond with sensible defaults instead of waiting for user input.
-			response := &PluginUIResponseMsg{
-				PluginName: msg.PluginName,
-				ID:         msg.ID,
-				Closed:     true,
-				Error:      "UI not available in headless mode",
-			}
-			// Set a default value based on the dialog type.
-			switch msg.UIType {
-			case "confirm":
-				response.Value = "false"
-			case "select":
-				if len(msg.UIOptions) > 0 {
-					response.Value = msg.UIOptions[0]
-				}
-			case "input", "editor":
-				response.Value = msg.UIDefault
-			case "notify":
-				response.Value = ""
-			}
-			if a.onUIResponse != nil {
-				a.onUIResponse(response)
-			}
-			return a, nil
-		}
-
-		// Store the pending UI request. The next editor submission will be handled
-		// as a response to this request rather than a prompt to the agent.
-		a.uiRequestPending = &msg
-		return a, nil
+		return a, a.handlePluginUIRequest(msg)
 
 	case MCPConfirmMsg:
 		if !a.hasUI {
@@ -692,36 +611,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case authOAuthMsg:
-		if a.authCancelFn != nil {
-			a.authCancelFn()
-		}
-		a.authCancelFn = msg.cancelAuth
-		a.authPendingCodeCh = msg.codeCh
-		wrappedURL := wrapLongString(msg.url, a.width-4)
-		if msg.codeCh != nil {
-			// Code-paste flow (e.g. Anthropic): prompt user to paste code.
-			if err := openBrowser(msg.url); err == nil {
-				a.chat.AddSystemMessage(fmt.Sprintf(
-					"Login to %s\n\nOpened authorization URL in your browser.\n\nIf it didn't open, copy this URL:\n%s\n\nAfter authorizing, paste the code below and press Enter.",
-					msg.providerName, wrappedURL))
-			} else {
-				a.chat.AddSystemMessage(fmt.Sprintf(
-					"Login to %s\n\nOpen this URL in your browser:\n%s\n\nAfter authorizing, paste the code below and press Enter.",
-					msg.providerName, wrappedURL))
-			}
-		} else {
-			// Callback-based flow (e.g. OpenAI): browser redirects automatically.
-			if err := openBrowser(msg.url); err == nil {
-				a.chat.AddSystemMessage(fmt.Sprintf(
-					"Login to %s\n\nOpened authorization URL in your browser.\n\nIf it didn't open, copy this URL:\n%s\n\nWaiting for authorization...",
-					msg.providerName, wrappedURL))
-			} else {
-				a.chat.AddSystemMessage(fmt.Sprintf(
-					"Login to %s\n\nOpen this URL in your browser:\n%s\n\nWaiting for authorization...",
-					msg.providerName, wrappedURL))
-			}
-		}
-		return a, msg.waitCmd
+		return a, a.handleAuthOAuth(msg)
 
 	case themeChangedMsg:
 		a.chat.AddSystemMessage(fmt.Sprintf("Switched to theme: %s", msg.name))
@@ -856,45 +746,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// ---- Keyboard shortcuts handled at app level ----
 	case tea.KeyMsg:
-		// When the model selector overlay is visible, route all keys to it.
-		if a.modelSelector.Visible() {
-			cmd := a.modelSelector.Update(msg)
-			if cmd != nil {
-				return a, cmd
-			}
-			return a, nil
-		}
-
-		// When editor is in search mode, route all keys to it directly.
-		if a.editor.IsSearching() {
-			editorCmd := a.editor.Update(msg)
-			a.layout() // search hint may change editor height
-			return a, editorCmd
-		}
-
-		if action, ok := a.keybindings.ActionFor(msg.String()); ok {
-			if cmd := a.handleAction(action); cmd != nil {
-				return a, cmd
-			}
-		}
-
-		// Route up/down arrows exclusively: either to the viewport
-		// (when scrolled up) or to the editor (when at bottom).
-		// Without this, both components receive the event and the
-		// user sees history recall AND viewport scroll simultaneously.
-		if msg.Type == tea.KeyUp || msg.Type == tea.KeyDown {
-			if !a.chat.AtBottom() {
-				chatCmd := a.chat.Update(msg)
-				if chatCmd != nil {
-					cmds = append(cmds, chatCmd)
-				}
-			} else {
-				editorCmd := a.editor.Update(msg)
-				if editorCmd != nil {
-					cmds = append(cmds, editorCmd)
-				}
-			}
-			return a, tea.Batch(cmds...)
+		if cmd, handled := a.handleKeyMsg(msg); handled {
+			return a, cmd
 		}
 	}
 
@@ -940,6 +793,174 @@ func (a *App) View() string {
 	}
 
 	return base
+}
+
+// ---------------------------------------------------------------------------
+// Update helpers — extracted from Update to keep the switch readable
+// ---------------------------------------------------------------------------
+
+// handleEditorSubmit processes user input, routing it to pending confirmation
+// channels (OAuth, MCP, sampling, plugin UI) before falling through to the
+// normal agent-submission path.
+func (a *App) handleEditorSubmit(msg editorSubmitMsg) tea.Cmd {
+	// If we're waiting for an OAuth code, route the input there.
+	if a.authPendingCodeCh != nil {
+		ch := a.authPendingCodeCh
+		a.authPendingCodeCh = nil
+		a.chat.AddUserMessage(msg.text)
+		ch <- msg.text
+		return nil
+	}
+
+	// If we're waiting for an MCP tool confirmation, interpret input.
+	if a.mcpConfirmCh != nil {
+		ch := a.mcpConfirmCh
+		a.mcpConfirmCh = nil
+		a.chat.AddUserMessage(msg.text)
+		answer := strings.TrimSpace(strings.ToLower(msg.text))
+		ch <- (answer == "y" || answer == "yes")
+		return nil
+	}
+
+	// If we're waiting for a sampling confirmation, route the input there.
+	if a.samplingConfirmCh != nil {
+		ch := a.samplingConfirmCh
+		a.samplingConfirmCh = nil
+		a.chat.AddUserMessage(msg.text)
+		ch <- strings.HasPrefix(strings.ToLower(strings.TrimSpace(msg.text)), "y")
+		return nil
+	}
+
+	// If we're waiting for a UI response, handle it.
+	if a.uiRequestPending != nil {
+		req := a.uiRequestPending
+		a.uiRequestPending = nil
+		a.chat.AddUserMessage(msg.text)
+		if a.onUIResponse != nil {
+			a.onUIResponse(&PluginUIResponseMsg{
+				PluginName: req.PluginName,
+				ID:         req.ID,
+				Value:      msg.text,
+				Closed:     false,
+				Error:      "",
+			})
+		}
+		return nil
+	}
+
+	a.chat.AddUserMessage(msg.text)
+	a.agentRunning = true
+	a.editor.SetState(editorRunning)
+	if a.onSubmit != nil {
+		a.onSubmit(msg.text)
+	}
+	return tickRender()
+}
+
+// handlePluginUIRequest processes a plugin UI dialog request, returning
+// sensible defaults in headless mode or storing the request for the next
+// editor submission in interactive mode.
+func (a *App) handlePluginUIRequest(msg PluginUIRequestMsg) tea.Cmd {
+	if !a.hasUI {
+		response := &PluginUIResponseMsg{
+			PluginName: msg.PluginName,
+			ID:         msg.ID,
+			Closed:     true,
+			Error:      "UI not available in headless mode",
+		}
+		switch msg.UIType {
+		case "confirm":
+			response.Value = "false"
+		case "select":
+			if len(msg.UIOptions) > 0 {
+				response.Value = msg.UIOptions[0]
+			}
+		case "input", "editor":
+			response.Value = msg.UIDefault
+		case "notify":
+			response.Value = ""
+		}
+		if a.onUIResponse != nil {
+			a.onUIResponse(response)
+		}
+		return nil
+	}
+
+	a.uiRequestPending = &msg
+	return nil
+}
+
+// handleAuthOAuth sets up the OAuth flow, opening the browser and displaying
+// instructions appropriate for the code-paste or callback-based flow.
+func (a *App) handleAuthOAuth(msg authOAuthMsg) tea.Cmd {
+	if a.authCancelFn != nil {
+		a.authCancelFn()
+	}
+	a.authCancelFn = msg.cancelAuth
+	a.authPendingCodeCh = msg.codeCh
+	wrappedURL := wrapLongString(msg.url, a.width-4)
+
+	if msg.codeCh != nil {
+		// Code-paste flow (e.g. Anthropic): prompt user to paste code.
+		if err := openBrowser(msg.url); err == nil {
+			a.chat.AddSystemMessage(fmt.Sprintf(
+				"Login to %s\n\nOpened authorization URL in your browser.\n\nIf it didn't open, copy this URL:\n%s\n\nAfter authorizing, paste the code below and press Enter.",
+				msg.providerName, wrappedURL))
+		} else {
+			a.chat.AddSystemMessage(fmt.Sprintf(
+				"Login to %s\n\nOpen this URL in your browser:\n%s\n\nAfter authorizing, paste the code below and press Enter.",
+				msg.providerName, wrappedURL))
+		}
+	} else {
+		// Callback-based flow (e.g. OpenAI): browser redirects automatically.
+		if err := openBrowser(msg.url); err == nil {
+			a.chat.AddSystemMessage(fmt.Sprintf(
+				"Login to %s\n\nOpened authorization URL in your browser.\n\nIf it didn't open, copy this URL:\n%s\n\nWaiting for authorization...",
+				msg.providerName, wrappedURL))
+		} else {
+			a.chat.AddSystemMessage(fmt.Sprintf(
+				"Login to %s\n\nOpen this URL in your browser:\n%s\n\nWaiting for authorization...",
+				msg.providerName, wrappedURL))
+		}
+	}
+	return msg.waitCmd
+}
+
+// handleKeyMsg routes keyboard input: model selector overlay first, then
+// search mode, then keybinding actions, then arrow-key routing between
+// the viewport and editor. The bool return indicates whether the message
+// was fully consumed (true) or should fall through to sub-components (false).
+func (a *App) handleKeyMsg(msg tea.KeyMsg) (tea.Cmd, bool) {
+	// When the model selector overlay is visible, route all keys to it.
+	if a.modelSelector.Visible() {
+		return a.modelSelector.Update(msg), true
+	}
+
+	// When editor is in search mode, route all keys to it directly.
+	if a.editor.IsSearching() {
+		editorCmd := a.editor.Update(msg)
+		a.layout() // search hint may change editor height
+		return editorCmd, true
+	}
+
+	if action, ok := a.keybindings.ActionFor(msg.String()); ok {
+		if cmd := a.handleAction(action); cmd != nil {
+			return cmd, true
+		}
+	}
+
+	// Route up/down arrows exclusively: either to the viewport
+	// (when scrolled up) or to the editor (when at bottom).
+	// Without this, both components receive the event and the
+	// user sees history recall AND viewport scroll simultaneously.
+	if msg.Type == tea.KeyUp || msg.Type == tea.KeyDown {
+		if !a.chat.AtBottom() {
+			return a.chat.Update(msg), true
+		}
+		return a.editor.Update(msg), true
+	}
+
+	return nil, false
 }
 
 // ---------------------------------------------------------------------------
