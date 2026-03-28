@@ -14,10 +14,12 @@ import (
 // It reads from and writes to ~/.gi/auth.json with file-level locking
 // to prevent concurrent refresh races.
 type Store struct {
-	path     string                 // path to auth.json
-	mu       sync.RWMutex           // protects entries
-	entries  map[string]*Credential // provider ID → credential
-	lockFile *os.File               // held while locked; nil when unlocked
+	path      string                 // path to auth.json
+	mu        sync.RWMutex           // protects entries
+	entries   map[string]*Credential // provider ID → credential
+	lockFile  *os.File               // held while locked; nil when unlocked
+	sopsKey   string                 // age public key; non-empty enables SOPS encryption on Save
+	encrypted bool                   // true if loaded file was SOPS-encrypted
 }
 
 // NewStore creates a Store backed by the given file path.
@@ -55,6 +57,24 @@ func (s *Store) Load() error {
 	// Verify file permissions before trusting its contents.
 	if err := checkFilePermissions(s.path); err != nil {
 		return fmt.Errorf("check auth store permissions: %w", err)
+	}
+
+	// Detect and decrypt SOPS-encrypted files transparently.
+	if isSopsEncrypted(data) {
+		keyPath := filepath.Join(filepath.Dir(s.path), "age-key.txt")
+		plain, err := decryptSops(data, keyPath)
+		if err != nil {
+			return fmt.Errorf("decrypt auth store: %w", err)
+		}
+		data = plain
+		s.encrypted = true
+
+		// Extract the public key so Save re-encrypts automatically.
+		id, err := loadAgeKey(keyPath)
+		if err != nil {
+			return fmt.Errorf("load age key for re-encryption: %w", err)
+		}
+		s.sopsKey = id.Recipient().String()
 	}
 
 	// Probe the JSON structure to detect format.
@@ -105,7 +125,8 @@ func (s *Store) loadLegacy(data []byte) error {
 }
 
 // Save writes the current credentials to disk with strict permissions (0600).
-// Creates parent directories (0700) if needed.
+// Creates parent directories (0700) if needed. If SOPS encryption is enabled
+// (sopsKey is set), the file is re-encrypted before writing.
 func (s *Store) Save() error {
 	dir := filepath.Dir(s.path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -117,6 +138,15 @@ func (s *Store) Save() error {
 	s.mu.RUnlock()
 	if err != nil {
 		return fmt.Errorf("marshal auth store: %w", err)
+	}
+
+	if s.sopsKey != "" {
+		data, err = encryptSops(data, s.sopsKey)
+		if err != nil {
+			return fmt.Errorf("encrypt auth store: %w", err)
+		}
+	} else if s.encrypted {
+		fmt.Fprintf(os.Stderr, "warning: auth store was encrypted but no SOPS key configured; saving as plaintext\n")
 	}
 
 	if err := os.WriteFile(s.path, append(data, '\n'), 0o600); err != nil {
