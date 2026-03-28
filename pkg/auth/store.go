@@ -14,12 +14,13 @@ import (
 // It reads from and writes to ~/.gi/auth.json with file-level locking
 // to prevent concurrent refresh races.
 type Store struct {
-	path      string                 // path to auth.json
-	mu        sync.RWMutex           // protects entries
-	entries   map[string]*Credential // provider ID → credential
-	lockFile  *os.File               // held while locked; nil when unlocked
-	sopsKey   string                 // age public key; non-empty enables SOPS encryption on Save
-	encrypted bool                   // true if loaded file was SOPS-encrypted
+	path       string                 // path to auth.json
+	ageKeyPath string                 // path to age private key for SOPS decrypt; default: age-key.txt beside auth.json
+	mu         sync.RWMutex           // protects entries
+	entries    map[string]*Credential // provider ID → credential
+	lockFile   *os.File               // held while locked; nil when unlocked
+	sopsKey    string                 // age public key; non-empty enables SOPS encryption on Save
+	encrypted  bool                   // true if loaded file was SOPS-encrypted
 }
 
 // NewStore creates a Store backed by the given file path.
@@ -33,10 +34,19 @@ func NewStore(path string) (*Store, error) {
 		path = filepath.Join(home, ".gi", "auth.json")
 	}
 	return &Store{
-		path:    path,
-		entries: make(map[string]*Credential),
+		path:       path,
+		ageKeyPath: filepath.Join(filepath.Dir(path), "age-key.txt"),
+		entries:    make(map[string]*Credential),
 	}, nil
 }
+
+// SetAgeKeyPath overrides the path to the age private key used for SOPS
+// decryption. By default this is "age-key.txt" in the same directory as
+// the auth store file.
+func (s *Store) SetAgeKeyPath(p string) { s.ageKeyPath = p }
+
+// AgeKeyPath returns the current age private-key path.
+func (s *Store) AgeKeyPath() string { return s.ageKeyPath }
 
 // Load reads credentials from the backing file. If the file does not exist,
 // the store starts empty (not an error).
@@ -61,7 +71,7 @@ func (s *Store) Load() error {
 
 	// Detect and decrypt SOPS-encrypted files transparently.
 	if isSopsEncrypted(data) {
-		keyPath := filepath.Join(filepath.Dir(s.path), "age-key.txt")
+		keyPath := s.ageKeyPath
 		plain, err := decryptSops(data, keyPath)
 		if err != nil {
 			return fmt.Errorf("decrypt auth store: %w", err)

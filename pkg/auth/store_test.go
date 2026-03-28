@@ -159,6 +159,33 @@ func TestStoreDefaultPath(t *testing.T) {
 	}
 }
 
+func TestStoreAgeKeyPathDefault(t *testing.T) {
+	dir := t.TempDir()
+	s, err := NewStore(filepath.Join(dir, "auth.json"))
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+
+	want := filepath.Join(dir, "age-key.txt")
+	if got := s.AgeKeyPath(); got != want {
+		t.Errorf("AgeKeyPath() = %q, want %q", got, want)
+	}
+}
+
+func TestStoreSetAgeKeyPath(t *testing.T) {
+	dir := t.TempDir()
+	s, err := NewStore(filepath.Join(dir, "auth.json"))
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+
+	custom := filepath.Join(t.TempDir(), "custom-key.txt")
+	s.SetAgeKeyPath(custom)
+	if got := s.AgeKeyPath(); got != custom {
+		t.Errorf("AgeKeyPath() after Set = %q, want %q", got, custom)
+	}
+}
+
 func TestStoreLoadLegacyFormat(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "auth.json")
