@@ -11,6 +11,10 @@ import (
 	"sync"
 )
 
+// warnUnencryptedOnce ensures the "credentials stored as plaintext" warning
+// is emitted at most once per process lifetime.
+var warnUnencryptedOnce sync.Once
+
 // Store manages persisted authentication credentials for all providers.
 // It reads from and writes to ~/.gi/auth.json with file-level locking
 // to prevent concurrent refresh races.
@@ -158,6 +162,14 @@ func (s *Store) Load() error {
 	s.mu.Lock()
 	s.entries = entries
 	s.mu.Unlock()
+
+	// Warn once per session if credentials are stored as plaintext.
+	if !s.encrypted && len(entries) > 0 {
+		warnUnencryptedOnce.Do(func() {
+			fmt.Fprintf(os.Stderr, "warning: credentials in %s are not encrypted. Run /encrypt or `gi auth encrypt` to enable SOPS encryption.\n", s.path)
+		})
+	}
+
 	return nil
 }
 

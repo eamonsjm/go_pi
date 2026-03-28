@@ -39,16 +39,48 @@ The maintainer will:
 **Risk**: API keys are stored in `~/.gi/auth.json`
 
 **Mitigations**:
-- File permissions are set to 0644 (user read-write, others read)
-- Consider using environment variables instead for sensitive deployments
+- File permissions are set to 0600 (user read-write only)
+- **SOPS encryption (recommended)**: Credentials are encrypted at rest using [Mozilla SOPS](https://github.com/getsops/sops) with [age](https://github.com/FiloSottile/age) keys. Run `/encrypt` or `gi auth encrypt` to enable.
 - Support for shell command resolution (`!command` syntax) allows dynamic secret retrieval
+- Consider using environment variables instead for sensitive deployments
 
-**Best Practices**:
+**Enabling SOPS Encryption (Recommended)**:
 ```bash
-# Preferred: Use environment variables
+# Enable encryption (generates age key if needed):
+gi auth encrypt
+# Or from within gi: /encrypt
+
+# Check encryption status:
+gi auth sops-status
+# Or: /sops-status
+
+# Decrypt back to plaintext (if needed):
+gi auth decrypt
+```
+
+When SOPS encryption is enabled, credential values are encrypted while JSON keys remain readable for debugging. The encryption key is stored at `~/.gi/age-key.txt`.
+
+**Age Key Backup**:
+
+Your age key (`~/.gi/age-key.txt`) is required to decrypt your credentials. If this key is lost, encrypted credentials cannot be recovered. Always back up your age key:
+
+```bash
+# Copy to a secure backup location:
+cp ~/.gi/age-key.txt /path/to/secure/backup/
+
+# Or add the key contents to your password manager.
+
+# To view your public key (for sharing with team KMS policies):
+gi auth export-age-key
+# Or: /export-age-key
+```
+
+**Other Options**:
+```bash
+# Environment variables (no file storage):
 export ANTHROPIC_API_KEY="sk-ant-..."
 
-# Alternative: Shell command resolution in auth.json
+# Shell command resolution in auth.json:
 {
   "anthropic": {
     "type": "api_key",
@@ -156,7 +188,9 @@ Key dependencies:
    - Never run with `sudo` or elevated privileges
 
 2. **Credential Management**
-   - Prefer environment variables over stored credentials
+   - Enable SOPS encryption: run `/encrypt` or `gi auth encrypt`
+   - Back up your age key (`~/.gi/age-key.txt`) — loss means credential lockout
+   - Prefer environment variables over stored credentials for CI/CD
    - Rotate API keys regularly
    - Use short-lived tokens when possible
 

@@ -116,6 +116,13 @@ type App struct {
 	// a sampling request. The next editor submission (y/n) sends the result.
 	samplingConfirmCh chan<- bool
 
+	// encryptPromptPending is true while waiting for the user to respond
+	// to the first-run SOPS encryption prompt after a successful /login.
+	encryptPromptPending bool
+
+	// authStore is stored for post-login encryption prompts.
+	authStore *auth.Store
+
 	// program is set after tea.NewProgram is created so that public setters
 	// (SetModel, SetThinking, SetSession) route mutations through the Bubble
 	// Tea message loop instead of writing directly to Header fields. This
@@ -374,6 +381,7 @@ func (a *App) RegisterBuiltinCommands(deps AppDeps) {
 	authResolver := deps.AuthResolver
 	// Store dependencies needed for keybinding actions.
 	a.ctx = ctx
+	a.authStore = authStore
 	a.cfg = cfg
 	a.agentLoop = agentLoop
 	a.sessionMgr = sessionMgr
@@ -573,6 +581,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.chat.AddSystemMessage(msg.text)
 		if a.onLoginSuccess != nil {
 			a.onLoginSuccess(msg.providerName)
+		}
+		// Offer encryption if the store has credentials but is not encrypted.
+		if a.authStore != nil && !a.authStore.Encrypted() && a.authStore.SopsKey() == "" {
+			a.encryptPromptPending = true
+			a.chat.AddSystemMessage(
+				"\nYour credentials are stored as plaintext. " +
+					"Would you like to encrypt them with SOPS? (recommended) [Y/n]")
 		}
 		return a, nil
 
@@ -815,6 +830,21 @@ func (a *App) handleEditorSubmit(msg editorSubmitMsg) tea.Cmd {
 		a.samplingConfirmCh = nil
 		a.chat.AddUserMessage(msg.text)
 		ch <- strings.HasPrefix(strings.ToLower(strings.TrimSpace(msg.text)), "y")
+		return nil
+	}
+
+	// If we're waiting for the first-run encryption prompt response.
+	if a.encryptPromptPending {
+		a.encryptPromptPending = false
+		a.chat.AddUserMessage(msg.text)
+		answer := strings.TrimSpace(strings.ToLower(msg.text))
+		if answer == "" || answer == "y" || answer == "yes" {
+			// Run encryption inline using the /encrypt command.
+			if cmd, ok := a.commands.Get("encrypt"); ok {
+				return cmd.Execute("")
+			}
+		}
+		a.chat.AddSystemMessage("Skipped encryption. Run /encrypt anytime to enable SOPS encryption.")
 		return nil
 	}
 

@@ -49,6 +49,7 @@ examples/*/[!.]*
 *.key
 *.pub
 *.crt
+age-key.txt
 
 # Project-local config (may contain credentials)
 .gi/

@@ -78,8 +78,12 @@ func NewEncryptCommand(store *auth.Store) *SlashCommand {
 					Text: fmt.Sprintf("Auth store encrypted with SOPS.\n"+
 						"  Key file: %s\n"+
 						"  Public key: %s\n\n"+
-						"Back up your age key! Without it, encrypted credentials cannot be recovered.",
-						keyPath, pubKey),
+						"⚠ Back up your age key! Without it, encrypted credentials cannot be recovered.\n"+
+						"  Copy it to a secure location:\n"+
+						"    cp %s /path/to/secure/backup/\n"+
+						"  Or add it to your password manager.\n"+
+						"  To decrypt before a key change: /decrypt",
+						keyPath, pubKey, keyPath),
 				}
 			}
 		},
