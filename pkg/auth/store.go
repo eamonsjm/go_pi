@@ -91,9 +91,7 @@ func (s *Store) SopsKey() string { return s.sopsKey }
 // A non-empty value causes Save to encrypt; empty disables encryption.
 func (s *Store) SetSopsKey(pub string) {
 	s.sopsKey = pub
-	if pub == "" {
-		s.encrypted = false
-	}
+	s.encrypted = pub != ""
 }
 
 // ConfigDir returns the directory containing the auth store (typically ~/.gi).
