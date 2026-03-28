@@ -11,7 +11,6 @@ import (
 	sops "github.com/getsops/sops/v3"
 	sopsage "github.com/getsops/sops/v3/age"
 	"github.com/getsops/sops/v3/aes"
-	"github.com/getsops/sops/v3/decrypt"
 	sopsjson "github.com/getsops/sops/v3/stores/json"
 )
 
@@ -28,31 +27,77 @@ func isSopsEncrypted(data []byte) bool {
 
 // decryptSops decrypts SOPS-encrypted JSON data using the age identity
 // at keyPath. It returns the plaintext JSON.
+//
+// This uses the SOPS Tree API with explicit key injection rather than the
+// SOPS_AGE_KEY environment variable, making it safe for concurrent use.
 func decryptSops(data []byte, keyPath string) ([]byte, error) {
 	keyData, err := os.ReadFile(keyPath)
 	if err != nil {
 		return nil, fmt.Errorf("read age key %s: %w", keyPath, err)
 	}
 
-	// SOPS discovers age identities via the SOPS_AGE_KEY environment variable.
-	// Temporarily set it to the key file contents for decryption.
-	old, hadOld := os.LookupEnv("SOPS_AGE_KEY")
-	if err := os.Setenv("SOPS_AGE_KEY", string(keyData)); err != nil {
-		return nil, fmt.Errorf("set SOPS_AGE_KEY: %w", err)
+	store := &sopsjson.Store{}
+	tree, err := store.LoadEncryptedFile(data)
+	if err != nil {
+		return nil, fmt.Errorf("sops load encrypted: %w", err)
 	}
-	defer func() {
-		if hadOld {
-			os.Setenv("SOPS_AGE_KEY", old)
-		} else {
-			os.Unsetenv("SOPS_AGE_KEY")
-		}
-	}()
 
-	plain, err := decrypt.Data(data, "json")
+	// Parse the age identity and inject it directly into the master keys,
+	// then decrypt the data key without going through the keyservice
+	// (which serializes keys via protobuf and loses injected identities).
+	var ids sopsage.ParsedIdentities
+	if err := ids.Import(string(keyData)); err != nil {
+		return nil, fmt.Errorf("parse age identity: %w", err)
+	}
+
+	dataKey, err := decryptDataKeyWithIdentities(tree.Metadata.KeyGroups, ids)
+	if err != nil {
+		return nil, fmt.Errorf("sops get data key: %w", err)
+	}
+
+	cipher := aes.NewCipher()
+	mac, err := tree.Decrypt(dataKey, cipher)
 	if err != nil {
 		return nil, fmt.Errorf("sops decrypt: %w", err)
 	}
+
+	originalMac, err := cipher.Decrypt(
+		tree.Metadata.MessageAuthenticationCode,
+		dataKey,
+		tree.Metadata.LastModified.Format(time.RFC3339),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("sops decrypt mac: %w", err)
+	}
+	if originalMac != mac {
+		return nil, fmt.Errorf("sops integrity check failed")
+	}
+
+	plain, err := store.EmitPlainFile(tree.Branches)
+	if err != nil {
+		return nil, fmt.Errorf("sops emit plain: %w", err)
+	}
 	return plain, nil
+}
+
+// decryptDataKeyWithIdentities decrypts the SOPS data key by injecting the
+// parsed age identities directly into each age master key and calling Decrypt.
+// This bypasses the keyservice RPC path which loses injected identities.
+func decryptDataKeyWithIdentities(keyGroups []sops.KeyGroup, ids sopsage.ParsedIdentities) ([]byte, error) {
+	for _, kg := range keyGroups {
+		for _, k := range kg {
+			ak, ok := k.(*sopsage.MasterKey)
+			if !ok {
+				continue
+			}
+			ids.ApplyToMasterKey(ak)
+			dataKey, err := ak.Decrypt()
+			if err == nil {
+				return dataKey, nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("no age key in metadata could decrypt the data key")
 }
 
 // encryptSops encrypts plaintext JSON data with SOPS using an age recipient
