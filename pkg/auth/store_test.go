@@ -317,6 +317,53 @@ func TestStoreLoadRejectsInsecurePermissions(t *testing.T) {
 	}
 }
 
+func TestNewStoreSopsEnabledKeyMissing(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "auth.json")
+
+	// Write sops-config.json with enabled=true but no age key file.
+	sopsConfig := []byte(`{"enabled": true}`)
+	if err := os.WriteFile(filepath.Join(dir, "sops-config.json"), sopsConfig, 0o600); err != nil {
+		t.Fatalf("write sops-config: %v", err)
+	}
+
+	// NewStore should succeed (key-not-found is a warning, not an error).
+	s, err := NewStore(path)
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+
+	// sopsKey should be empty since the key doesn't exist yet.
+	if s.SopsKey() != "" {
+		t.Errorf("SopsKey() = %q, want empty (key not generated yet)", s.SopsKey())
+	}
+}
+
+func TestNewStoreSopsEnabledKeyCorrupt(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "auth.json")
+
+	// Write sops-config.json with enabled=true.
+	sopsConfig := []byte(`{"enabled": true}`)
+	if err := os.WriteFile(filepath.Join(dir, "sops-config.json"), sopsConfig, 0o600); err != nil {
+		t.Fatalf("write sops-config: %v", err)
+	}
+
+	// Write a corrupt age key file.
+	if err := os.WriteFile(filepath.Join(dir, "age-key.txt"), []byte("not a valid age key"), 0o600); err != nil {
+		t.Fatalf("write corrupt key: %v", err)
+	}
+
+	// NewStore should fail — the key exists but can't be parsed.
+	_, err := NewStore(path)
+	if err == nil {
+		t.Fatal("NewStore should fail with corrupt age key when SOPS enabled")
+	}
+	if !strings.Contains(err.Error(), "load age key") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
 func TestStoreProvidersSorted(t *testing.T) {
 	dir := t.TempDir()
 	s, _ := NewStore(filepath.Join(dir, "auth.json"))

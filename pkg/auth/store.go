@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -57,9 +58,13 @@ func NewStore(path string) (*Store, error) {
 		id, err := loadAgeKey(s.ageKeyPath)
 		if err == nil {
 			s.sopsKey = id.Recipient().String()
+		} else if errors.Is(err, os.ErrNotExist) {
+			// Key doesn't exist yet — the encrypt command will generate it.
+			// Warn so the user knows encryption isn't active yet.
+			fmt.Fprintf(os.Stderr, "warning: SOPS enabled but age key not found at %s; encryption inactive until key is generated\n", s.ageKeyPath)
+		} else {
+			return nil, fmt.Errorf("load age key: %w", err)
 		}
-		// If the key doesn't exist yet, that's fine — the encrypt
-		// command will generate it. We just can't pre-set sopsKey.
 	}
 
 	return s, nil
