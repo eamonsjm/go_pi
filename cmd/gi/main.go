@@ -36,6 +36,11 @@ func main() {
 }
 
 func run() int {
+	// Handle subcommands before flag parsing.
+	if len(os.Args) >= 2 && os.Args[1] == "config" {
+		return runConfigCmd(os.Args[2:])
+	}
+
 	// Flag variables (use 'Flag' suffix to avoid conflicts with later variable names)
 	var modelVal string
 	var providerVal string
@@ -1125,4 +1130,49 @@ func processFileArgs(args []string) (string, error) {
 	}
 
 	return strings.Join(parts, "\n\n"), nil
+}
+
+// runConfigCmd handles "gi config <encrypt|decrypt|sops-status>" subcommands.
+func runConfigCmd(args []string) int {
+	if len(args) == 0 {
+		fmt.Fprintf(os.Stderr, "Usage: gi config <encrypt|decrypt|sops-status>\n")
+		return 1
+	}
+
+	switch args[0] {
+	case "encrypt":
+		if err := config.EncryptConfigFile(""); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			return 1
+		}
+		fmt.Println("Settings encrypted successfully.")
+		fmt.Println("Only env and headers fields in MCP server configs are encrypted.")
+		return 0
+
+	case "decrypt":
+		if err := config.DecryptConfigFile(""); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			return 1
+		}
+		fmt.Println("Settings decrypted successfully.")
+		return 0
+
+	case "sops-status":
+		status, err := config.ConfigSopsStatus("")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			return 1
+		}
+		fmt.Printf("Config dir:      %s\n", status.ConfigDir)
+		fmt.Printf("Encrypted:       %v\n", status.Encrypted)
+		fmt.Printf("Age key exists:  %v\n", status.AgeKeyExists)
+		if status.AgePublicKey != "" {
+			fmt.Printf("Age public key:  %s\n", status.AgePublicKey)
+		}
+		return 0
+
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown config command: %s\nUsage: gi config <encrypt|decrypt|sops-status>\n", args[0])
+		return 1
+	}
 }

@@ -95,6 +95,11 @@ type Config struct {
 	// TrustedProjectPlugins lists absolute paths of project-local plugin
 	// directories that the user has explicitly approved for execution.
 	TrustedProjectPlugins []string `json:"trusted_project_plugins,omitempty"`
+
+	// SOPS state (not serialized). Set at load time when the global
+	// settings.json is SOPS-encrypted so Save re-encrypts automatically.
+	sopsKey   string // age public key; non-empty enables re-encryption on Save
+	encrypted bool   // true if global settings.json was SOPS-encrypted
 }
 
 // DefaultConfig returns a Config populated with sensible defaults.
@@ -184,10 +189,31 @@ func LoadConfig(opts ...LoadConfigOption) (*Config, error) {
 		}
 	}
 
-	// Global config.
+	// Global config — detect and decrypt SOPS-encrypted settings.json.
 	globalPath := filepath.Join(cfg.ConfigDir, "settings.json")
-	if err := mergeFromFile(cfg, globalPath); err != nil {
-		return nil, fmt.Errorf("global config: %w", err)
+	globalData, readErr := os.ReadFile(globalPath)
+	if readErr != nil && !os.IsNotExist(readErr) {
+		return nil, fmt.Errorf("global config: read %s: %w", globalPath, readErr)
+	}
+	if readErr == nil && isSopsEncrypted(globalData) {
+		keyPath := sopsAgeKeyPath(cfg.ConfigDir)
+		plain, err := decryptSopsConfig(globalData, keyPath)
+		if err != nil {
+			return nil, fmt.Errorf("decrypt global config: %w", err)
+		}
+		if err := mergeFromData(cfg, plain, globalPath); err != nil {
+			return nil, fmt.Errorf("global config: %w", err)
+		}
+		id, err := loadAgeKeyForConfig(keyPath)
+		if err != nil {
+			return nil, fmt.Errorf("load age key for config re-encryption: %w", err)
+		}
+		cfg.sopsKey = id.Recipient().String()
+		cfg.encrypted = true
+	} else if readErr == nil {
+		if err := mergeFromData(cfg, globalData, globalPath); err != nil {
+			return nil, fmt.Errorf("global config: %w", err)
+		}
 	}
 
 	// Mark all servers loaded so far as global-origin.
@@ -273,6 +299,16 @@ func (c *Config) Save() error {
 		return fmt.Errorf("marshal config: %w", err)
 	}
 
+	// Re-encrypt if the global config was loaded from a SOPS-encrypted file.
+	if c.sopsKey != "" {
+		data, err = encryptSopsConfig(data, c.sopsKey)
+		if err != nil {
+			return fmt.Errorf("encrypt config: %w", err)
+		}
+	} else if c.encrypted {
+		fmt.Fprintf(os.Stderr, "warning: config was encrypted but no SOPS key configured; saving as plaintext\n")
+	}
+
 	if err := os.WriteFile(path, append(data, '\n'), 0o600); err != nil {
 		return fmt.Errorf("write config: %w", err)
 	}
@@ -289,20 +325,25 @@ func mergeFromFile(cfg *Config, path string) error {
 		}
 		return fmt.Errorf("read config %s: %w", path, err)
 	}
+	return mergeFromData(cfg, data, path)
+}
 
+// mergeFromData merges JSON config data into cfg. source identifies the
+// origin for error messages (typically a file path).
+func mergeFromData(cfg *Config, data []byte, source string) error {
 	// Unmarshal into a temporary struct so that zero-value fields in the file
 	// don't overwrite non-zero defaults. We use a map to detect which fields
 	// are actually present.
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {
-		return fmt.Errorf("parse %s: %w", path, err)
+		return fmt.Errorf("parse %s: %w", source, err)
 	}
 
 	if v, ok := raw["default_provider"]; ok {
 		var s string
 		if json.Unmarshal(v, &s) == nil && s != "" {
 			if !isValidProvider(s) {
-				return fmt.Errorf("unknown default_provider %q in %s (valid: %s)", s, path, strings.Join(ValidProviderNames(), ", "))
+				return fmt.Errorf("unknown default_provider %q in %s (valid: %s)", s, source, strings.Join(ValidProviderNames(), ", "))
 			}
 			cfg.DefaultProvider = s
 		}
@@ -320,7 +361,7 @@ func mergeFromFile(cfg *Config, path string) error {
 			case "off", "low", "medium", "high":
 				cfg.ThinkingLevel = s
 			default:
-				return fmt.Errorf("invalid thinking_level %q in %s (valid: off, low, medium, high)", s, path)
+				return fmt.Errorf("invalid thinking_level %q in %s (valid: off, low, medium, high)", s, source)
 			}
 		}
 	}
