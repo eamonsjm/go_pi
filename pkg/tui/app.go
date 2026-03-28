@@ -427,6 +427,14 @@ func (a *App) RegisterBuiltinCommands(deps AppDeps) {
 		a.RegisterCommand(NewAuthStatusCommand(ctx, authStore, authResolver))
 	}
 
+	// SOPS encryption commands (only need the store, not the resolver).
+	if authStore != nil {
+		a.RegisterCommand(NewEncryptCommand(authStore))
+		a.RegisterCommand(NewDecryptCommand(authStore))
+		a.RegisterCommand(NewSopsStatusCommand(authStore))
+		a.RegisterCommand(NewExportAgeKeyCommand(authStore))
+	}
+
 	// Alias commands.
 	a.RegisterCommand(NewAliasCommand(cfg, a.commands))
 	a.RegisterCommand(NewAliasesCommand(a.commands))

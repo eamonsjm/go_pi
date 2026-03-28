@@ -25,6 +25,10 @@ type Store struct {
 
 // NewStore creates a Store backed by the given file path.
 // If path is empty, it defaults to ~/.gi/auth.json.
+//
+// If a sops-config.json exists in the same directory, the store reads it
+// and pre-configures SOPS encryption (sopsKey) so that Save encrypts
+// even when the file is currently plaintext.
 func NewStore(path string) (*Store, error) {
 	if path == "" {
 		home, err := os.UserHomeDir()
@@ -33,11 +37,32 @@ func NewStore(path string) (*Store, error) {
 		}
 		path = filepath.Join(home, ".gi", "auth.json")
 	}
-	return &Store{
+	s := &Store{
 		path:       path,
 		ageKeyPath: filepath.Join(filepath.Dir(path), "age-key.txt"),
 		entries:    make(map[string]*Credential),
-	}, nil
+	}
+
+	// Apply sops-config.json if present and enabled.
+	configDir := filepath.Dir(path)
+	cfg, err := LoadSopsConfig(configDir)
+	if err != nil {
+		return nil, fmt.Errorf("load sops config: %w", err)
+	}
+	if cfg.Enabled {
+		if cfg.AgeKeyPath != "" {
+			s.ageKeyPath = cfg.AgeKeyPath
+		}
+		// Pre-load the public key so Save encrypts.
+		id, err := loadAgeKey(s.ageKeyPath)
+		if err == nil {
+			s.sopsKey = id.Recipient().String()
+		}
+		// If the key doesn't exist yet, that's fine — the encrypt
+		// command will generate it. We just can't pre-set sopsKey.
+	}
+
+	return s, nil
 }
 
 // SetAgeKeyPath overrides the path to the age private key used for SOPS
@@ -47,6 +72,27 @@ func (s *Store) SetAgeKeyPath(p string) { s.ageKeyPath = p }
 
 // AgeKeyPath returns the current age private-key path.
 func (s *Store) AgeKeyPath() string { return s.ageKeyPath }
+
+// Path returns the filesystem path of the auth store file.
+func (s *Store) Path() string { return s.path }
+
+// Encrypted reports whether the currently-loaded file was SOPS-encrypted.
+func (s *Store) Encrypted() bool { return s.encrypted }
+
+// SopsKey returns the age public key used for encryption, or "" if SOPS is not active.
+func (s *Store) SopsKey() string { return s.sopsKey }
+
+// SetSopsKey sets the age public key for SOPS encryption.
+// A non-empty value causes Save to encrypt; empty disables encryption.
+func (s *Store) SetSopsKey(pub string) {
+	s.sopsKey = pub
+	if pub == "" {
+		s.encrypted = false
+	}
+}
+
+// ConfigDir returns the directory containing the auth store (typically ~/.gi).
+func (s *Store) ConfigDir() string { return filepath.Dir(s.path) }
 
 // Load reads credentials from the backing file. If the file does not exist,
 // the store starts empty (not an error).
