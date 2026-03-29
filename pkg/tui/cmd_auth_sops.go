@@ -174,8 +174,8 @@ func NewSopsStatusCommand(store *auth.Store) *SlashCommand {
 
 				// Age key file status.
 				if info, err := os.Stat(keyPath); err == nil {
-					age := time.Since(info.ModTime()).Truncate(time.Second)
-					fmt.Fprintf(&sb, "\n  Key file: %s (age: %s)", keyPath, age)
+					modified := time.Since(info.ModTime()).Truncate(time.Second)
+					fmt.Fprintf(&sb, "\n  Key file: %s (modified: %s ago)", keyPath, modified)
 				} else if os.IsNotExist(err) {
 					fmt.Fprintf(&sb, "\n  Key file: %s (not found)", keyPath)
 				} else {
