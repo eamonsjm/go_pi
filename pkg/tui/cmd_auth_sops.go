@@ -92,6 +92,9 @@ func NewEncryptCommand(store *auth.Store) *SlashCommand {
 
 // NewDecryptCommand creates the /decrypt slash command that disables SOPS
 // encryption and writes auth.json back as plaintext.
+//
+// Without --force: shows a warning and aborts.
+// With --force: proceeds with decryption.
 func NewDecryptCommand(store *auth.Store) *SlashCommand {
 	return &SlashCommand{
 		Name:        "decrypt",
@@ -101,6 +104,15 @@ func NewDecryptCommand(store *auth.Store) *SlashCommand {
 				if store.SopsKey() == "" && !store.Encrypted() {
 					return CommandResultMsg{
 						Text: "Auth store is not encrypted — nothing to do.",
+					}
+				}
+
+				force := strings.TrimSpace(args) == "--force"
+				if !force {
+					return CommandResultMsg{
+						Text: "⚠ This will remove SOPS encryption and store credentials as plaintext.\n" +
+							"Your age key will remain at " + store.AgeKeyPath() + " for re-encryption.\n\n" +
+							"Run /decrypt --force to confirm.",
 					}
 				}
 
@@ -124,7 +136,7 @@ func NewDecryptCommand(store *auth.Store) *SlashCommand {
 
 				return CommandResultMsg{
 					Text: "Auth store decrypted. Credentials are now stored as plaintext.\n" +
-						"Run /encrypt to re-enable encryption.",
+						"Your age key is still at " + store.AgeKeyPath() + " — run /encrypt to re-enable encryption.",
 				}
 			}
 		},

@@ -194,7 +194,63 @@ func TestNewDecryptCommand_NotEncrypted(t *testing.T) {
 	}
 }
 
-func TestNewDecryptCommand_DecryptsEncryptedStore(t *testing.T) {
+func TestNewDecryptCommand_WarnsWithoutForce(t *testing.T) {
+	store := testAuthStore(t)
+	store.Set("anthropic", &auth.Credential{
+		Type: auth.CredentialAPIKey,
+		Key:  "sk-test-decrypt",
+	})
+	if err := store.Save(); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	// First encrypt.
+	encCmd := NewEncryptCommand(store)
+	teaCmd := encCmd.Execute("")
+	msg := teaCmd()
+	encResult := msg.(CommandResultMsg)
+	if encResult.IsError {
+		t.Fatalf("encrypt failed: %s", encResult.Text)
+	}
+	savedKey := store.SopsKey()
+
+	// Attempt decrypt without --force.
+	decCmd := NewDecryptCommand(store)
+	teaCmd = decCmd.Execute("")
+	msg = teaCmd()
+	result := msg.(CommandResultMsg)
+	if result.IsError {
+		t.Error("warning should not be an error")
+	}
+	if !strings.Contains(result.Text, "--force") {
+		t.Error("warning should mention --force flag")
+	}
+	if !strings.Contains(result.Text, "plaintext") {
+		t.Error("warning should mention plaintext")
+	}
+	if !strings.Contains(result.Text, "age key") {
+		t.Error("warning should mention the age key")
+	}
+
+	// Store should still be encrypted.
+	if store.SopsKey() != savedKey {
+		t.Error("SopsKey should be unchanged after warning")
+	}
+	if !store.Encrypted() {
+		t.Error("store should still be encrypted after warning")
+	}
+
+	// File should still be encrypted.
+	data, err := os.ReadFile(store.Path())
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if !strings.Contains(string(data), "sops") {
+		t.Error("auth.json should still be encrypted after warning")
+	}
+}
+
+func TestNewDecryptCommand_DecryptsWithForce(t *testing.T) {
 	store := testAuthStore(t)
 	store.Set("anthropic", &auth.Credential{
 		Type: auth.CredentialAPIKey,
@@ -222,9 +278,9 @@ func TestNewDecryptCommand_DecryptsEncryptedStore(t *testing.T) {
 		t.Fatal("file should be encrypted before decrypt test")
 	}
 
-	// Now decrypt.
+	// Now decrypt with --force.
 	decCmd := NewDecryptCommand(store)
-	teaCmd = decCmd.Execute("")
+	teaCmd = decCmd.Execute("--force")
 	msg = teaCmd()
 	result := msg.(CommandResultMsg)
 	if result.IsError {
@@ -236,6 +292,9 @@ func TestNewDecryptCommand_DecryptsEncryptedStore(t *testing.T) {
 	if !strings.Contains(result.Text, "/encrypt") {
 		t.Errorf("expected re-encrypt hint, got %q", result.Text)
 	}
+	if !strings.Contains(result.Text, "age key") {
+		t.Error("success message should mention the age key")
+	}
 
 	// Verify file is now plaintext.
 	data, err = os.ReadFile(store.Path())
@@ -243,7 +302,7 @@ func TestNewDecryptCommand_DecryptsEncryptedStore(t *testing.T) {
 		t.Fatalf("ReadFile: %v", err)
 	}
 	if strings.Contains(string(data), "sops") {
-		t.Error("auth.json should be plaintext after /decrypt")
+		t.Error("auth.json should be plaintext after /decrypt --force")
 	}
 	// Verify credential is preserved.
 	if !strings.Contains(string(data), "sk-test-decrypt") {
@@ -256,7 +315,7 @@ func TestNewDecryptCommand_DecryptsEncryptedStore(t *testing.T) {
 		t.Fatalf("LoadSopsConfig: %v", err)
 	}
 	if cfg.Enabled {
-		t.Error("sops-config should be disabled after /decrypt")
+		t.Error("sops-config should be disabled after /decrypt --force")
 	}
 
 	// Verify store state.
@@ -296,8 +355,8 @@ func TestEncryptDecryptRoundTrip(t *testing.T) {
 		t.Fatalf("encrypt: %s", r.Text)
 	}
 
-	// Step 2: Decrypt.
-	msg = decCmd.Execute("")()
+	// Step 2: Decrypt (requires --force).
+	msg = decCmd.Execute("--force")()
 	r = msg.(CommandResultMsg)
 	if r.IsError {
 		t.Fatalf("decrypt: %s", r.Text)
