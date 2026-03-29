@@ -80,9 +80,9 @@ func TestNewStoreReadsSopsConfig(t *testing.T) {
 	authPath := filepath.Join(dir, "auth.json")
 
 	// Generate an age key.
-	id, err := generateAgeKey(keyPath)
+	id, err := GenerateAgeKey(keyPath)
 	if err != nil {
-		t.Fatalf("generateAgeKey: %v", err)
+		t.Fatalf("GenerateAgeKey: %v", err)
 	}
 
 	// Write sops-config.json that points to the key.

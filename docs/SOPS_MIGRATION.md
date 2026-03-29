@@ -94,8 +94,8 @@ Unencrypted files continue to work (backward compat).
    - `isSopsEncrypted(data []byte) bool` — detect SOPS metadata in JSON
    - `decryptSops(data []byte) ([]byte, error)` — decrypt using age key
    - `encryptSops(data []byte, agePubKey string) ([]byte, error)` — encrypt
-   - `loadAgeKey(path string) (*age.X25519Identity, error)` — read key file
-   - `generateAgeKey(path string) (*age.X25519Identity, error)` — create key
+   - `LoadAgeKey(path string) (*age.X25519Identity, error)` — read key file
+   - `GenerateAgeKey(path string) (*age.X25519Identity, error)` — create key
 
 3. **Modify `Store` struct**
    - Add `sopsKey string` field (age public key, set if encryption enabled)

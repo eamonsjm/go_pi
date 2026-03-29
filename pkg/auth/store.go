@@ -59,7 +59,7 @@ func NewStore(path string) (*Store, error) {
 			s.ageKeyPath = cfg.AgeKeyPath
 		}
 		// Pre-load the public key so Save encrypts.
-		id, err := loadAgeKey(s.ageKeyPath)
+		id, err := LoadAgeKey(s.ageKeyPath)
 		if err == nil {
 			s.sopsKey = id.Recipient().String()
 		} else if errors.Is(err, os.ErrNotExist) {
@@ -134,7 +134,7 @@ func (s *Store) Load() error {
 		s.encrypted = true
 
 		// Extract the public key so Save re-encrypts automatically.
-		id, err := loadAgeKey(keyPath)
+		id, err := LoadAgeKey(keyPath)
 		if err != nil {
 			return fmt.Errorf("load age key for re-encryption: %w", err)
 		}

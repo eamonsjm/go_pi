@@ -156,13 +156,7 @@ func encryptSops(data []byte, ageRecipient string) ([]byte, error) {
 }
 
 // LoadAgeKey reads an age X25519 identity (private key) from a key file.
-// Exported for use by CLI commands; internal callers use loadAgeKey.
 func LoadAgeKey(path string) (*age.X25519Identity, error) {
-	return loadAgeKey(path)
-}
-
-// loadAgeKey reads an age X25519 identity (private key) from a key file.
-func loadAgeKey(path string) (*age.X25519Identity, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("open age key %s: %w", path, err)
@@ -186,14 +180,7 @@ func loadAgeKey(path string) (*age.X25519Identity, error) {
 
 // GenerateAgeKey creates a new age X25519 identity and writes it to path
 // with 0600 permissions. Parent directories are created with 0700 if needed.
-// Exported for use by CLI commands; internal callers use generateAgeKey.
 func GenerateAgeKey(path string) (*age.X25519Identity, error) {
-	return generateAgeKey(path)
-}
-
-// generateAgeKey creates a new age X25519 identity and writes it to path
-// with 0600 permissions. Parent directories are created with 0700 if needed.
-func generateAgeKey(path string) (*age.X25519Identity, error) {
 	id, err := age.GenerateX25519Identity()
 	if err != nil {
 		return nil, fmt.Errorf("generate age key: %w", err)

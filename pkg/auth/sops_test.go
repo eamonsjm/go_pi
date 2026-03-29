@@ -34,9 +34,9 @@ func TestGenerateAndLoadAgeKey(t *testing.T) {
 	keyPath := filepath.Join(dir, "age-key.txt")
 
 	// Generate a new key.
-	id, err := generateAgeKey(keyPath)
+	id, err := GenerateAgeKey(keyPath)
 	if err != nil {
-		t.Fatalf("generateAgeKey: %v", err)
+		t.Fatalf("GenerateAgeKey: %v", err)
 	}
 
 	// Verify the file exists with correct permissions.
@@ -49,9 +49,9 @@ func TestGenerateAndLoadAgeKey(t *testing.T) {
 	}
 
 	// Load the key back.
-	loaded, err := loadAgeKey(keyPath)
+	loaded, err := LoadAgeKey(keyPath)
 	if err != nil {
-		t.Fatalf("loadAgeKey: %v", err)
+		t.Fatalf("LoadAgeKey: %v", err)
 	}
 
 	if loaded.Recipient().String() != id.Recipient().String() {
@@ -65,9 +65,9 @@ func TestEncryptDecryptRoundTrip(t *testing.T) {
 	keyPath := filepath.Join(dir, "age-key.txt")
 
 	// Generate age key.
-	id, err := generateAgeKey(keyPath)
+	id, err := GenerateAgeKey(keyPath)
 	if err != nil {
-		t.Fatalf("generateAgeKey: %v", err)
+		t.Fatalf("GenerateAgeKey: %v", err)
 	}
 
 	plaintext := []byte(`{"anthropic":{"type":"api_key","key":"sk-ant-123"},"openai":{"type":"oauth","refresh_token":"rt-xyz"}}`)
@@ -118,9 +118,9 @@ func TestStoreLoadDecryptsSops(t *testing.T) {
 	authPath := filepath.Join(dir, "auth.json")
 
 	// Generate age key.
-	id, err := generateAgeKey(keyPath)
+	id, err := GenerateAgeKey(keyPath)
 	if err != nil {
-		t.Fatalf("generateAgeKey: %v", err)
+		t.Fatalf("GenerateAgeKey: %v", err)
 	}
 
 	// Create a plaintext auth file, then encrypt it.
@@ -189,9 +189,9 @@ func TestStoreSaveReEncrypts(t *testing.T) {
 	authPath := filepath.Join(dir, "auth.json")
 
 	// Generate age key.
-	id, err := generateAgeKey(keyPath)
+	id, err := GenerateAgeKey(keyPath)
 	if err != nil {
-		t.Fatalf("generateAgeKey: %v", err)
+		t.Fatalf("GenerateAgeKey: %v", err)
 	}
 
 	// Create encrypted auth file.
@@ -252,9 +252,9 @@ func TestSetSopsKeyDoesNotClearEncryptedBeforeSave(t *testing.T) {
 	authPath := filepath.Join(dir, "auth.json")
 
 	// Generate age key and create an encrypted auth file.
-	id, err := generateAgeKey(keyPath)
+	id, err := GenerateAgeKey(keyPath)
 	if err != nil {
-		t.Fatalf("generateAgeKey: %v", err)
+		t.Fatalf("GenerateAgeKey: %v", err)
 	}
 	plain := []byte(`{"anthropic":{"type":"api_key","key":"sk-ant-test"}}`)
 	encrypted, err := encryptSops(plain, id.Recipient().String())
