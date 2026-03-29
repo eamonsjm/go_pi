@@ -93,9 +93,10 @@ func (s *Store) SopsKey() string { return s.sopsKey }
 
 // SetSopsKey sets the age public key for SOPS encryption.
 // A non-empty value causes Save to encrypt; empty disables encryption.
+// The encrypted flag is not updated here — it tracks file-on-disk state
+// and is only updated after a successful Save.
 func (s *Store) SetSopsKey(pub string) {
 	s.sopsKey = pub
-	s.encrypted = pub != ""
 }
 
 // ConfigDir returns the directory containing the auth store (typically ~/.gi).
@@ -223,6 +224,10 @@ func (s *Store) Save() error {
 	if err := os.WriteFile(s.path, append(data, '\n'), 0o600); err != nil {
 		return fmt.Errorf("write auth store: %w", err)
 	}
+
+	// Update encrypted flag to reflect what was actually written to disk.
+	s.encrypted = s.sopsKey != ""
+
 	return nil
 }
 

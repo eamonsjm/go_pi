@@ -246,3 +246,85 @@ func TestStoreSaveReEncrypts(t *testing.T) {
 	}
 }
 
+func TestSetSopsKeyDoesNotClearEncryptedBeforeSave(t *testing.T) {
+	dir := t.TempDir()
+	keyPath := filepath.Join(dir, "age-key.txt")
+	authPath := filepath.Join(dir, "auth.json")
+
+	// Generate age key and create an encrypted auth file.
+	id, err := generateAgeKey(keyPath)
+	if err != nil {
+		t.Fatalf("generateAgeKey: %v", err)
+	}
+	plain := []byte(`{"anthropic":{"type":"api_key","key":"sk-ant-test"}}`)
+	encrypted, err := encryptSops(plain, id.Recipient().String())
+	if err != nil {
+		t.Fatalf("encryptSops: %v", err)
+	}
+	if err := os.WriteFile(authPath, encrypted, 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	// Load the encrypted store.
+	s, err := NewStore(authPath)
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	if err := s.Load(); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !s.encrypted {
+		t.Fatal("expected encrypted=true after loading SOPS file")
+	}
+
+	// Clear the sops key (as /decrypt does) — encrypted flag should NOT change yet.
+	s.SetSopsKey("")
+	if !s.encrypted {
+		t.Error("SetSopsKey('') must not clear encrypted flag before Save succeeds")
+	}
+
+	// Make Save fail by pointing to a read-only directory.
+	roDir := filepath.Join(dir, "readonly")
+	if err := os.Mkdir(roDir, 0o500); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	t.Cleanup(func() { os.Chmod(roDir, 0o700) })
+	s.path = filepath.Join(roDir, "auth.json")
+	if err := s.Save(); err == nil {
+		t.Fatal("Save should have failed with read-only directory")
+	}
+
+	// encrypted should still be true because Save failed.
+	if !s.encrypted {
+		t.Error("encrypted flag should remain true after failed Save")
+	}
+}
+
+func TestSetSopsKeyDoesNotSetEncryptedBeforeSave(t *testing.T) {
+	dir := t.TempDir()
+	authPath := filepath.Join(dir, "auth.json")
+
+	// Create a plaintext auth file.
+	plain := []byte(`{"anthropic":{"type":"api_key","key":"sk-ant-plain"}}`)
+	if err := os.WriteFile(authPath, plain, 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	s, err := NewStore(authPath)
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	if err := s.Load(); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if s.encrypted {
+		t.Fatal("expected encrypted=false for plaintext file")
+	}
+
+	// Set a sops key (as /encrypt does) — encrypted should NOT change yet.
+	s.SetSopsKey("age1somekey")
+	if s.encrypted {
+		t.Error("SetSopsKey(key) must not set encrypted flag before Save succeeds")
+	}
+}
+
