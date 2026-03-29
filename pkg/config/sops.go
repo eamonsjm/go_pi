@@ -46,9 +46,9 @@ func decryptSopsConfig(data []byte, keyPath string) ([]byte, error) {
 	}
 	defer func() {
 		if hadOld {
-			os.Setenv("SOPS_AGE_KEY", old)
+			_ = os.Setenv("SOPS_AGE_KEY", old)
 		} else {
-			os.Unsetenv("SOPS_AGE_KEY")
+			_ = os.Unsetenv("SOPS_AGE_KEY")
 		}
 	}()
 
@@ -126,7 +126,7 @@ func loadAgeKeyForConfig(path string) (*age.X25519Identity, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open age key %s: %w", path, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	identities, err := age.ParseIdentities(f)
 	if err != nil {
