@@ -76,9 +76,10 @@ const maxRetries = 2 // up to 3 attempts total
 // a channel of StreamEvents. Retries automatically on rate limit (429) and
 // overloaded (529) errors.
 func (p *AnthropicProvider) Stream(ctx context.Context, req StreamRequest) (<-chan StreamEvent, error) {
-	// OAuth tokens require a system prompt; use default if none provided
+	// Warn if an OAuth request arrives without a system prompt — callers
+	// should always provide one via selectBasePrompt/buildSystemPrompt.
 	if p.useBearer && req.SystemPrompt == "" {
-		req.SystemPrompt = "You are Claude, an AI assistant created by Anthropic."
+		log.Printf("anthropic: OAuth request has no system prompt; caller should set one via prompt selection")
 	}
 
 	body, err := p.buildRequestBody(req)
