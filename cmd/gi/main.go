@@ -189,6 +189,7 @@ func run() int {
 	// Resolve provider (may fail if no API key — that's ok for interactive mode)
 	resolved, providerErr := resolveProvider(context.Background(), cfg, authResolver)
 	provider := resolved.provider
+	basePrompt := selectBasePrompt(resolved.providerName, resolved.isOAuth)
 
 	// Wire the provider into the sampling bridge so MCP servers can delegate
 	// sampling requests to the configured AI provider.
@@ -202,7 +203,7 @@ func run() int {
 			log.Printf("Cannot use print mode: %v", providerErr)
 			return 1
 		}
-		agentLoop, _ := makeAgentLoop(provider, registry, cfg, skillRegistry, mcpMgr)
+		agentLoop, _ := makeAgentLoop(provider, registry, cfg, skillRegistry, mcpMgr, basePrompt)
 		sessionMgr.NewSession()
 		prompt := printVal
 		if initialPrompt != "" {
@@ -220,7 +221,7 @@ func run() int {
 			log.Printf("Cannot use JSON mode: %v", providerErr)
 			return 1
 		}
-		agentLoop, _ := makeAgentLoop(provider, registry, cfg, skillRegistry, mcpMgr)
+		agentLoop, _ := makeAgentLoop(provider, registry, cfg, skillRegistry, mcpMgr, basePrompt)
 		return rpc.RunJSONStream(agentLoop, initialPrompt)
 	}
 
@@ -230,7 +231,7 @@ func run() int {
 			log.Printf("Cannot use RPC mode: %v", providerErr)
 			return 1
 		}
-		agentLoop, _ := makeAgentLoop(provider, registry, cfg, skillRegistry, mcpMgr)
+		agentLoop, _ := makeAgentLoop(provider, registry, cfg, skillRegistry, mcpMgr, basePrompt)
 		rpc.RunRPC(agentLoop)
 		return 0
 	}
@@ -239,10 +240,10 @@ func run() int {
 	var agentLoop *agent.Loop
 	var mcpPermHook *mcp.PermissionHook
 	if provider != nil {
-		agentLoop, mcpPermHook = makeAgentLoop(provider, registry, cfg, skillRegistry, mcpMgr)
+		agentLoop, mcpPermHook = makeAgentLoop(provider, registry, cfg, skillRegistry, mcpMgr, basePrompt)
 	} else {
 		// Create a placeholder loop with no provider — submitting will show the error
-		placeholderPrompt := buildSystemPrompt("You are Claude Code, Anthropic's official CLI for Claude.")
+		placeholderPrompt := buildSystemPrompt(basePrompt)
 		if idx := skill.SkillSystemReminder(skillRegistry); idx != "" {
 			placeholderPrompt += "\n\n<system-reminder>\n" + idx + "</system-reminder>"
 		}
@@ -580,8 +581,8 @@ func runPrintMode(agentLoop *agent.Loop, sessionMgr *session.Manager, prompt str
 	return 0
 }
 
-func makeAgentLoop(provider ai.Provider, registry *tools.Registry, cfg *config.Config, skillReg *skill.Registry, mcpMgr *mcp.Manager) (*agent.Loop, *mcp.PermissionHook) {
-	systemPrompt := buildSystemPrompt("You are Claude Code, Anthropic's official CLI for Claude.")
+func makeAgentLoop(provider ai.Provider, registry *tools.Registry, cfg *config.Config, skillReg *skill.Registry, mcpMgr *mcp.Manager, basePrompt string) (*agent.Loop, *mcp.PermissionHook) {
+	systemPrompt := buildSystemPrompt(basePrompt)
 	if skillReg != nil {
 		if idx := skill.SkillSystemReminder(skillReg); idx != "" {
 			systemPrompt += "\n\n<system-reminder>\n" + idx + "</system-reminder>"

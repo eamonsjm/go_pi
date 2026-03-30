@@ -5,11 +5,11 @@ import (
 )
 
 func TestDefaultPromptLoaded(t *testing.T) {
-	if defaultPrompt == "" {
-		t.Fatal("defaultPrompt should be loaded from prompts/default.md")
+	if defaultBasePrompt == "" {
+		t.Fatal("defaultBasePrompt should be loaded from prompts/default.md")
 	}
-	if defaultPrompt != "You are Pi, an AI coding agent for the terminal.\n\nYou help developers understand, navigate, and modify codebases. You have access to tools for reading files, writing files, making targeted edits, running shell commands, and searching code with glob patterns and regular expressions." {
-		t.Errorf("defaultPrompt has unexpected content: %q", defaultPrompt)
+	if defaultBasePrompt != "You are Pi, an AI coding agent for the terminal.\n\nYou help developers understand, navigate, and modify codebases. You have access to tools for reading files, writing files, making targeted edits, running shell commands, and searching code with glob patterns and regular expressions." {
+		t.Errorf("defaultBasePrompt has unexpected content: %q", defaultBasePrompt)
 	}
 }
 
@@ -27,6 +27,25 @@ func TestOAuthPromptsPopulated(t *testing.T) {
 		if prompt == "" {
 			t.Errorf("oauthPrompts[%q] is empty", provider)
 		}
+	}
+}
+
+func TestSelectBasePrompt(t *testing.T) {
+	// Non-OAuth always returns default
+	if got := selectBasePrompt("anthropic", false); got != defaultBasePrompt {
+		t.Errorf("non-OAuth should return default, got %q", got)
+	}
+
+	// OAuth with known provider returns provider-specific prompt
+	for provider, want := range oauthPrompts {
+		if got := selectBasePrompt(provider, true); got != want {
+			t.Errorf("selectBasePrompt(%q, true) = %q, want %q", provider, got, want)
+		}
+	}
+
+	// OAuth with unknown provider falls back to default
+	if got := selectBasePrompt("unknown-provider", true); got != defaultBasePrompt {
+		t.Errorf("OAuth unknown provider should fall back to default, got %q", got)
 	}
 }
 

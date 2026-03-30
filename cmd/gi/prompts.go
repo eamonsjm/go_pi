@@ -10,9 +10,9 @@ import (
 //go:embed prompts
 var promptsFS embed.FS
 
-// defaultPrompt is the base system prompt for non-OAuth paths.
+// defaultBasePrompt is the base system prompt for non-OAuth paths.
 // Loaded from prompts/default.md at init time.
-var defaultPrompt string
+var defaultBasePrompt string
 
 // oauthPrompts maps provider name → base prompt for OAuth paths.
 // Populated at init time by scanning prompts/oauth_<provider>.md files.
@@ -23,7 +23,7 @@ func init() {
 	if err != nil {
 		panic(fmt.Sprintf("prompts: read default.md: %v", err))
 	}
-	defaultPrompt = strings.TrimSpace(string(b))
+	defaultBasePrompt = strings.TrimSpace(string(b))
 
 	oauthPrompts = make(map[string]string)
 
@@ -43,4 +43,15 @@ func init() {
 		}
 		oauthPrompts[provider] = strings.TrimSpace(string(b))
 	}
+}
+
+// selectBasePrompt picks the base system prompt based on provider and auth mode.
+// OAuth paths get a provider-specific prompt if one exists; everything else gets the default.
+func selectBasePrompt(providerName string, isOAuth bool) string {
+	if isOAuth {
+		if p, ok := oauthPrompts[providerName]; ok {
+			return p
+		}
+	}
+	return defaultBasePrompt
 }
