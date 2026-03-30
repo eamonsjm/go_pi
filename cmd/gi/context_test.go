@@ -42,7 +42,7 @@ func TestBuildSystemPrompt_WalksDirectoryTree(t *testing.T) {
 		}
 	}()
 
-	prompt := buildSystemPrompt()
+	prompt := buildSystemPrompt("test base")
 
 	// Deepest first: sub/CLAUDE.md before root/CLAUDE.md
 	subIdx := strings.Index(prompt, "sub instructions")
@@ -91,7 +91,7 @@ func TestBuildSystemPrompt_DeduplicatesByContent(t *testing.T) {
 		}
 	}()
 
-	prompt := buildSystemPrompt()
+	prompt := buildSystemPrompt("test base")
 
 	// Should only appear once
 	count := strings.Count(prompt, "same content")
@@ -127,7 +127,7 @@ func TestBuildSystemPrompt_AppendSystemMd(t *testing.T) {
 		}
 	}()
 
-	prompt := buildSystemPrompt()
+	prompt := buildSystemPrompt("test base")
 
 	if !strings.Contains(prompt, "appended content") {
 		t.Error("APPEND_SYSTEM.md from sub not found")
@@ -159,7 +159,7 @@ func TestBuildSystemPrompt_DotClaudeSystemMd(t *testing.T) {
 		}
 	}()
 
-	prompt := buildSystemPrompt()
+	prompt := buildSystemPrompt("test base")
 
 	if !strings.Contains(prompt, "claude system") {
 		t.Error(".claude/SYSTEM.md content not found in prompt")
